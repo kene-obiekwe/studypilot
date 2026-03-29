@@ -1,0 +1,11 @@
+from rest_framework import serializers
+
+
+class RecommendationRequestSerializer(serializers.Serializer):
+    focus_score = serializers.FloatField(min_value=0, max_value=1)
+    completion_rate = serializers.FloatField(min_value=0, max_value=1)
+    preferred_style = serializers.ChoiceField(choices=["visual", "reading", "practice", "mixed"])
+
+
+class RecommendationResponseSerializer(serializers.Serializer):
+    strategies = serializers.ListField(child=serializers.CharField())
