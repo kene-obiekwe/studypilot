@@ -8,3 +8,11 @@ class PlanRequestSerializer(serializers.Serializer):
 
 class PlanResponseSerializer(serializers.Serializer):
     allocations = serializers.ListField(child=serializers.DictField())
+
+
+class StudyPlanHistorySerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    week_start = serializers.DateField()
+    plan_json = serializers.JSONField()
+    created_at = serializers.DateTimeField()
+

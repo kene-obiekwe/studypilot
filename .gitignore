@@ -18,3 +18,7 @@ node_modules/
 # OS / Editor
 .DS_Store
 Thumbs.db
+
+# Generated training snapshots
+backend/ml/data/snapshots/
+backend/ml/reports/

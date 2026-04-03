@@ -20,3 +20,19 @@ This folder contains scripts and notes for the AI lifecycle:
 2. Run:
    - `python ml/train_models.py --data data/training/study_sessions.csv`
 3. Inspect generated metrics and artifacts.
+
+## Build Dataset Snapshot from DB Logs
+
+Use the Django management command to generate a schema-aligned training dataset directly from planner, recommendation, and tracking tables:
+
+1. Run from `backend/`:
+   - `python manage.py build_training_dataset`
+2. Optional flags:
+   - `--snapshot-id 20260331_120000`
+   - `--output-dir ml/data/snapshots`
+   - `--limit 100`
+
+Generated files per snapshot:
+
+1. `training_dataset.csv` (column order aligned to `schema.md`)
+2. `metadata.json` (snapshot version details and source counts)
