@@ -23,26 +23,27 @@ The system uses AI for two main tasks:
 
 ## 3. Data Collection Plan
 
-Collect data from system interactions only (with consent):
+Primary training data is collected from external educational interaction datasets (not user-entered pilot data):
 
-1. Onboarding/profile:
-   - preferred style, available hours, course load, target grades.
-2. Planned sessions:
-   - date, course, planned duration, plan version.
-3. Actual sessions:
-   - actual duration, completion ratio, self-reported focus score.
-4. Outcomes:
-   - quiz score changes, assignment performance trend (when available).
+1. External learner-event datasets:
+   - longitudinal interaction logs, correctness/performance outcomes, and behavior-related features.
+2. Canonical feature mapping:
+   - map source columns into project semantics (workload, effort, completion, consistency, help-seeking).
+3. Pilot app data:
+   - retained only for monitoring and future domain adaptation when enough records are available.
+4. Runtime transition:
+   - after deployment scale, incrementally retrain with real in-app logs.
 
 Data storage principles:
 
 1. Use internal user id, not full personal identifiers, in training tables.
 2. Keep a timestamp for each record for time-based validation.
 3. Keep raw event logs and curated training tables separately.
+4. Document data-source provenance, licenses, and feature-proxy assumptions.
 
 ## 4. Dataset Construction
 
-Create one row per completed study session window with features such as:
+Create one row per learner-window (or session window) after external-to-canonical mapping, with features such as:
 
 1. planned_minutes
 2. actual_minutes
@@ -52,7 +53,7 @@ Create one row per completed study session window with features such as:
 6. deadlines_within_7_days
 7. sessions_in_last_7_days
 8. style_encoded
-9. target: adherence_score or strategy_label
+9. target: adherence_score or strategy_label (if a valid label is available)
 
 ## 5. Data Preprocessing and Features
 
@@ -135,7 +136,7 @@ Required comparison:
 ## 11. What to Say in Defence
 
 1. The system started with a rule-based baseline to guarantee functionality.
-2. Logged learner behavior data is transformed into supervised datasets.
+2. Initial model training uses curated external educational datasets because pilot user-input data is too limited for reliable supervised learning.
 3. Models are trained/tested with defined metrics and compared with baseline.
 4. Only validated models are deployed, with rule fallback for robustness.
-5. Continuous monitoring and retraining are built into the lifecycle.
+5. Continuous monitoring is active, and retraining shifts progressively to real in-app data once sufficient scale is reached.

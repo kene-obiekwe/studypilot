@@ -1,63 +1,78 @@
 # Training Dataset Schema
 
-This schema is project-semantic first.
+This schema is project-semantic first and dataset-neutral.
 
-1. Canonical schema (project meaning) defines what the model should learn for this system.
-2. Source adapter schema (ASSISTments) defines how external fields are mapped into canonical columns.
-
-The dataset should support the project objective, not replace it.
+1. Canonical schema defines what the model should learn for this project.
+2. Source adapter schema defines how any external dataset is mapped into canonical columns.
+3. External data supports model initialization; it does not redefine project meaning.
 
 ## Canonical Project Schema (Used by Model Pipeline)
 
 ### Modeling Unit
 
-One row per learner-week (or learner-window) so behavior trends can be modeled.
+One row per learner-window (for example learner-week or rolling activity window).
 
-### Core Columns
+### Feature Availability Levels
 
-1. user_id (int)
-2. planned_minutes (float)
-3. actual_minutes (float)
-4. focus_score (float, 0-1)
-5. completion_rate (float, 0-1)
-6. help_seeking_rate (float, 0-1)
-7. consistency_score (float, 0-1)
-8. sessions_last_7_days (int)
+1. Required:
+   - needed to train adherence prediction reliably.
+2. Preferred:
+   - improves model quality but can be proxied.
+3. Optional:
+   - useful if available; may be null for many sources.
+
+### Canonical Columns
+
+1. user_id (int, required)
+2. planned_minutes (float, required)
+3. actual_minutes (float, required)
+4. completion_rate (float in [0,1], required)
+5. sessions_last_7_days (int, required; proxy allowed)
+6. focus_score (float in [0,1], preferred; proxy allowed)
+7. help_seeking_rate (float in [0,1], preferred; proxy allowed)
+8. consistency_score (float in [0,1], preferred; proxy allowed)
 9. avg_quiz_score_recent (float, optional)
-10. created_at (datetime, optional for external data)
+10. created_at (datetime, optional but recommended)
 
 ### Targets
 
-1. adherence_score (float, 0-1):
-   - derived from actual_minutes / planned_minutes, clipped to 1.
-2. strategy_label (categorical, optional in v1):
+1. adherence_score (float in [0,1], required target)
+   - derived as actual_minutes / planned_minutes, clipped to [0,1].
+2. strategy_label (categorical, optional target)
    - visual | reading | practice | mixed.
-   - if unavailable, keep recommendation module rule-based and do not train this target yet.
+   - if unavailable, keep recommendation module rule-based and do not train a supervised strategy model.
 
-### Optional Benchmark Target (External Dataset Specific)
+### Optional External Benchmark Target
 
-1. is_stem (binary, 0/1):
-   - external benchmark target from ASSISTments training_label.
-   - used for comparative research experiments, not as direct substitute for strategy_label.
+1. benchmark_label (dataset-specific, optional)
+   - allowed only for comparative experiments.
+   - never treated as a direct replacement for strategy_label.
 
-## Source Adapter: ASSISTments to Canonical Mapping (v1)
+## External Source Adapter (Template)
 
-This table defines proxy construction from student_log_*.csv + training_label.csv.
+For every external dataset, create a mapping table with the following fields per canonical column:
 
-1. user_id <- ITEST_id (direct)
-2. planned_minutes <- median(timeTaken) / 60000 (proxy baseline workload)
-3. actual_minutes <- sum(timeTaken) / 60000 per window (directly derived)
-4. focus_score <- 1 - normalized mean(AveResConf, AveResFrust, AveResOfftask, AveResGaming)
-5. completion_rate <- mean(correct)
-6. help_seeking_rate <- mean(frIsHelpRequest)
-7. consistency_score <- 1 - normalized std(timeTaken)
-8. sessions_last_7_days <- count of unique action sessions in rolling window (proxy)
-9. avg_quiz_score_recent <- AveCorrect (proxy) or MCAS when available
-10. created_at <- window end timestamp derived from endTime (if available)
-11. adherence_score <- actual_minutes / planned_minutes
-12. is_stem <- training_label.isSTEM (benchmark target)
+1. source_field
+2. transform_type (direct | derived | proxy | default)
+3. transform_rule
+4. quality_flag (high | medium | low)
+5. missing_rate
 
-## Runtime App Schema (v2, Future Domain Adaptation)
+### Realistic Mapping Policy
+
+1. Not every canonical feature will exist directly in external datasets.
+2. Missing preferred features may be proxied from behavior traces.
+3. If required features cannot be computed, the dataset is not suitable for adherence training.
+4. Optional fields may remain null if unavailable.
+
+### Minimum External Dataset Requirements (for v1 training)
+
+1. Stable learner identifier (or consistently hashable id)
+2. Activity effort signal (duration, count, or equivalent workload proxy)
+3. Performance/completion outcome signal
+4. Enough event ordering (timestamp or sequence) to construct learner-windows
+
+## Runtime App Schema (v2, Domain Adaptation)
 
 These columns are collected from the live system and should become the primary training source over time.
 
@@ -78,7 +93,8 @@ These columns are collected from the live system and should become the primary t
 
 ## Governance and Reporting Rules
 
-1. Report results separately for canonical-v1 (external proxy) and v2 (runtime app) datasets.
-2. Do not claim personalized strategy model training until strategy_label exists in v2 at sufficient scale.
-3. Keep recommendation module rule-based fallback active while strategy_label training data is limited.
-4. Document every proxy variable in Chapter 4 to preserve methodological transparency.
+1. Report results separately for external-initialized (canonical-v1) and runtime (v2) datasets.
+2. Document all proxy assumptions and quality flags for external mappings.
+3. Do not claim personalized strategy model training until strategy_label exists at sufficient scale.
+4. Keep recommendation module rule-based fallback active while strategy_label training data is limited.
+5. Re-evaluate feature availability at each retraining cycle and update adapter documentation.
