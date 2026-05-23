@@ -113,6 +113,8 @@ export type SessionLogResponse = {
   message: string;
   computed: {
     adherence: number;
+    predicted_adherence: number;
+    model_version: string;
     focus_score: number;
     completion_rate: number;
   };
@@ -126,6 +128,8 @@ export type SessionHistoryItem = {
   focus_score: number;
   completion_rate: number;
   adherence_score: number;
+  predicted_adherence: number | null;
+  model_version: string;
   created_at: string;
 };
 
@@ -149,6 +153,30 @@ export type TrainingDataItem = {
 export type TrainingDataResponse = {
   rows: TrainingDataItem[];
   count: number;
+};
+
+export type AdherencePredictionPayload = {
+  planned_minutes: number;
+  actual_minutes_estimate?: number;
+  focus_score?: number;
+  completion_rate?: number;
+  help_seeking_rate?: number | null;
+  avg_quiz_score_recent?: number | null;
+};
+
+export type AdherencePredictionResponse = {
+  predicted_adherence: number;
+  model_version: string;
+  inputs: {
+    planned_minutes: number;
+    actual_minutes_estimate: number;
+    focus_score: number;
+    completion_rate: number;
+    help_seeking_rate: number | null;
+    avg_quiz_score_recent: number | null;
+    sessions_last_7_days: number;
+    consistency_score: number;
+  };
 };
 
 export function registerUser(payload: RegisterPayload): Promise<RegisterResponse> {
@@ -188,4 +216,11 @@ export function getSessionHistory(token: string): Promise<SessionHistoryResponse
 
 export function getTrainingData(token: string): Promise<TrainingDataResponse> {
   return request<TrainingDataResponse>("/tracking/training-data/", "GET", undefined, token);
+}
+
+export function predictAdherence(
+  payload: AdherencePredictionPayload,
+  token: string
+): Promise<AdherencePredictionResponse> {
+  return request<AdherencePredictionResponse>("/tracking/predict/", "POST", payload, token);
 }

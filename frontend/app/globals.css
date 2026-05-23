@@ -242,6 +242,10 @@ a {
   grid-template-columns: 1fr;
 }
 
+.grid.four {
+  grid-template-columns: 1fr;
+}
+
 @media (min-width: 900px) {
   .grid.two {
     grid-template-columns: 1fr 1fr;
@@ -249,6 +253,16 @@ a {
 
   .grid.three {
     grid-template-columns: repeat(3, 1fr);
+  }
+
+  .grid.four {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1200px) {
+  .grid.four {
+    grid-template-columns: repeat(4, 1fr);
   }
 }
 
@@ -279,6 +293,49 @@ a {
   margin-bottom: 8px;
   background: #ecf7f3;
   color: #2b656a;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.text-link {
+  font-family: var(--font-display), sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2b5e6a;
+  border-bottom: 1px solid transparent;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+
+.text-link:hover {
+  color: #1b4a55;
+  border-bottom-color: #1b4a55;
+}
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.pager-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.pager button {
+  width: auto;
+  padding: 6px 12px;
+  font-size: 12px;
 }
 
 .surface-link {

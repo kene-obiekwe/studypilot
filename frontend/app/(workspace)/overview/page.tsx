@@ -25,7 +25,7 @@ const cards = [
   {
     href: "/progress",
     title: "Track My Progress",
-    text: "Log each session, monitor adherence, and improve your study habits over time.",
+    text: "Log each session, preview adherence forecasts, and refine your study habits over time.",
     icon: BarChart3,
   },
 ];
@@ -34,6 +34,7 @@ const learnerBenefits = [
   "Reduce stress with structured weekly study planning",
   "Improve consistency with reminders and progress tracking",
   "Use AI suggestions to refine your learning strategy",
+  "Forecast adherence before each session to calibrate your plan",
 ];
 
 export default function OverviewPage() {
@@ -59,7 +60,7 @@ export default function OverviewPage() {
             <li>Authentication: create account or sign in</li>
             <li>Study Planner: generate your weekly timetable</li>
             <li>Recommendations: get AI learning strategy tips</li>
-            <li>Progress: log sessions and monitor adherence</li>
+            <li>Progress: forecast adherence, log sessions, and monitor performance</li>
           </ol>
         </article>
 
