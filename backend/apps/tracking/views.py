@@ -47,7 +47,6 @@ class SessionLogView(APIView):
         consistency_score = min(1.0, sessions_last_7_days / 7.0)
         feature_payload = build_feature_payload(
             planned_minutes=payload["planned_minutes"],
-            actual_minutes=payload["actual_minutes"],
             completion_rate=payload["completion_rate"],
             sessions_last_7_days=sessions_last_7_days,
             focus_score=payload["focus_score"],
@@ -102,7 +101,6 @@ class AdherencePredictionView(APIView):
         consistency_score = min(1.0, sessions_last_7_days / 7.0)
         feature_payload = build_feature_payload(
             planned_minutes=planned_minutes,
-            actual_minutes=actual_minutes_estimate,
             completion_rate=completion_rate,
             sessions_last_7_days=sessions_last_7_days,
             focus_score=focus_score,

@@ -15,7 +15,6 @@ from sklearn.ensemble import RandomForestRegressor
 
 FEATURE_COLUMNS = [
     "planned_minutes",
-    "actual_minutes",
     "completion_rate",
     "sessions_last_7_days",
     "focus_score",
@@ -24,6 +23,8 @@ FEATURE_COLUMNS = [
     "avg_quiz_score_recent",
     "created_at",
 ]
+
+QUALITY_COLUMNS = list(dict.fromkeys(FEATURE_COLUMNS + ["actual_minutes"]))
 
 
 def parse_args() -> argparse.Namespace:
@@ -102,7 +103,7 @@ def data_quality_checks(df: pd.DataFrame) -> dict:
     checks = {
         "row_count": int(len(df)),
         "duplicate_rows": int(df.duplicated().sum()),
-        "missing_rate": df[FEATURE_COLUMNS + ["adherence_score"]].isna().mean().round(4).to_dict(),
+        "missing_rate": df[QUALITY_COLUMNS + ["adherence_score"]].isna().mean().round(4).to_dict(),
         "adherence_out_of_bounds": int(((df["adherence_score"] < 0) | (df["adherence_score"] > 1)).sum()),
         "completion_rate_out_of_bounds": int(((df["completion_rate"] < 0) | (df["completion_rate"] > 1)).sum()),
         "planned_minutes_non_positive": int((df["planned_minutes"] <= 0).sum()),

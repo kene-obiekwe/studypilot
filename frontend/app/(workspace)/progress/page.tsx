@@ -30,7 +30,6 @@ export default function ProgressPage() {
   const [error, setError] = useState("");
   const [result, setResult] = useState<SessionLogResponse | null>(null);
   const [predictPlannedMinutes, setPredictPlannedMinutes] = useState(120);
-  const [predictActualMinutes, setPredictActualMinutes] = useState(90);
   const [predictFocusScore, setPredictFocusScore] = useState(0.6);
   const [predictCompletionRate, setPredictCompletionRate] = useState(0.7);
   const [predictHelpSeekingRate, setPredictHelpSeekingRate] = useState<number | "">("");
@@ -131,7 +130,6 @@ export default function ProgressPage() {
       const response = await predictAdherence(
         {
           planned_minutes: predictPlannedMinutes,
-          actual_minutes_estimate: predictActualMinutes,
           focus_score: predictFocusScore,
           completion_rate: predictCompletionRate,
           help_seeking_rate: predictHelpSeekingRate === "" ? null : Number(predictHelpSeekingRate),
@@ -438,7 +436,7 @@ export default function ProgressPage() {
                     <strong>{rec.preferred_style}</strong> | {formatDate(rec.created_at)}
                     <br />
                     <small>
-                      Focus: {(rec.focus_score * 100).toFixed(0)}% | Completion: {(rec.completion_rate * 100).toFixed(0)}%
+                      Focus: {(rec.focus_score * 100).toFixed(0)}% | Completion: {(rec.completion_rate * 100).toFixed(0)}% | Confidence: {(rec.confidence * 100).toFixed(0)}%
                     </small>
                     <div style={{ marginTop: 6 }}>
                       {rec.strategies_json.map((item) => (
@@ -523,7 +521,7 @@ export default function ProgressPage() {
                     <strong>{rec.preferred_style}</strong> | {formatDate(rec.created_at)}
                     <br />
                     <small>
-                      Focus: {(rec.focus_score * 100).toFixed(0)}% | Completion: {(rec.completion_rate * 100).toFixed(0)}%
+                      Focus: {(rec.focus_score * 100).toFixed(0)}% | Completion: {(rec.completion_rate * 100).toFixed(0)}% | Confidence: {(rec.confidence * 100).toFixed(0)}%
                     </small>
                     <div style={{ marginTop: 6 }}>
                       {rec.strategies_json.map((item) => (
@@ -635,6 +633,7 @@ export default function ProgressPage() {
           <h3>
             <Sparkles size={18} style={{ verticalAlign: "-3px", marginRight: 6 }} /> Adherence Predictor
           </h3>
+          <p>Forecasts adherence using planned minutes and behavioral signals (no actual minutes needed).</p>
 
           <form className="form-grid" onSubmit={onPredict}>
             <label>
@@ -644,15 +643,6 @@ export default function ProgressPage() {
                 min={1}
                 value={predictPlannedMinutes}
                 onChange={(e) => setPredictPlannedMinutes(Number(e.target.value))}
-              />
-            </label>
-            <label>
-              Actual minutes estimate
-              <input
-                type="number"
-                min={0}
-                value={predictActualMinutes}
-                onChange={(e) => setPredictActualMinutes(Number(e.target.value))}
               />
             </label>
             <label>

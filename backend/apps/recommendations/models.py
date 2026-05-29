@@ -8,4 +8,5 @@ class RecommendationLog(models.Model):
     completion_rate = models.FloatField()
     preferred_style = models.CharField(max_length=20)
     strategies_json = models.JSONField(default=list)
+    confidence = models.FloatField(default=0.0)
     created_at = models.DateTimeField(auto_now_add=True)

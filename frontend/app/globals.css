@@ -51,6 +51,13 @@ a {
   gap: 12px;
 }
 
+.home-shell {
+  width: min(1100px, 100% - 24px);
+  margin: 28px auto 40px;
+  display: grid;
+  gap: 18px;
+}
+
 @media (min-width: 960px) {
   .app-shell {
     grid-template-columns: 280px 1fr;
@@ -169,6 +176,14 @@ a {
   min-height: 30px;
 }
 
+.crumbs-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .crumb-item {
   display: inline-flex;
   align-items: center;
@@ -222,6 +237,18 @@ a {
 .hero h1,
 .hero h2 {
   margin: 12px 0 6px;
+}
+
+.home-hero h1 {
+  font-size: clamp(28px, 4vw, 40px);
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
 }
 
 .hero p {
@@ -397,9 +424,43 @@ button.secondary {
   color: #27424a;
 }
 
+button.ghost {
+  border-color: transparent;
+  background: #f4f8f6;
+}
+
+button.ghost:hover {
+  background: #eaf2ef;
+}
+
 button:disabled {
   opacity: 0.58;
   cursor: not-allowed;
+}
+
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--brand);
+  background: linear-gradient(180deg, var(--brand) 0%, var(--brand-strong) 100%);
+  color: #fff;
+  font-family: var(--font-display), sans-serif;
+  font-weight: 700;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.button-link:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 22px -18px rgba(16, 52, 63, 0.55);
+}
+
+.button-link.secondary {
+  background: #fff;
+  color: #27424a;
+  border-color: #c9d9d5;
 }
 
 .actions {

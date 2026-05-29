@@ -101,6 +101,9 @@ export default function RecommendationsPage() {
       {result && (
         <article className="card animate-in">
           <h3>Recommended Strategy Set</h3>
+          <div className="pill-row" style={{ marginTop: 10 }}>
+            <span className="pill">Confidence: {(result.confidence * 100).toFixed(0)}%</span>
+          </div>
           <ul>
             {result.strategies.map((strategy) => (
               <li key={strategy}>{strategy}</li>

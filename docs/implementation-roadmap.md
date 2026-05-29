@@ -48,11 +48,11 @@
 ### Phase 2: Adaptive Intelligence (Weeks 3-5)
 
 1. Add progress capture and analytics features
-2. Implement optimisation loop for schedules
+2. Implement optimisation loop for schedules (adherence-based adjustment)
 3. Build feature engineering pipeline from logged study events
 4. Train first adherence and strategy models
 5. Integrate model inference into planner/recommendation services
-6. Introduce recommendation confidence scores
+6. Introduce recommendation confidence scores (heuristic)
 
 ### Phase 3: Evaluation and Hardening (Weeks 6-8)
 

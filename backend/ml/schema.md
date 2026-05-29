@@ -25,7 +25,7 @@ One row per learner-window (for example learner-week or rolling activity window)
 
 1. user_id (int, required)
 2. planned_minutes (float, required)
-3. actual_minutes (float, required)
+3. actual_minutes (float, required for target construction)
 4. completion_rate (float in [0,1], required)
 5. sessions_last_7_days (int, required; proxy allowed)
 6. focus_score (float in [0,1], preferred; proxy allowed)
@@ -33,6 +33,20 @@ One row per learner-window (for example learner-week or rolling activity window)
 8. consistency_score (float in [0,1], preferred; proxy allowed)
 9. avg_quiz_score_recent (float, optional)
 10. created_at (datetime, optional but recommended)
+
+### Predictor Feature Set (Adherence Model v2)
+
+1. planned_minutes
+2. completion_rate
+3. sessions_last_7_days
+4. focus_score
+5. help_seeking_rate
+6. consistency_score
+7. avg_quiz_score_recent
+8. created_at
+
+Notes:
+- actual_minutes is used only to compute the adherence_score target and is not used as an input feature.
 
 ### Targets
 

@@ -2,24 +2,25 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { KeyRound, LogIn, UserPlus } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { loginUser, registerUser } from "@/lib/api";
 import { clearStoredToken, getStoredToken, setStoredToken } from "@/lib/session";
 
 export default function AuthPage() {
+  const router = useRouter();
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authState, setAuthState] = useState("No active session");
   const [error, setError] = useState("");
-  const [tokenPreview, setTokenPreview] = useState("");
 
   useEffect(() => {
     const token = getStoredToken();
     if (token) {
       setAuthState("Authenticated");
-      setTokenPreview(token.slice(0, 22) + "...");
+      router.replace("/overview");
     }
-  }, []);
+  }, [router]);
 
   const onRegister = async (event: FormEvent) => {
     event.preventDefault();
@@ -40,8 +41,8 @@ export default function AuthPage() {
     try {
       const response = await loginUser({ username, password });
       setStoredToken(response.access);
-      setTokenPreview(response.access.slice(0, 22) + "...");
       setAuthState("Authenticated");
+      router.push("/overview");
     } catch (err) {
       setError((err as Error).message);
       setAuthState("Login failed");
@@ -50,7 +51,6 @@ export default function AuthPage() {
 
   const onLogout = () => {
     clearStoredToken();
-    setTokenPreview("");
     setAuthState("No active session");
   };
 
@@ -101,7 +101,6 @@ export default function AuthPage() {
           </div>
         </form>
 
-        {tokenPreview && <div className="notice ok">Token: {tokenPreview}</div>}
         {error && <div className="notice error">{error}</div>}
       </article>
     </div>

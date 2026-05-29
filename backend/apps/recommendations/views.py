@@ -13,13 +13,15 @@ class RecommendationView(APIView):
         request_serializer.is_valid(raise_exception=True)
         payload = request_serializer.validated_data
 
-        strategies = get_recommendations(
+        strategies, confidence = get_recommendations(
             focus_score=payload["focus_score"],
             completion_rate=payload["completion_rate"],
             preferred_style=payload["preferred_style"],
         )
 
-        response_serializer = RecommendationResponseSerializer(data={"strategies": strategies})
+        response_serializer = RecommendationResponseSerializer(
+            data={"strategies": strategies, "confidence": confidence}
+        )
         response_serializer.is_valid(raise_exception=True)
 
         RecommendationLog.objects.create(
@@ -28,6 +30,7 @@ class RecommendationView(APIView):
             completion_rate=payload["completion_rate"],
             preferred_style=payload["preferred_style"],
             strategies_json=strategies,
+            confidence=confidence,
         )
 
         return Response(response_serializer.data)

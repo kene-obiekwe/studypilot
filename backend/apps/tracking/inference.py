@@ -11,7 +11,6 @@ from django.conf import settings
 
 FEATURE_COLUMNS = [
     "planned_minutes",
-    "actual_minutes",
     "completion_rate",
     "sessions_last_7_days",
     "focus_score",
@@ -21,14 +20,13 @@ FEATURE_COLUMNS = [
     "created_at",
 ]
 
-MODEL_VERSION = "oulad_adherence_v1"
+MODEL_VERSION = "oulad_adherence_v2"
 MODEL_PATH = Path(settings.BASE_DIR) / "ml" / "models" / "oulad_adherence_model.joblib"
 
 
 def build_feature_payload(
     *,
     planned_minutes: int,
-    actual_minutes: int,
     completion_rate: float,
     sessions_last_7_days: int,
     focus_score: float,
@@ -39,7 +37,6 @@ def build_feature_payload(
 ) -> dict[str, Any]:
     return {
         "planned_minutes": planned_minutes,
-        "actual_minutes": actual_minutes,
         "completion_rate": completion_rate,
         "sessions_last_7_days": sessions_last_7_days,
         "focus_score": focus_score,

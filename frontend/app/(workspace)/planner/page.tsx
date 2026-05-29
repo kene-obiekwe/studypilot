@@ -131,6 +131,12 @@ export default function PlannerPage() {
                 <span className="pill">Hours: {item.allocated_hours}</span>
                 <span className="pill">Focus: {item.focus_block_minutes} mins</span>
                 <span className="pill">Break: {item.break_minutes} mins</span>
+                {typeof item.adherence_factor === "number" && (
+                  <span className="pill">Adj x{item.adherence_factor.toFixed(2)}</span>
+                )}
+                {typeof item.base_hours === "number" && item.base_hours !== item.allocated_hours && (
+                  <span className="pill">Base: {item.base_hours}h</span>
+                )}
               </div>
             </article>
           ))}

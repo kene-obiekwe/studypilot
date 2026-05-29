@@ -55,6 +55,8 @@ export type PlanResponse = {
     allocated_hours: number;
     focus_block_minutes: number;
     break_minutes: number;
+    base_hours?: number;
+    adherence_factor?: number;
   }>;
 };
 
@@ -86,6 +88,7 @@ export type RecommendationPayload = {
 
 export type RecommendationResponse = {
   strategies: string[];
+  confidence: number;
 };
 
 export type RecommendationHistoryItem = {
@@ -94,6 +97,7 @@ export type RecommendationHistoryItem = {
   completion_rate: number;
   preferred_style: string;
   strategies_json: string[];
+  confidence: number;
   created_at: string;
 };
 
@@ -157,7 +161,6 @@ export type TrainingDataResponse = {
 
 export type AdherencePredictionPayload = {
   planned_minutes: number;
-  actual_minutes_estimate?: number;
   focus_score?: number;
   completion_rate?: number;
   help_seeking_rate?: number | null;
@@ -169,7 +172,6 @@ export type AdherencePredictionResponse = {
   model_version: string;
   inputs: {
     planned_minutes: number;
-    actual_minutes_estimate: number;
     focus_score: number;
     completion_rate: number;
     help_seeking_rate: number | null;

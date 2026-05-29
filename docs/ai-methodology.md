@@ -11,7 +11,7 @@ The system uses AI for two main tasks:
 
 ### Task A: Adherence Prediction (Regression)
 
-- Input: learner profile + course/workload + recent study behavior.
+- Input: learner profile + course/workload + recent study behavior (planned minutes, completion rate, consistency, focus, etc.).
 - Output: predicted adherence score in range [0, 1].
 - Why: helps optimise schedule intensity and reminder frequency.
 
@@ -46,14 +46,16 @@ Data storage principles:
 Create one row per learner-window (or session window) after external-to-canonical mapping, with features such as:
 
 1. planned_minutes
-2. actual_minutes
-3. completion_rate
-4. focus_score
-5. difficulty_mean
-6. deadlines_within_7_days
-7. sessions_in_last_7_days
-8. style_encoded
-9. target: adherence_score or strategy_label (if a valid label is available)
+2. completion_rate
+3. focus_score
+4. difficulty_mean
+5. deadlines_within_7_days
+6. sessions_in_last_7_days
+7. style_encoded
+8. target: adherence_score or strategy_label (if a valid label is available)
+
+Notes:
+- actual_minutes is retained for label construction (adherence = actual_minutes / planned_minutes) but is not used as a predictor feature.
 
 ## 5. Data Preprocessing and Features
 
@@ -66,6 +68,7 @@ Create one row per learner-window (or session window) after external-to-canonica
    - scale continuous features for linear/boosting models.
 4. Leakage prevention:
    - split train/test by user and time where possible.
+   - avoid using label-defining variables (e.g., actual_minutes) as input features.
 
 ## 6. Model Training Approach
 

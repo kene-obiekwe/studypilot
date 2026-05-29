@@ -31,6 +31,11 @@
 6. Testing and evaluation metrics
 7. Model artifact versioning and deployment workflow
 
+### Implementation Notes (Current System)
+
+- Planner optimisation loop: study allocations are adjusted using recent adherence predictions per course.
+- Recommendation confidence: heuristic confidence score is returned with strategy suggestions and stored for history.
+
 ## 4.5 User Interface Implementation
 
 - Screens and interaction flow

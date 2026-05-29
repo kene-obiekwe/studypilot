@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Bot, CalendarClock, Compass, KeyRound, Sparkles } from "lucide-react";
+import { BarChart3, Bot, CalendarClock, Compass, Sparkles } from "lucide-react";
 
 const navItems = [
   { href: "/overview", label: "Overview", icon: Compass },
-  { href: "/auth", label: "Authentication", icon: KeyRound },
   { href: "/planner", label: "Study Planner", icon: CalendarClock },
   { href: "/recommendations", label: "Recommendations", icon: Bot },
   { href: "/progress", label: "Progress", icon: BarChart3 },
