@@ -230,11 +230,13 @@ def main() -> None:
         0,
     )
 
-    window_df["completion_rate"] = np.where(
-        window_df["mean_score"].notna(),
-        window_df["mean_score"] / 100.0,
-        engagement_ratio,
-    )
+    # completion_rate is derived ONLY from assessment scores. Falling back to
+    # engagement_ratio (as in an earlier version) made completion_rate identical
+    # to adherence_score for the ~78% of rows without assessment data, producing
+    # severe target leakage. Leaving NaN here lets the model's median imputer
+    # handle missingness while keeping completion_rate and adherence_score
+    # derived from independent signals.
+    window_df["completion_rate"] = window_df["mean_score"] / 100.0
 
     p90 = np.percentile(window_df["avg_clicks_per_active_day"], 90) if len(window_df) else 1.0
     p90 = p90 if p90 > 0 else 1.0
@@ -254,12 +256,14 @@ def main() -> None:
     window_df["adherence_score"] = clip_01(engagement_ratio)
     window_df["strategy_label"] = ""
 
+    completion_rate_clipped = window_df["completion_rate"].clip(lower=0, upper=1)
+
     output_df = pd.DataFrame(
         {
             "user_id": window_df["id_student"],
             "planned_minutes": window_df["planned_minutes"],
             "actual_minutes": window_df["actual_minutes"],
-            "completion_rate": clip_01(window_df["completion_rate"]),
+            "completion_rate": completion_rate_clipped,
             "sessions_last_7_days": window_df["sessions_last_7_days"],
             "focus_score": window_df["focus_score"],
             "help_seeking_rate": window_df["help_seeking_rate"],
@@ -287,7 +291,7 @@ def main() -> None:
         "proxy_definitions": {
             "actual_minutes": "total_clicks / clicks_per_minute",
             "planned_minutes": "median total_clicks per module/presentation/window / clicks_per_minute",
-            "completion_rate": "mean assessment score (if available) else engagement_ratio",
+            "completion_rate": "mean assessment score / 100 if assessment data available, else NaN (imputer handles missingness; engagement_ratio fallback was removed to avoid target leakage with adherence_score)",
             "focus_score": "avg_clicks_per_active_day scaled by p90",
             "help_seeking_rate": "help_clicks / total_clicks using activity_type keywords",
             "consistency_score": "active_days / window_size",

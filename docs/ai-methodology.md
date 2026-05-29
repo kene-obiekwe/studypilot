@@ -2,10 +2,10 @@
 
 ## 1. AI Objectives
 
-The system uses AI for two main tasks:
+The system uses AI for one supervised task and one rule-based task:
 
-1. Predicting adherence to planned study sessions.
-2. Recommending the best study strategy category for each student context.
+1. Predicting adherence to planned study sessions (supervised regression).
+2. Recommending a study strategy category for each student context (rule-based engine with heuristic confidence). Supervised strategy classification is deferred until sufficient in-app strategy-label data is collected, because external datasets used for initial training do not carry trustworthy strategy labels.
 
 ## 2. Problem Formulation
 
@@ -15,11 +15,12 @@ The system uses AI for two main tasks:
 - Output: predicted adherence score in range [0, 1].
 - Why: helps optimise schedule intensity and reminder frequency.
 
-### Task B: Strategy Recommendation (Classification)
+### Task B: Strategy Recommendation (Rule-Based with Confidence)
 
-- Input: learner style, performance trend, focus/consistency signals.
-- Output: strategy class (visual, reading, practice, mixed).
-- Why: personalises study approach beyond static tips.
+- Input: learner style, focus score, completion rate.
+- Output: ranked strategy set drawn from {visual, reading, practice, mixed} variants, with a heuristic confidence value.
+- Why: external training datasets do not carry validated strategy labels, so a supervised classifier would be circular. A transparent rule engine preserves explainability and is the recommended posture until in-app strategy outcomes accumulate at sufficient scale (see `backend/ml/schema.md` governance rules).
+- Future work: once enough in-app labels exist, a supervised classifier (RandomForest) will be trained, evaluated against the rule engine, and deployed behind the same API with rule fallback.
 
 ## 3. Data Collection Plan
 
@@ -76,14 +77,15 @@ Baseline and improved models are both required for a strong defence.
 
 ### Baseline
 
-1. Rule-based scheduling and recommendation heuristics.
+1. Rule-based scheduling for the planner (mean adherence per course).
+2. Rule-based strategy engine for recommendations (production module; not just a baseline).
 
 ### ML Candidates
 
-1. Adherence prediction: RandomForestRegressor or GradientBoostingRegressor.
-2. Strategy recommendation: RandomForestClassifier.
+1. Adherence prediction (Task A, current scope): RandomForestRegressor or GradientBoostingRegressor.
+2. Strategy recommendation (Task B, future work): RandomForestClassifier, trained on in-app strategy outcomes once available.
 
-Training protocol:
+Training protocol (applies to Task A):
 
 1. Train/validation/test split (e.g., 70/15/15).
 2. Cross-validation on training data.
@@ -98,7 +100,7 @@ Training protocol:
 2. RMSE
 3. R2
 
-### Classification Metrics (Task B)
+### Classification Metrics (Task B, future work only)
 
 1. Accuracy
 2. Precision
@@ -106,10 +108,12 @@ Training protocol:
 4. F1-score
 5. Confusion matrix
 
+These metrics are not reported in the current implementation because the rule engine has no comparator model. They are listed here as the evaluation contract for the deferred supervised classifier.
+
 Required comparison:
 
-1. Baseline rules vs ML model results.
-2. Show where ML improves recommendation/adherence outcomes.
+1. Adherence: baseline (mean of training targets) vs ML model on MAE, RMSE, R².
+2. Recommendation: rule-engine outputs reviewed qualitatively against expected strategy patterns; quantitative comparison deferred to future work alongside the supervised classifier.
 
 ## 8. Deployment in the System
 
@@ -138,8 +142,8 @@ Required comparison:
 
 ## 11. What to Say in Defence
 
-1. The system started with a rule-based baseline to guarantee functionality.
-2. Initial model training uses curated external educational datasets because pilot user-input data is too limited for reliable supervised learning.
-3. Models are trained/tested with defined metrics and compared with baseline.
-4. Only validated models are deployed, with rule fallback for robustness.
+1. The system started with rule-based modules to guarantee functionality across both AI tasks.
+2. The adherence model (Task A) is trained on a curated external educational dataset because pilot user-input data is too limited for reliable supervised learning, and evaluated against a mean-prediction baseline using MAE, RMSE, and R².
+3. The recommendation module (Task B) is intentionally rule-based with a heuristic confidence score: external datasets do not carry validated strategy labels, so supervised classification would be circular. Supervised classification is deferred to future work once in-app strategy outcomes accumulate at sufficient scale.
+4. Only validated models are deployed, with rule fallback for robustness if the model artifact is missing or inference fails.
 5. Continuous monitoring is active, and retraining shifts progressively to real in-app data once sufficient scale is reached.

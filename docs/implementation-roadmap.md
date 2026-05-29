@@ -13,8 +13,8 @@
 ## AI Methodology (Defence-Critical)
 
 1. Define prediction tasks:
-	- Task A: Predict study session adherence (regression).
-	- Task B: Recommend effective strategy category (classification/ranking).
+	- Task A: Predict study session adherence (supervised regression).
+	- Task B: Recommend effective strategy category (rule-based engine with heuristic confidence; supervised classification deferred until in-app strategy-label data is available, because external datasets used for initial training do not carry trustworthy strategy labels).
 2. Build dataset pipeline:
 	- Collect onboarding/profile signals, course workload, planned sessions, actual sessions, focus scores, completion rates.
 	- Store anonymized training rows for model training.
@@ -22,12 +22,11 @@
 	- Handle missing values, normalize numeric features, encode categorical features.
 	- Split by user/time to avoid leakage.
 4. Train baseline and improved models:
-	- Baseline: rule-based engine.
-	- ML: tree-based models (Random Forest / Gradient Boosting).
+	- Adherence (Task A): mean-prediction baseline vs Random Forest / Gradient Boosting regressor.
+	- Strategy (Task B): rule engine is the production module; supervised classifier is future work.
 5. Evaluate and compare:
-	- Regression metrics: MAE, RMSE, R2.
-	- Classification metrics: Accuracy, Precision, Recall, F1.
-	- Compare against rule-based baseline.
+	- Adherence regression metrics: MAE, RMSE, R² — model vs mean-prediction baseline.
+	- Strategy classification metrics (Accuracy, Precision, Recall, F1) listed as the evaluation contract for the deferred supervised classifier; not reported in the current scope.
 6. Deploy inference:
 	- Export models as versioned artifacts and load in Django service layer.
 7. Monitor and retrain:
@@ -50,8 +49,8 @@
 1. Add progress capture and analytics features
 2. Implement optimisation loop for schedules (adherence-based adjustment)
 3. Build feature engineering pipeline from logged study events
-4. Train first adherence and strategy models
-5. Integrate model inference into planner/recommendation services
+4. Train first adherence model (supervised) and finalise rule engine for strategy recommendation
+5. Integrate adherence inference into planner; recommendation service remains rule-based
 6. Introduce recommendation confidence scores (heuristic)
 
 ### Phase 3: Evaluation and Hardening (Weeks 6-8)
