@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { KeyRound, LogIn, UserPlus } from "lucide-react";
+import { KeyRound, LogIn, Sparkles, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { loginUser, registerUser } from "@/lib/api";
 import { clearStoredToken, getStoredToken, setStoredToken } from "@/lib/session";
@@ -55,54 +55,81 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="grid" style={{ gap: 14 }}>
-      <section className="hero">
-        <span className="kicker">Step 1</span>
+    <main className="home-shell">
+      <section className="hero animate-in">
+        <span className="kicker">
+          <Sparkles size={12} /> Step 1
+        </span>
         <h2>Authentication</h2>
-        <p>Create an account and sign in to use protected planning and AI recommendation endpoints.</p>
+        <p>
+          Create an account or sign in to unlock the workspace, generate plans, receive recommendations,
+          and track adherence.
+        </p>
       </section>
 
-      <article className="card">
-        <h3>
-          <KeyRound size={18} style={{ verticalAlign: "-3px", marginRight: 6 }} /> Session Access
-        </h3>
-        <p>Current state: {authState}</p>
+      <section className="grid two stagger">
+        <article className="card">
+          <h3>
+            <KeyRound size={16} /> Session access
+          </h3>
+          <p className="muted-text" style={{ marginTop: 4 }}>Current state: {authState}</p>
 
-        <form className="form-grid" onSubmit={onRegister}>
-          <label>
-            Username
-            <input value={username} onChange={(e) => setUsername(e.target.value)} required />
-          </label>
-          <label>
-            Email
-            <input value={email} type="email" onChange={(e) => setEmail(e.target.value)} required />
-          </label>
-          <label>
-            Password
-            <input
-              value={password}
-              type="password"
-              minLength={8}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </label>
+          <form className="form-grid" onSubmit={onRegister}>
+            <label>
+              Username
+              <input value={username} onChange={(e) => setUsername(e.target.value)} required />
+            </label>
+            <label>
+              Email
+              <input
+                value={email}
+                type="email"
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Password
+              <input
+                value={password}
+                type="password"
+                minLength={8}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </label>
 
-          <div className="actions">
-            <button type="submit">
-              <UserPlus size={16} style={{ verticalAlign: "-2px", marginRight: 6 }} /> Register
-            </button>
-            <button type="button" className="secondary" onClick={() => void onLogin()}>
-              <LogIn size={16} style={{ verticalAlign: "-2px", marginRight: 6 }} /> Login
-            </button>
-            <button type="button" className="secondary" onClick={onLogout}>
-              Clear Session
-            </button>
-          </div>
-        </form>
+            <div className="actions">
+              <button type="submit">
+                <UserPlus size={14} style={{ verticalAlign: "-2px", marginRight: 6 }} /> Register
+              </button>
+              <button type="button" className="secondary" onClick={() => void onLogin()}>
+                <LogIn size={14} style={{ verticalAlign: "-2px", marginRight: 6 }} /> Login
+              </button>
+              <button type="button" className="ghost" onClick={onLogout}>
+                Clear session
+              </button>
+            </div>
+          </form>
 
-        {error && <div className="notice error">{error}</div>}
-      </article>
-    </div>
+          {error && <div className="notice error">{error}</div>}
+        </article>
+
+        <article className="card">
+          <h3>
+            <Sparkles size={16} /> What sits behind the login
+          </h3>
+          <ul>
+            <li>JWT-secured workspace with planner, recommendations, and tracking APIs.</li>
+            <li>Adherence model loaded on the backend and surfaced through a session-free predictor.</li>
+            <li>Rule-based recommendation engine with heuristic confidence.</li>
+            <li>Persisted history paginated across plans, recommendations, and sessions.</li>
+          </ul>
+          <p className="muted-text">
+            New here? Register first; you will be redirected to the overview after a successful login.
+          </p>
+        </article>
+      </section>
+    </main>
   );
 }

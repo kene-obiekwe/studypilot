@@ -18,7 +18,7 @@ export function MainNav() {
     <aside className="panel nav-panel animate-in">
       <div className="nav-head">
         <span className="brand-kicker">
-          <Sparkles size={14} /> StudyPilot AI
+          <Sparkles size={12} /> StudyPilot AI
         </span>
         <h1 className="brand-title">Smart Study Workspace</h1>
         <p className="brand-sub">Plan, adapt, and improve your learning rhythm.</p>
@@ -27,11 +27,12 @@ export function MainNav() {
       <nav className="nav-links" aria-label="Primary">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const active = pathname === item.href;
-
+          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
             <Link key={item.href} className={`nav-link ${active ? "active" : ""}`} href={item.href}>
-              <Icon size={17} />
+              <span className="nav-icon">
+                <Icon size={16} />
+              </span>
               <span>{item.label}</span>
             </Link>
           );

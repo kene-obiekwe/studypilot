@@ -1,51 +1,63 @@
 import Link from "next/link";
-import { BarChart3, Bot, CalendarClock, KeyRound, Sparkles, Target } from "lucide-react";
+import {
+  BarChart3,
+  Bot,
+  CalendarClock,
+  CheckCircle2,
+  Compass,
+  KeyRound,
+  Sparkles,
+  Target,
+} from "lucide-react";
 
 const projectName = "AI Powered Personalised Study Planning and Learning Recommendation System";
 
-const cards = [
+const journey = [
   {
     href: "/auth",
-    title: "Sign In and Set Up",
-    text: "Create your learner account and access your personalized workspace.",
+    title: "Sign in",
+    text: "Authenticate and access your personalised workspace.",
     icon: KeyRound,
   },
   {
     href: "/planner",
-    title: "Build My Study Timetable",
-    text: "Generate a weekly plan that matches your available time and course demands.",
+    title: "Build my timetable",
+    text: "Generate a weekly plan that matches your time and course difficulty.",
     icon: CalendarClock,
   },
   {
     href: "/recommendations",
-    title: "Get AI Study Strategies",
-    text: "Receive adaptive strategy suggestions based on your focus and completion patterns.",
+    title: "Get AI strategies",
+    text: "Receive adaptive strategy suggestions from your focus and completion patterns.",
     icon: Bot,
   },
   {
     href: "/progress",
-    title: "Track My Progress",
-    text: "Log each session, preview adherence forecasts, and refine your study habits over time.",
+    title: "Track and forecast",
+    text: "Log sessions, preview adherence forecasts, and refine habits.",
     icon: BarChart3,
   },
 ];
 
-const learnerBenefits = [
-  "Reduce stress with structured weekly study planning",
-  "Improve consistency with reminders and progress tracking",
-  "Use AI suggestions to refine your learning strategy",
-  "Forecast adherence before each session to calibrate your plan",
+const benefits = [
+  "Structured weekly study planning that reduces stress",
+  "Adaptive AI suggestions tuned to your behaviour",
+  "Adherence forecasts before each session to calibrate intensity",
+  "Reflective analytics across plans, recommendations, and sessions",
 ];
 
 export default function OverviewPage() {
   return (
-    <div className="grid" style={{ gap: 16 }}>
-      <section className="hero">
-        <span className="kicker">Learner Home</span>
+    <div className="grid" style={{ gap: 18 }}>
+      <section className="hero animate-in">
+        <span className="kicker">
+          <Compass size={12} /> Learner Home
+        </span>
         <h2>{projectName}</h2>
         <p>
-          This system is designed for you as a learner. It helps you plan your study time, receive adaptive strategy
-          recommendations, and continuously improve study performance through reflection and tracking.
+          This workspace turns your courses, available time, and recent behaviour into a personalised
+          weekly plan and adaptive learning strategies. Move through the journey below or jump straight to
+          a tool from the navigation.
         </p>
       </section>
 
@@ -54,13 +66,13 @@ export default function OverviewPage() {
           <span className="card-icon">
             <Target size={18} />
           </span>
-          <h3>Your Quick Start</h3>
-          <p>Move through these screens in order for the best experience:</p>
+          <h3>Your quick start</h3>
+          <p>Use these steps in order the first time you sign in:</p>
           <ol>
-            <li>Authentication: create account or sign in</li>
-            <li>Study Planner: generate your weekly timetable</li>
-            <li>Recommendations: get AI learning strategy tips</li>
-            <li>Progress: forecast adherence, log sessions, and monitor performance</li>
+            <li>Authentication — create or sign in to your account.</li>
+            <li>Study Planner — generate your weekly timetable.</li>
+            <li>Recommendations — receive AI strategy guidance.</li>
+            <li>Progress — log sessions, forecast adherence, and review history.</li>
           </ol>
         </article>
 
@@ -68,17 +80,20 @@ export default function OverviewPage() {
           <span className="card-icon">
             <Sparkles size={18} />
           </span>
-          <h3>What You Gain</h3>
+          <h3>What you gain</h3>
           <ul>
-            {learnerBenefits.map((benefit) => (
-              <li key={benefit}>{benefit}</li>
+            {benefits.map((benefit) => (
+              <li key={benefit}>
+                <CheckCircle2 size={14} style={{ verticalAlign: "-2px", marginRight: 6, color: "var(--sky-600)" }} />
+                {benefit}
+              </li>
             ))}
           </ul>
         </article>
       </section>
 
-      <section className="grid two stagger">
-        {cards.map((card) => {
+      <section className="grid four stagger">
+        {journey.map((card) => {
           const Icon = card.icon;
           return (
             <Link key={card.href} href={card.href} className="surface-link card">
