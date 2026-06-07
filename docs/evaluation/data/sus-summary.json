@@ -1,0 +1,19 @@
+{
+  "n": 11,
+  "mean": 61.82,
+  "median": 62.5,
+  "std": 12.45,
+  "min": 45.0,
+  "max": 90.0,
+  "mean_grade": "C (OK)",
+  "above_industry_average_count": 1,
+  "industry_average_reference": 68.0,
+  "grade_distribution": {
+    "A+": 1,
+    "A": 0,
+    "B": 0,
+    "C": 8,
+    "D": 2,
+    "F": 0
+  }
+}

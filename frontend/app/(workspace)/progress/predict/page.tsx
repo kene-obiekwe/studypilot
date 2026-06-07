@@ -85,7 +85,7 @@ export default function ProgressPredictPage() {
                 type="number"
                 min={0}
                 max={1}
-                step={0.1}
+                step={0.01}
                 value={focusScore}
                 onChange={(e) => setFocusScore(Number(e.target.value))}
               />
@@ -96,7 +96,7 @@ export default function ProgressPredictPage() {
                 type="number"
                 min={0}
                 max={1}
-                step={0.1}
+                step={0.01}
                 value={completionRate}
                 onChange={(e) => setCompletionRate(Number(e.target.value))}
               />
@@ -107,7 +107,7 @@ export default function ProgressPredictPage() {
                 type="number"
                 min={0}
                 max={1}
-                step={0.1}
+                step={0.01}
                 value={helpSeeking}
                 onChange={(e) => setHelpSeeking(e.target.value === "" ? "" : Number(e.target.value))}
               />
@@ -118,7 +118,7 @@ export default function ProgressPredictPage() {
                 type="number"
                 min={0}
                 max={1}
-                step={0.1}
+                step={0.01}
                 value={avgQuiz}
                 onChange={(e) => setAvgQuiz(e.target.value === "" ? "" : Number(e.target.value))}
               />

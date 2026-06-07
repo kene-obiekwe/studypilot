@@ -69,7 +69,7 @@ export default function RecommendationsPage() {
                 type="number"
                 min={0}
                 max={1}
-                step={0.1}
+                step={0.01}
                 value={focusScore}
                 onChange={(e) => setFocusScore(Number(e.target.value))}
               />
@@ -81,7 +81,7 @@ export default function RecommendationsPage() {
                 type="number"
                 min={0}
                 max={1}
-                step={0.1}
+                step={0.01}
                 value={completionRate}
                 onChange={(e) => setCompletionRate(Number(e.target.value))}
               />
