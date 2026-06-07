@@ -55,7 +55,29 @@ export type PlanResponse = {
     allocated_hours: number;
     focus_block_minutes: number;
     break_minutes: number;
+    base_hours?: number;
+    adherence_factor?: number;
   }>;
+};
+
+export type PlanHistoryItem = {
+  id: number;
+  week_start: string;
+  plan_json: {
+    total_available_hours?: number;
+    courses?: Array<{ name?: string; difficulty?: number }>;
+    allocations?: Array<{
+      course?: string;
+      allocated_hours?: number;
+      focus_block_minutes?: number;
+      break_minutes?: number;
+    }>;
+  };
+  created_at: string;
+};
+
+export type PlanHistoryResponse = {
+  items: PlanHistoryItem[];
 };
 
 export type RecommendationPayload = {
@@ -66,6 +88,21 @@ export type RecommendationPayload = {
 
 export type RecommendationResponse = {
   strategies: string[];
+  confidence: number;
+};
+
+export type RecommendationHistoryItem = {
+  id: number;
+  focus_score: number;
+  completion_rate: number;
+  preferred_style: string;
+  strategies_json: string[];
+  confidence: number;
+  created_at: string;
+};
+
+export type RecommendationHistoryResponse = {
+  items: RecommendationHistoryItem[];
 };
 
 export type SessionLogPayload = {
@@ -80,8 +117,67 @@ export type SessionLogResponse = {
   message: string;
   computed: {
     adherence: number;
+    predicted_adherence: number;
+    model_version: string;
     focus_score: number;
     completion_rate: number;
+  };
+};
+
+export type SessionHistoryItem = {
+  id: number;
+  course_name: string;
+  planned_minutes: number;
+  actual_minutes: number;
+  focus_score: number;
+  completion_rate: number;
+  adherence_score: number;
+  predicted_adherence: number | null;
+  model_version: string;
+  created_at: string;
+};
+
+export type SessionHistoryResponse = {
+  items: SessionHistoryItem[];
+};
+
+export type TrainingDataItem = {
+  user_id: number;
+  course_name: string;
+  difficulty: number;
+  planned_minutes: number;
+  actual_minutes: number;
+  focus_score: number;
+  completion_rate: number;
+  adherence_score: number;
+  sessions_last_7_days: number;
+  created_at: string;
+};
+
+export type TrainingDataResponse = {
+  rows: TrainingDataItem[];
+  count: number;
+};
+
+export type AdherencePredictionPayload = {
+  planned_minutes: number;
+  focus_score?: number;
+  completion_rate?: number;
+  help_seeking_rate?: number | null;
+  avg_quiz_score_recent?: number | null;
+};
+
+export type AdherencePredictionResponse = {
+  predicted_adherence: number;
+  model_version: string;
+  inputs: {
+    planned_minutes: number;
+    focus_score: number;
+    completion_rate: number;
+    help_seeking_rate: number | null;
+    avg_quiz_score_recent: number | null;
+    sessions_last_7_days: number;
+    consistency_score: number;
   };
 };
 
@@ -97,6 +193,10 @@ export function generatePlan(payload: PlanPayload, token: string): Promise<PlanR
   return request<PlanResponse>("/planner/generate/", "POST", payload, token);
 }
 
+export function getPlanHistory(token: string): Promise<PlanHistoryResponse> {
+  return request<PlanHistoryResponse>("/planner/history/", "GET", undefined, token);
+}
+
 export function generateRecommendations(
   payload: RecommendationPayload,
   token: string
@@ -104,6 +204,25 @@ export function generateRecommendations(
   return request<RecommendationResponse>("/recommendations/generate/", "POST", payload, token);
 }
 
+export function getRecommendationHistory(token: string): Promise<RecommendationHistoryResponse> {
+  return request<RecommendationHistoryResponse>("/recommendations/history/", "GET", undefined, token);
+}
+
 export function logSession(payload: SessionLogPayload, token: string): Promise<SessionLogResponse> {
   return request<SessionLogResponse>("/tracking/session-log/", "POST", payload, token);
+}
+
+export function getSessionHistory(token: string): Promise<SessionHistoryResponse> {
+  return request<SessionHistoryResponse>("/tracking/history/", "GET", undefined, token);
+}
+
+export function getTrainingData(token: string): Promise<TrainingDataResponse> {
+  return request<TrainingDataResponse>("/tracking/training-data/", "GET", undefined, token);
+}
+
+export function predictAdherence(
+  payload: AdherencePredictionPayload,
+  token: string
+): Promise<AdherencePredictionResponse> {
+  return request<AdherencePredictionResponse>("/tracking/predict/", "POST", payload, token);
 }

@@ -9,3 +9,15 @@ class RecommendationRequestSerializer(serializers.Serializer):
 
 class RecommendationResponseSerializer(serializers.Serializer):
     strategies = serializers.ListField(child=serializers.CharField())
+    confidence = serializers.FloatField()
+
+
+class RecommendationHistorySerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    focus_score = serializers.FloatField()
+    completion_rate = serializers.FloatField()
+    preferred_style = serializers.CharField()
+    strategies_json = serializers.ListField(child=serializers.CharField())
+    confidence = serializers.FloatField()
+    created_at = serializers.DateTimeField()
+

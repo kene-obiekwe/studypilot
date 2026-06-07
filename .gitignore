@@ -18,3 +18,9 @@ node_modules/
 # OS / Editor
 .DS_Store
 Thumbs.db
+
+# Datasets and generated ML artifacts (not committed; regenerated from scripts)
+Dataset/
+backend/ml/data/
+backend/ml/models/
+backend/ml/reports/

@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { clearStoredToken } from "@/lib/session";
+
 const labelMap: Record<string, string> = {
   overview: "Overview",
-  auth: "Authentication",
   planner: "Study Planner",
   recommendations: "Recommendations",
   progress: "Progress",
@@ -25,6 +26,7 @@ function toLabel(segment: string): string {
 
 export function TopChrome() {
   const pathname = usePathname();
+  const router = useRouter();
   const [progressKey, setProgressKey] = useState(0);
 
   useEffect(() => {
@@ -48,29 +50,40 @@ export function TopChrome() {
     return built;
   }, [pathname]);
 
+  const onSignOut = () => {
+    clearStoredToken();
+    router.replace("/");
+  };
+
   return (
     <header className="top-chrome">
       <div className="route-progress-track" aria-hidden="true">
         <span key={progressKey} className="route-progress-bar" />
       </div>
 
-      <nav className="crumbs" aria-label="Breadcrumb">
-        {crumbs.map((crumb, index) => {
-          const isLast = index === crumbs.length - 1;
-          return (
-            <div key={crumb.href} className="crumb-item">
-              {index > 0 && <ChevronRight size={14} className="crumb-sep" />}
-              {isLast ? (
-                <span className="crumb-current">{crumb.label}</span>
-              ) : (
-                <Link href={crumb.href} className="crumb-link">
-                  {crumb.label}
-                </Link>
-              )}
-            </div>
-          );
-        })}
-      </nav>
+      <div className="crumbs-row">
+        <nav className="crumbs" aria-label="Breadcrumb">
+          {crumbs.map((crumb, index) => {
+            const isLast = index === crumbs.length - 1;
+            return (
+              <div key={crumb.href} className="crumb-item">
+                {index > 0 && <ChevronRight size={14} className="crumb-sep" />}
+                {isLast ? (
+                  <span className="crumb-current">{crumb.label}</span>
+                ) : (
+                  <Link href={crumb.href} className="crumb-link">
+                    {crumb.label}
+                  </Link>
+                )}
+              </div>
+            );
+          })}
+        </nav>
+
+        <button type="button" className="secondary ghost" onClick={onSignOut}>
+          Sign out
+        </button>
+      </div>
     </header>
   );
 }

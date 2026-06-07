@@ -1,4 +1,4 @@
-# AI-Powered Personalised Study Planning and Recommendation System
+# AI-Powered Personalised Study Planning and Learning Recommendation System
 
 This workspace contains a starter implementation for this final year project:
 

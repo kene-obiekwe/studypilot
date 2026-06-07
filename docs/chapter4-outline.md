@@ -31,6 +31,13 @@
 6. Testing and evaluation metrics
 7. Model artifact versioning and deployment workflow
 
+### Implementation Notes (Current System)
+
+- Planner optimisation loop: study allocations are adjusted using recent adherence predictions per course.
+- Adherence prediction (Task A): supervised regression trained on a curated external educational dataset; evaluated against a mean-prediction baseline using MAE, RMSE, and R².
+- Strategy recommendation (Task B): production module is a transparent rule engine with a heuristic confidence score; supervised classification is deferred to future work because external datasets do not carry validated strategy labels.
+- Recommendation confidence: heuristic confidence score is returned with strategy suggestions and stored for history.
+
 ## 4.5 User Interface Implementation
 
 - Screens and interaction flow

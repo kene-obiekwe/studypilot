@@ -1,143 +1,228 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { BarChart3 } from "lucide-react";
-import { getStoredToken } from "@/lib/session";
-import { logSession, type SessionLogResponse } from "@/lib/api";
+import {
+  BarChart3,
+  BrainCircuit,
+  Clock3,
+  ListChecks,
+  Sparkles,
+  Target,
+  Trophy,
+} from "lucide-react";
 
-export default function ProgressPage() {
-  const [token, setToken] = useState("");
-  const [courseName, setCourseName] = useState("CSC 401");
-  const [plannedMinutes, setPlannedMinutes] = useState(120);
-  const [actualMinutes, setActualMinutes] = useState(90);
-  const [focusScore, setFocusScore] = useState(0.6);
-  const [completionRate, setCompletionRate] = useState(0.7);
-  const [status, setStatus] = useState("Ready");
-  const [error, setError] = useState("");
-  const [result, setResult] = useState<SessionLogResponse | null>(null);
+import { clampPercent, formatDate, useProgress } from "./_lib/shared";
 
-  useEffect(() => {
-    setToken(getStoredToken());
-  }, []);
+export default function ProgressOverviewPage() {
+  const { token, sessions, plans, recommendations, trainingRows, analytics, isLoading, error, refresh } =
+    useProgress();
 
-  const onSubmit = async (event: FormEvent) => {
-    event.preventDefault();
-    setError("");
-    setStatus("Logging session...");
+  if (!token) {
+    return (
+      <div className="notice info">
+        You are not signed in. Visit Authentication to log in first.
+      </div>
+    );
+  }
 
-    try {
-      const response = await logSession(
-        {
-          course_name: courseName,
-          planned_minutes: plannedMinutes,
-          actual_minutes: actualMinutes,
-          focus_score: focusScore,
-          completion_rate: completionRate,
-        },
-        token
-      );
-
-      setResult(response);
-      setStatus("Session logged");
-    } catch (err) {
-      setStatus("Log failed");
-      setError((err as Error).message);
-    }
-  };
-
-  const adherencePercent = result ? Math.max(0, Math.min(100, result.computed.adherence * 100)) : 0;
+  const recentSessions = sessions.slice(0, 5);
+  const latestPlan = plans[0];
+  const latestRecommendation = recommendations[0];
 
   return (
-    <div className="grid" style={{ gap: 14 }}>
-      <section className="hero">
-        <span className="kicker">Step 4</span>
-        <h2>Progress and Reflective Tracking</h2>
-        <p>Log your study outcomes and track adherence as a signal for future timetable optimisation.</p>
+    <div className="grid" style={{ gap: 18 }}>
+      <section className="hero animate-in">
+        <span className="kicker">
+          <Sparkles size={12} /> Step 4
+        </span>
+        <h2>Your Study Overview</h2>
+        <p>
+          Real-time analytics from your persisted planner, recommendation, and tracking history. Use the tabs
+          above to log a session, run a forecast, or browse the full archive.
+        </p>
+        <div className="pill-row">
+          <span className="pill">{sessions.length} sessions</span>
+          <span className="pill">{plans.length} plans</span>
+          <span className="pill">{recommendations.length} recommendation events</span>
+          <span className="pill accent">Model: {analytics.latestModelVersion}</span>
+        </div>
       </section>
 
-      {!token && <div className="notice">You are not signed in. Visit Authentication to log in first.</div>}
+      <section className="grid four stagger">
+        <article className="stat">
+          <span className="stat-label">
+            <Target size={14} /> Average Adherence
+          </span>
+          <p className="stat-value">{(analytics.avgAdherence * 100).toFixed(0)}%</p>
+          <div className="progress-wrap">
+            <div className="progress-bar" style={{ width: `${clampPercent(analytics.avgAdherence)}%` }} />
+          </div>
+          <p className="stat-meta">Across {sessions.length} logged sessions</p>
+        </article>
 
-      <article className="card">
-        <h3>
-          <BarChart3 size={18} style={{ verticalAlign: "-3px", marginRight: 6 }} /> Session Log Input
-        </h3>
+        <article className="forecast-card stat">
+          <span className="stat-label">
+            <Sparkles size={14} /> AI Forecast (Avg)
+          </span>
+          <p className="stat-value">{(analytics.avgPredicted * 100).toFixed(0)}%</p>
+          <p className="stat-meta">Model: {analytics.latestModelVersion}</p>
+        </article>
 
-        <form className="form-grid" onSubmit={onSubmit}>
-          <label>
-            Course name
-            <input value={courseName} onChange={(e) => setCourseName(e.target.value)} />
-          </label>
-          <label>
-            Planned minutes
-            <input
-              type="number"
-              min={1}
-              value={plannedMinutes}
-              onChange={(e) => setPlannedMinutes(Number(e.target.value))}
-            />
-          </label>
-          <label>
-            Actual minutes
-            <input
-              type="number"
-              min={0}
-              value={actualMinutes}
-              onChange={(e) => setActualMinutes(Number(e.target.value))}
-            />
-          </label>
-          <label>
-            Focus score (0 to 1)
-            <input
-              type="number"
-              min={0}
-              max={1}
-              step={0.1}
-              value={focusScore}
-              onChange={(e) => setFocusScore(Number(e.target.value))}
-            />
-          </label>
-          <label>
-            Completion rate (0 to 1)
-            <input
-              type="number"
-              min={0}
-              max={1}
-              step={0.1}
-              value={completionRate}
-              onChange={(e) => setCompletionRate(Number(e.target.value))}
-            />
-          </label>
+        <article className="stat">
+          <span className="stat-label">
+            <BrainCircuit size={14} /> Focus / Completion
+          </span>
+          <p className="stat-value">
+            {(analytics.avgFocus * 100).toFixed(0)}% / {(analytics.avgCompletion * 100).toFixed(0)}%
+          </p>
+          <p className="stat-meta">Signals consumed by the model</p>
+        </article>
 
-          <button type="submit" disabled={!token}>
-            Submit Progress Log
-          </button>
-        </form>
+        <article className="stat">
+          <span className="stat-label">
+            <Clock3 size={14} /> Time Coverage
+          </span>
+          <p className="stat-value">
+            {analytics.totalActualMinutes} / {analytics.totalPlannedMinutes}
+          </p>
+          <p className="stat-meta">
+            mins actual / planned
+          </p>
+        </article>
+      </section>
 
-        <div className="notice ok">Status: {status}</div>
-        {error && <div className="notice error">{error}</div>}
-      </article>
+      <section className="grid two stagger">
+        <article className="card">
+          <h3>
+            <Trophy size={16} /> Course Spotlight
+          </h3>
+          <p>
+            <strong>{analytics.topCourse}</strong> leads with {analytics.topCourseSessions} session
+            {analytics.topCourseSessions === 1 ? "" : "s"} logged.
+          </p>
+          <div className="pill-row">
+            <span className="pill">Weekly intensity: {analytics.weeklyIntensity.toFixed(1)} sessions/7d</span>
+            <span className="pill success">Low {analytics.difficultyMix.low}</span>
+            <span className="pill">Med {analytics.difficultyMix.medium}</span>
+            <span className="pill warning">High {analytics.difficultyMix.high}</span>
+          </div>
+          <p style={{ marginTop: 12 }} className="muted-text">
+            Difficulty mix is taken from the training-data snapshot ({trainingRows.length} rows).
+          </p>
+        </article>
 
-      {result && (
-        <section className="grid three stagger">
-          <article className="card">
-            <h3>Adherence</h3>
-            <p>{adherencePercent.toFixed(0)}%</p>
-            <div className="progress-wrap">
-              <div className="progress-bar" style={{ width: `${adherencePercent}%` }} />
+        <article className="card">
+          <h3>
+            <ListChecks size={16} /> Latest Planner Plan
+          </h3>
+          {latestPlan ? (
+            <>
+              <p>
+                <strong>Plan #{latestPlan.id}</strong> — {formatDate(latestPlan.created_at)}
+              </p>
+              <p className="muted-text">
+                Total hours: {latestPlan.plan_json.total_available_hours ?? "-"} · Courses:{" "}
+                {(latestPlan.plan_json.courses ?? []).length}
+              </p>
+              {latestPlan.plan_json.allocations && latestPlan.plan_json.allocations.length > 0 && (
+                <div className="pill-row">
+                  {latestPlan.plan_json.allocations.slice(0, 3).map((alloc) => (
+                    <span className="pill" key={alloc.course}>
+                      {alloc.course}: {alloc.allocated_hours}h
+                    </span>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <p>No plans yet. Generate one in the Study Planner tab.</p>
+          )}
+        </article>
+      </section>
+
+      <section className="grid two stagger">
+        <article className="card">
+          <div className="section-head">
+            <h3>
+              <BarChart3 size={16} /> Recent Sessions
+            </h3>
+            <a className="text-link" href="/progress/history">
+              View all
+            </a>
+          </div>
+          {recentSessions.length === 0 ? (
+            <p>No session history yet. Use Log Session to add one.</p>
+          ) : (
+            <div className="grid" style={{ gap: 10, marginTop: 12 }}>
+              {recentSessions.map((item) => {
+                const adherencePct = clampPercent(item.adherence_score);
+                const predictedPct =
+                  typeof item.predicted_adherence === "number"
+                    ? clampPercent(item.predicted_adherence)
+                    : null;
+                return (
+                  <div key={item.id} className="history-row">
+                    <div className="row-head">
+                      <span>{item.course_name}</span>
+                      <span className="pill">
+                        {item.actual_minutes}/{item.planned_minutes}m
+                      </span>
+                    </div>
+                    <div className="row-meta">
+                      adherence {adherencePct.toFixed(0)}%
+                      {predictedPct !== null ? ` · predicted ${predictedPct.toFixed(0)}%` : ""}
+                      {item.model_version ? ` · ${item.model_version}` : ""}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          </article>
+          )}
+        </article>
 
-          <article className="card">
-            <h3>Focus Signal</h3>
-            <p>{(result.computed.focus_score * 100).toFixed(0)}%</p>
-          </article>
+        <article className="card">
+          <div className="section-head">
+            <h3>
+              <Sparkles size={16} /> Latest Recommendation
+            </h3>
+            <a className="text-link" href="/progress/history">
+              View all
+            </a>
+          </div>
+          {latestRecommendation ? (
+            <>
+              <p>
+                <strong>{latestRecommendation.preferred_style}</strong> ·{" "}
+                {formatDate(latestRecommendation.created_at)}
+              </p>
+              <p className="muted-text">
+                Focus {(latestRecommendation.focus_score * 100).toFixed(0)}% · Completion{" "}
+                {(latestRecommendation.completion_rate * 100).toFixed(0)}% · Confidence{" "}
+                {(latestRecommendation.confidence * 100).toFixed(0)}%
+              </p>
+              <ul className="strategy-list">
+                {latestRecommendation.strategies_json.slice(0, 3).map((s) => (
+                  <li key={s}>{s}</li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p>No recommendations yet. Run one in the Recommendations tab.</p>
+          )}
+        </article>
+      </section>
 
-          <article className="card">
-            <h3>Completion Signal</h3>
-            <p>{(result.computed.completion_rate * 100).toFixed(0)}%</p>
-          </article>
-        </section>
-      )}
+      <div className="notice ok">
+        Data sync: {isLoading ? "refreshing analytics..." : "up to date"}
+        {error ? ` · last error: ${error}` : ""}
+        <button
+          type="button"
+          className="ghost"
+          style={{ marginLeft: "auto", width: "auto" }}
+          onClick={() => void refresh()}
+        >
+          Refresh
+        </button>
+      </div>
     </div>
   );
 }

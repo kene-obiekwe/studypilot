@@ -1,7 +1,18 @@
-from typing import List
+from typing import List, Tuple
 
 
-def get_recommendations(focus_score: float, completion_rate: float, preferred_style: str) -> List[str]:
+def _confidence_score(focus_score: float, completion_rate: float) -> float:
+    focus_delta = abs(focus_score - 0.5)
+    completion_delta = abs(completion_rate - 0.5)
+    combined = (focus_delta + completion_delta) / 0.5
+    return max(0.0, min(1.0, combined))
+
+
+def get_recommendations(
+    focus_score: float,
+    completion_rate: float,
+    preferred_style: str,
+) -> Tuple[List[str], float]:
     strategies: List[str] = []
 
     if completion_rate < 0.5:
@@ -23,4 +34,5 @@ def get_recommendations(focus_score: float, completion_rate: float, preferred_st
     if not strategies:
         strategies.append("Maintain the current routine and review outcomes weekly.")
 
-    return strategies
+    confidence = _confidence_score(focus_score, completion_rate)
+    return strategies, confidence
