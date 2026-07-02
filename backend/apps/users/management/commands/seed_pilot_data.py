@@ -105,7 +105,7 @@ PILOTS: tuple[PilotProfile, ...] = (
     ),
 )
 
-PILOT_PASSWORD = "Pilot12345!"  # documented in docs/pilot-demo-guide.md
+PILOT_PASSWORD = "Pilot12345!"
 
 COURSE_CATALOG: tuple[tuple[str, int, float], ...] = (
     # (name, difficulty 1-5, weekly_target_hours)
@@ -169,7 +169,6 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(""))
         self.stdout.write(self.style.SUCCESS(f"Done. {len(PILOTS)} pilot users seeded. Password for all: {PILOT_PASSWORD}"))
-        self.stdout.write(self.style.SUCCESS("See docs/pilot-demo-guide.md for the screenshot checklist."))
 
     # -- helpers ----------------------------------------------------------------
 
