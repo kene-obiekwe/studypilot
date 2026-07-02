@@ -109,7 +109,34 @@ python manage.py seed_pilot_data
 ```
 
 Sign in as `pilot_consistent` (password `Pilot12345!`) for the richest seeded
-data. Full protocol: [`docs/pilot-demo-guide.md`](docs/pilot-demo-guide.md).
+data.
+
+## Dataset (OULAD)
+
+The adherence model is trained on the **Open University Learning Analytics
+Dataset (OULAD)**. It is not committed to this repository because it exceeds
+GitHub's file size limits and can be freely obtained from the source.
+
+**To obtain the dataset:**
+
+1. Download the seven CSV files from the official OULAD page:
+   <https://analyse.kmi.open.ac.uk/open-dataset>
+   Licensed under Creative Commons Attribution 4.0 International.
+2. Extract the archive into a directory named `Dataset/` at the repository
+   root. After extraction the folder should contain:
+   ```
+   Dataset/
+     assessments.csv
+     courses.csv
+     studentAssessment.csv
+     studentInfo.csv
+     studentRegistration.csv
+     studentVle.csv
+     vle.csv
+   ```
+3. This is the default location expected by
+   `backend/ml/build_oulad_canonical.py`. If you place the CSVs elsewhere,
+   pass `--input-dir <path>` when running the build script.
 
 ## Machine learning pipeline
 
@@ -124,9 +151,10 @@ Summary:
   with a time-aware train/validation/test split and hyperparameter search.
 - `backend/ml/schema.md` — canonical schema and feature definitions.
 
-Dataset files, canonical build outputs, model artifacts and training reports
-are excluded from git (see `.gitignore`) because they are large and
-regenerable.
+The raw dataset (`Dataset/`), canonical build outputs (`backend/ml/data/`),
+model artifacts (`backend/ml/models/`), and training reports
+(`backend/ml/reports/`) are excluded from git because they are large and
+regenerable from the scripts above.
 
 Full evaluation report — including the target-leakage discovery and
 resolution — is in [`docs/evaluation-report.md`](docs/evaluation-report.md).
