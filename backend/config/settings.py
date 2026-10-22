@@ -90,6 +90,12 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
+ADHERENCE_MODEL_PATH = Path(
+    os.getenv("ADHERENCE_MODEL_PATH", "ml/models/oulad_adherence_forecast.joblib")
+)
+if not ADHERENCE_MODEL_PATH.is_absolute():
+    ADHERENCE_MODEL_PATH = BASE_DIR / ADHERENCE_MODEL_PATH
+
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
