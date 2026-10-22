@@ -1,16 +1,10 @@
 # AI-Powered Personalised Study Planning and Learning Recommendation System
 
-Final Year Project — Bachelor of Science, Computer Science, Pan-Atlantic University.
-Author: **Kene Christopher Obiekwe** (22120613021).
-
 StudyPilot AI is a mobile-first web application that helps undergraduate learners
 plan study time, receive adaptive learning-strategy recommendations, and track
 adherence to their plan through a closed planning–tracking–learning loop. A
 trained adherence prediction model feeds back into the study planner so that
 each course's allocation adapts to the learner's recent behaviour.
-
-The full dissertation is in
-[`Resources/Chapters 1-5 - Final.docx`](Resources/Chapters%201-5%20-%20Final.docx).
 
 ## Architecture
 
