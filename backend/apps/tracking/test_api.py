@@ -6,6 +6,7 @@ from rest_framework.test import APITestCase
 
 from apps.planner.models import Course
 
+from .inference import forecast_course
 from .models import StudySessionLog
 
 
@@ -289,3 +290,96 @@ class TrainingDataQueryTests(APITestCase):
     def test_empty_history_needs_no_extra_queries(self):
         with self.assertNumQueries(2):
             self.assertEqual(self.client.get(self.url).data, {"rows": [], "count": 0})
+
+
+class SessionLogFiniteAndNameTests(APITestCase):
+    url = "/api/tracking/session-log/"
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="finitelog", password="TestPass123!")
+        self.client.force_authenticate(user=self.user)
+
+    def post(self, **overrides):
+        data = {
+            "course_name": "CSC 401",
+            "planned_minutes": 60,
+            "actual_minutes": 45,
+            "focus_score": 0.6,
+            "completion_rate": 0.7,
+        }
+        data.update(overrides)
+        return self.client.post(self.url, data, format="json")
+
+    def test_non_finite_scores_rejected(self):
+        for field in ("focus_score", "completion_rate"):
+            for value in ("nan", "inf", "-inf"):
+                with self.subTest(field=field, value=value):
+                    response = self.post(**{field: value})
+                    self.assertEqual(response.status_code, 400)
+                    self.assertEqual(response.data[field], ["Must be a finite number."])
+        self.assertEqual(StudySessionLog.objects.count(), 0)
+
+    def test_blank_or_whitespace_course_name_rejected(self):
+        for name in ("", "   ", "\t\n"):
+            with self.subTest(name=name):
+                response = self.post(course_name=name)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("course_name", response.data)
+        self.assertEqual(StudySessionLog.objects.count(), 0)
+
+    def test_course_name_is_trimmed(self):
+        self.assertEqual(self.post(course_name="  CSC 401  ").status_code, 200)
+        self.assertEqual(StudySessionLog.objects.get().course_name, "CSC 401")
+
+
+class CourseNameMatchingTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="casematch", password="TestPass123!")
+        self.other = User.objects.create_user(username="othercase", password="TestPass123!")
+        self.client.force_authenticate(user=self.user)
+
+    def make_log(self, user, course_name, days_ago, planned=60, actual=60):
+        log = StudySessionLog.objects.create(
+            user=user,
+            course_name=course_name,
+            planned_minutes=planned,
+            actual_minutes=actual,
+            adherence_score=min(actual / planned, 1.0),
+        )
+        StudySessionLog.objects.filter(pk=log.pk).update(created_at=timezone.now() - timedelta(days=days_ago))
+
+    def test_logs_under_different_casing_feed_one_forecast_history(self):
+        self.make_log(self.user, "CSC 401", 20)
+        self.make_log(self.user, "csc 401", 13)
+        self.make_log(self.user, "Csc 401", 6)
+        self.make_log(self.other, "CSC 401", 25)  # another user's history never counts
+
+        for name in ("CSC 401", "csc 401", "cSc 401"):
+            with self.subTest(name=name):
+                forecast = forecast_course(self.user, name)
+                self.assertEqual(forecast.weeks_history, 2)
+                self.assertEqual(forecast.features["weeks_history"], 2.0)
+
+    def test_history_under_a_single_casing_is_not_split_by_a_query_casing(self):
+        self.make_log(self.user, "CSC 401", 20)
+        self.make_log(self.user, "CSC 401", 6)
+        self.assertEqual(forecast_course(self.user, "csc 401").weeks_history, forecast_course(self.user, "CSC 401").weeks_history)
+
+    def test_predict_lists_a_course_once_under_its_latest_casing(self):
+        self.make_log(self.user, "csc 401", 20)
+        self.make_log(self.user, "CSC 401", 13)
+        self.make_log(self.user, "Csc 401", 6)
+        self.make_log(self.user, "MTH 401", 5)
+        self.make_log(self.user, "mth 401", 20)
+        response = self.client.post("/api/tracking/predict/", {}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["course_name"] for item in response.data], ["Csc 401", "MTH 401"])
+        self.assertEqual(response.data[0]["weeks_history"], 2)
+
+    def test_predict_with_a_course_name_matches_any_casing(self):
+        self.make_log(self.user, "CSC 401", 20)
+        self.make_log(self.user, "csc 401", 6)
+        response = self.client.post("/api/tracking/predict/", {"course_name": "cSC 401"}, format="json")
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["course_name"], "cSC 401")
+        self.assertEqual(response.data[0]["weeks_history"], 2)

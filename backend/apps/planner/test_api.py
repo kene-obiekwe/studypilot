@@ -286,3 +286,61 @@ class PlannerInputValidationTests(APITestCase):
         response = self.generate([{"name": "A", "difficulty": 3, "colour": "red"}])
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("colour", StudyPlan.objects.get().plan_json["courses"][0])
+
+
+class PlannerCourseNameMatchingTests(APITestCase):
+    generate_url = "/api/planner/generate/"
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="plannercase", password="TestPass123!")
+        self.other = User.objects.create_user(username="plannercase2", password="TestPass123!")
+        self.client.force_authenticate(user=self.user)
+
+    def generate(self, name, difficulty=3, hours=10):
+        response = self.client.post(
+            self.generate_url,
+            {"total_available_hours": hours, "courses": [{"name": name, "difficulty": difficulty}]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        return response
+
+    def test_differently_cased_names_in_separate_requests_share_one_course(self):
+        self.generate("CSC 401", difficulty=4, hours=10)
+        self.generate(" csc 401 ", difficulty=2, hours=8)
+        courses = Course.objects.filter(user=self.user)
+        self.assertEqual(courses.count(), 1)
+        course = courses.get()
+        self.assertEqual(course.name, "CSC 401")  # the stored name is kept
+        self.assertEqual(course.difficulty, 2)
+        self.assertEqual(course.weekly_target_hours, 8.0)
+
+    def test_new_course_is_created_with_the_submitted_name(self):
+        self.generate("csc 401")
+        self.assertEqual(Course.objects.get().name, "csc 401")
+
+    def test_other_users_courses_do_not_match(self):
+        Course.objects.create(user=self.other, name="CSC 401", difficulty=5)
+        self.generate("csc 401")
+        self.assertEqual(Course.objects.filter(user=self.user).count(), 1)
+        self.assertEqual(Course.objects.get(user=self.other).difficulty, 5)
+
+    @mock.patch.object(inference, "get_model", return_value=FAKE_MODEL)
+    def test_rule_fallback_uses_logs_under_any_casing(self, _):
+        for name, actual in (("csc 401", 50), ("CSC 401", 70)):
+            log = StudySessionLog.objects.create(
+                user=self.user, course_name=name, planned_minutes=100, actual_minutes=actual, adherence_score=actual / 100
+            )
+            StudySessionLog.objects.filter(pk=log.pk).update(created_at=timezone.now() - timedelta(days=1))
+        allocation = self.generate("Csc 401").data["allocations"][0]
+        self.assertEqual(allocation["adjustment_source"], "rule")
+        self.assertAlmostEqual(allocation["adherence_estimate"], 0.6)
+        self.assertEqual(allocation["adherence_factor"], 0.9)
+
+    @mock.patch.object(inference, "get_model", return_value=FAKE_MODEL)
+    def test_rule_fallback_ignores_other_users_logs(self, _):
+        StudySessionLog.objects.create(
+            user=self.other, course_name="CSC 401", planned_minutes=100, actual_minutes=10, adherence_score=0.1
+        )
+        allocation = self.generate("CSC 401").data["allocations"][0]
+        self.assertEqual(allocation["adjustment_source"], "none")

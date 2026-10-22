@@ -1,6 +1,6 @@
-import math
-
 from rest_framework import serializers
+
+from apps.common.fields import FiniteFloatField
 
 MAX_COURSES = 20
 MAX_WEEKLY_HOURS = 168
@@ -12,14 +12,8 @@ class CourseInputSerializer(serializers.Serializer):
 
 
 class PlanRequestSerializer(serializers.Serializer):
-    total_available_hours = serializers.FloatField(min_value=1, max_value=MAX_WEEKLY_HOURS)
+    total_available_hours = FiniteFloatField(min_value=1, max_value=MAX_WEEKLY_HOURS)
     courses = CourseInputSerializer(many=True, allow_empty=False, min_length=1, max_length=MAX_COURSES)
-
-    def validate_total_available_hours(self, value: float) -> float:
-        # FloatField accepts the string "nan", which slips past the min/max validators.
-        if not math.isfinite(value):
-            raise serializers.ValidationError("A valid number is required.")
-        return value
 
     def validate_courses(self, courses):
         seen: dict[str, str] = {}

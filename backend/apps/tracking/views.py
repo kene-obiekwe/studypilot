@@ -74,12 +74,15 @@ class AdherencePredictionView(APIView):
         if course_name:
             course_names = [course_name]
         else:
-            course_names = list(
+            # One entry per course regardless of casing, under the casing of its most recent log.
+            latest_name: dict[str, str] = {}
+            for name in (
                 StudySessionLog.objects.filter(user=request.user)
-                .order_by("course_name")
+                .order_by("created_at", "id")
                 .values_list("course_name", flat=True)
-                .distinct()
-            )
+            ):
+                latest_name[name.casefold()] = name
+            course_names = sorted(latest_name.values(), key=str.casefold)
 
         return Response([forecast_payload(name, forecast_course(request.user, name)) for name in course_names])
 

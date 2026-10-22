@@ -252,7 +252,7 @@ def forecast_course(user, course_name: str, now: datetime | None = None) -> Fore
 
     now = now or timezone.now()
     logs = StudySessionLog.objects.filter(
-        user=user, course_name=course_name, created_at__lte=now
+        user=user, course_name__iexact=course_name, created_at__lte=now
     ).only("created_at", "planned_minutes", "actual_minutes", "focus_score")
     today = timezone.localtime(now, timezone.get_default_timezone()).date()
     return forecast_from_points(session_points(logs), today)
