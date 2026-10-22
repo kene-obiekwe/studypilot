@@ -27,9 +27,11 @@ class TrackingApiTests(APITestCase):
         self.assertEqual(response.status_code, 401)
 
     def test_predict_returns_forecast(self):
+        # Old slider fields are ignored rather than rejected.
         response = self.client.post(
             "/api/tracking/predict/",
             {
+                "course_name": "CSC 401",
                 "planned_minutes": 120,
                 "focus_score": 0.6,
                 "completion_rate": 0.7,
@@ -37,11 +39,13 @@ class TrackingApiTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 200)
-        self.assertIn("predicted_adherence", response.data)
-        self.assertIn("model_version", response.data)
-        self.assertIn("inputs", response.data)
-        self.assertIn("sessions_last_7_days", response.data["inputs"])
-        self.assertIn("consistency_score", response.data["inputs"])
+        self.assertEqual(len(response.data), 1)
+        forecast = response.data[0]
+        for key in ("course_name", "status", "predicted_adherence", "weeks_history", "features"):
+            self.assertIn(key, forecast)
+        self.assertEqual(forecast["course_name"], "CSC 401")
+        self.assertEqual(forecast["status"], "insufficient_history")
+        self.assertIsNone(forecast["predicted_adherence"])
 
     def test_session_log_requires_auth(self):
         self.client.force_authenticate(user=None)

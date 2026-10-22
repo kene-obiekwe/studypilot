@@ -1,16 +1,26 @@
 from datetime import timedelta
 
-from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.planner.models import Course
 
-from .inference import build_feature_payload, predict_adherence
+from .inference import ForecastResult, STATUS_OK, forecast_course
 from .models import StudySessionLog
 from .serializers import AdherencePredictionRequestSerializer
 from .serializers import StudySessionLogSerializer
 from .serializers import StudySessionHistorySerializer
+
+
+def forecast_payload(course_name: str, forecast: ForecastResult) -> dict:
+    return {
+        "course_name": course_name,
+        "status": forecast.status,
+        "predicted_adherence": forecast.predicted_adherence,
+        "model_version": forecast.model_version,
+        "weeks_history": forecast.weeks_history,
+        "features": forecast.features,
+    }
 
 
 class SessionLogView(APIView):
@@ -19,11 +29,16 @@ class SessionLogView(APIView):
         serializer.is_valid(raise_exception=True)
 
         payload = serializer.validated_data
-        adherence = 0.0
-        if payload["planned_minutes"] > 0:
-            adherence = round(payload["actual_minutes"] / payload["planned_minutes"], 2)
+        adherence = round(min(max(payload["actual_minutes"] / payload["planned_minutes"], 0.0), 1.0), 2)
 
-        log = StudySessionLog.objects.create(
+        # Forecast for this course's current week, from complete prior weeks only.
+        forecast = forecast_course(request.user, payload["course_name"])
+        if forecast.status == STATUS_OK:
+            predicted_adherence, model_version = forecast.predicted_adherence, forecast.model_version
+        else:
+            predicted_adherence, model_version = None, forecast.status
+
+        StudySessionLog.objects.create(
             user=request.user,
             course_name=payload["course_name"],
             planned_minutes=payload["planned_minutes"],
@@ -31,33 +46,9 @@ class SessionLogView(APIView):
             focus_score=payload["focus_score"],
             completion_rate=payload["completion_rate"],
             adherence_score=adherence,
+            predicted_adherence=predicted_adherence,
+            model_version=model_version,
         )
-
-        sessions_last_7_days = StudySessionLog.objects.filter(
-            user=request.user,
-            created_at__gte=log.created_at - timedelta(days=7),
-            created_at__lte=log.created_at,
-        ).count()
-
-        first_log = StudySessionLog.objects.filter(user=request.user).order_by("created_at").first()
-        created_at_offset_days = 0
-        if first_log:
-            created_at_offset_days = (log.created_at - first_log.created_at).days
-
-        consistency_score = min(1.0, sessions_last_7_days / 7.0)
-        feature_payload = build_feature_payload(
-            planned_minutes=payload["planned_minutes"],
-            completion_rate=payload["completion_rate"],
-            sessions_last_7_days=sessions_last_7_days,
-            focus_score=payload["focus_score"],
-            consistency_score=consistency_score,
-            created_at_offset_days=created_at_offset_days,
-        )
-
-        predicted_adherence, model_version = predict_adherence(feature_payload)
-        log.predicted_adherence = predicted_adherence
-        log.model_version = model_version
-        log.save(update_fields=["predicted_adherence", "model_version"])
 
         return Response(
             {
@@ -77,57 +68,19 @@ class AdherencePredictionView(APIView):
     def post(self, request):
         serializer = AdherencePredictionRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        payload = serializer.validated_data
 
-        planned_minutes = payload["planned_minutes"]
-        actual_minutes_estimate = payload.get("actual_minutes_estimate", planned_minutes)
-        focus_score = payload.get("focus_score", 0.5)
-        completion_rate = payload.get("completion_rate", 0.0)
-        help_seeking_rate = payload.get("help_seeking_rate")
-        avg_quiz_score_recent = payload.get("avg_quiz_score_recent")
+        course_name = serializer.validated_data.get("course_name")
+        if course_name:
+            course_names = [course_name]
+        else:
+            course_names = list(
+                StudySessionLog.objects.filter(user=request.user)
+                .order_by("course_name")
+                .values_list("course_name", flat=True)
+                .distinct()
+            )
 
-        now = timezone.now()
-        sessions_last_7_days = StudySessionLog.objects.filter(
-            user=request.user,
-            created_at__gte=now - timedelta(days=7),
-            created_at__lte=now,
-        ).count()
-
-        first_log = StudySessionLog.objects.filter(user=request.user).order_by("created_at").first()
-        created_at_offset_days = 0
-        if first_log:
-            created_at_offset_days = (now - first_log.created_at).days
-
-        consistency_score = min(1.0, sessions_last_7_days / 7.0)
-        feature_payload = build_feature_payload(
-            planned_minutes=planned_minutes,
-            completion_rate=completion_rate,
-            sessions_last_7_days=sessions_last_7_days,
-            focus_score=focus_score,
-            consistency_score=consistency_score,
-            created_at_offset_days=created_at_offset_days,
-            help_seeking_rate=help_seeking_rate,
-            avg_quiz_score_recent=avg_quiz_score_recent,
-        )
-
-        predicted_adherence, model_version = predict_adherence(feature_payload)
-
-        return Response(
-            {
-                "predicted_adherence": predicted_adherence,
-                "model_version": model_version,
-                "inputs": {
-                    "planned_minutes": planned_minutes,
-                    "actual_minutes_estimate": actual_minutes_estimate,
-                    "focus_score": focus_score,
-                    "completion_rate": completion_rate,
-                    "help_seeking_rate": help_seeking_rate,
-                    "avg_quiz_score_recent": avg_quiz_score_recent,
-                    "sessions_last_7_days": sessions_last_7_days,
-                    "consistency_score": consistency_score,
-                },
-            }
-        )
+        return Response([forecast_payload(name, forecast_course(request.user, name)) for name in course_names])
 
 
 class SessionHistoryView(APIView):

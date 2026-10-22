@@ -36,7 +36,7 @@ from apps.planner.models import Course, StudyPlan
 from apps.planner.services import generate_plan
 from apps.recommendations.models import RecommendationLog
 from apps.recommendations.services import get_recommendations
-from apps.tracking.inference import build_feature_payload, predict_adherence
+from apps.tracking.inference import STATUS_OK, forecast_course
 from apps.tracking.models import StudySessionLog
 
 
@@ -262,7 +262,6 @@ class Command(BaseCommand):
         session_gap_seconds = int((now - seed_start).total_seconds() / total_sessions)
 
         course_cycle: Iterable[Course] = _round_robin(courses)
-        recent_dates: list = []  # rolling window for sessions_last_7_days
         for i, course in zip(range(total_sessions), course_cycle):
             planned_minutes = rng.choice([60, 75, 90, 105, 120])
             adherence_ratio = _bounded_normal(rng, profile.adherence_mean, profile.adherence_jitter)
@@ -273,25 +272,13 @@ class Command(BaseCommand):
 
             target_ts = seed_start + timedelta(seconds=session_gap_seconds * i)
 
-            # Compute the same rolling feature inputs that SessionLogView would
-            # compute at log-time, so predicted_adherence reflects the model on
-            # realistic state rather than zeros.
-            cutoff = target_ts - timedelta(days=7)
-            recent_dates = [d for d in recent_dates if d >= cutoff]
-            recent_dates.append(target_ts)
-            sessions_last_7_days = len(recent_dates)
-            created_at_offset_days = (target_ts - seed_start).days
-            consistency_score = min(1.0, sessions_last_7_days / 7.0)
-
-            feature_payload = build_feature_payload(
-                planned_minutes=planned_minutes,
-                completion_rate=completion_rate,
-                sessions_last_7_days=sessions_last_7_days,
-                focus_score=focus_score,
-                consistency_score=consistency_score,
-                created_at_offset_days=created_at_offset_days,
-            )
-            predicted_adherence, model_version = predict_adherence(feature_payload)
+            # Same forecast SessionLogView stores at log time: this course's
+            # current week, from the complete weeks already seeded before it.
+            forecast = forecast_course(user, course.name, now=target_ts)
+            if forecast.status == STATUS_OK:
+                predicted_adherence, model_version = forecast.predicted_adherence, forecast.model_version
+            else:
+                predicted_adherence, model_version = None, forecast.status
 
             log = StudySessionLog.objects.create(
                 user=user,

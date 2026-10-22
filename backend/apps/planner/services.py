@@ -1,4 +1,29 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
+
+ADJUSTMENT_SOURCE_MODEL = "model"
+ADJUSTMENT_SOURCE_RULE = "rule"
+ADJUSTMENT_SOURCE_NONE = "none"
+
+
+def adherence_factor(adherence: float) -> float:
+    if adherence < 0.5:
+        return 0.8
+    if adherence < 0.7:
+        return 0.9
+    if adherence < 0.85:
+        return 1.0
+    return 1.1
+
+
+def resolve_adjustment(forecast_value: Optional[float], rule_value: Optional[float]) -> Dict:
+    """Prefer the model forecast, then the 30-day observed mean, else no adjustment."""
+    if forecast_value is not None:
+        source, estimate = ADJUSTMENT_SOURCE_MODEL, float(forecast_value)
+    elif rule_value is not None:
+        source, estimate = ADJUSTMENT_SOURCE_RULE, float(rule_value)
+    else:
+        return {"source": ADJUSTMENT_SOURCE_NONE, "estimate": None, "factor": 1.0}
+    return {"source": source, "estimate": round(estimate, 4), "factor": adherence_factor(estimate)}
 
 
 def generate_plan(total_available_hours: float, courses: List[Dict]) -> List[Dict]:
@@ -46,3 +71,17 @@ def apply_adherence_adjustments(
         item["allocated_hours"] = round(float(item["allocated_hours"]) * scale, 2)
 
     return adjusted
+
+
+def annotate_adjustment_sources(allocations: List[Dict], adjustments: Dict[str, Dict]) -> List[Dict]:
+    annotated: List[Dict] = []
+    for item in allocations:
+        adjustment = adjustments.get(item.get("course", "Unknown"), {})
+        annotated.append(
+            {
+                **item,
+                "adjustment_source": adjustment.get("source", ADJUSTMENT_SOURCE_NONE),
+                "adherence_estimate": adjustment.get("estimate"),
+            }
+        )
+    return annotated

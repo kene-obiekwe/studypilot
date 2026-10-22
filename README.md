@@ -18,10 +18,13 @@ each course's allocation adapts to the learner's recent behaviour.
 
 Two AI components:
 
-1. **Adherence prediction (Task A)** — a supervised Random Forest regressor
-   trained on a canonical schema derived from the Open University Learning
-   Analytics Dataset. The trained artifact is loaded by the Django backend
-   and consumed by the planner's adherence-weighted re-allocation logic.
+1. **Next-week adherence forecast (Task A)** — a supervised Random Forest
+   regressor trained on a weekly panel built from the Open University Learning
+   Analytics Dataset. It forecasts a course's adherence for the coming week from
+   the preceding weeks only. The trained artifact is loaded by the Django
+   backend and consumed by the planner's adherence-weighted re-allocation
+   logic, which falls back to the observed 30-day mean when a course has fewer
+   than two complete weeks of logs.
 2. **Learning strategy recommendation (Task B)** — a transparent rule engine
    with a heuristic confidence score. A supervised classifier is reserved as
    future work once in-app strategy-outcome data accumulates.
@@ -139,11 +142,13 @@ Reproducible training pipeline documented in
 
 Summary:
 
-- `backend/ml/build_oulad_canonical.py` — adapts OULAD raw CSVs into the
-  project canonical schema.
-- `backend/ml/train_oulad_models.py` — trains the adherence regression model
-  with a time-aware train/validation/test split and hyperparameter search.
-- `backend/ml/schema.md` — canonical schema and feature definitions.
+- `backend/ml/build_oulad_canonical.py` — builds the OULAD weekly adherence
+  panel from the raw CSVs.
+- `backend/ml/train_oulad_models.py` — trains the next-week forecast with a
+  split by presentation and a hyperparameter search, and evaluates it against
+  mean, persistence and 3-week-mean baselines.
+- `backend/ml/schema.md` — panel columns, feature definitions and the mapping
+  from app logs.
 
 The raw dataset (`Dataset/`), canonical build outputs (`backend/ml/data/`),
 model artifacts (`backend/ml/models/`), and training reports
@@ -163,9 +168,12 @@ Two-strand evaluation aligned to the third research objective (Chapter 4
   improvement. Kit at [`docs/evaluation/`](docs/evaluation) including the
   questionnaire, in-person participant script, Python analysis script, and
   the collected response data.
-- **Adherence model offline metrics** — MAE **0.0291**, RMSE **0.0709**,
-  R-squared **0.957** on the held-out test set, approximately an
-  order-of-magnitude MAE reduction versus a mean-prediction baseline.
+- **Adherence forecast offline metrics** — on the held-out test presentation
+  (OULAD 2014J): MAE **0.307**, RMSE **0.380**, R-squared **0.314**. The 3-week
+  mean baseline scores 0.268 / 0.403 / 0.229 and last-week persistence scores
+  0.277 / 0.462 / −0.014. The forecast has lower RMSE and higher R-squared than
+  both, and higher MAE. Limitations are listed in
+  [`docs/evaluation-report.md`](docs/evaluation-report.md).
 
 ## Environment configuration
 
