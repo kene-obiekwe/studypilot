@@ -1,47 +1,80 @@
 # ML Pipeline
 
-This folder contains the scripts, schemas, and reports for the AI lifecycle of the study planner:
+This folder contains the scripts, schema notes, tests and (git-ignored) outputs for the AI lifecycle of the study planner:
 
-1. Map an external educational dataset (OULAD) into the project canonical schema.
-2. Train and evaluate the adherence prediction model (Task A, regression).
-3. Export the model artifact for backend inference via `apps.tracking.inference`.
-4. Capture future runtime training snapshots from app logs as in-app data accumulates.
+1. Build a weekly adherence panel from the Open University Learning Analytics Dataset (OULAD).
+2. Train and evaluate the next-week adherence forecast (Task A, regression).
+3. Export the model for backend inference via `apps.tracking.inference`.
+4. Capture runtime training snapshots from app logs as in-app data accumulates.
 
-Task B (strategy recommendation) operates as a rule-based engine in `apps.recommendations.services`; supervised classification is deferred until in-app strategy-label data is available. See `docs/ai-methodology.md` §1 and `schema.md` §Governance for the full rationale.
+The model forecasts a learner's adherence for the coming week from the weeks before it. The planner uses the forecast to scale each course's allocation. Task B (strategy recommendation) is a rule-based engine in `apps.recommendations.services`; see `docs/ai-methodology.md` §1 and `schema.md` §Governance.
+
+The evaluation of the current model, including its limitations, is in `docs/evaluation-report.md`. The earlier same-week model is documented there under the historical heading and is no longer used.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `schema.md` | Canonical training schema, predictor feature set, target definitions, governance rules. |
-| `build_oulad_canonical.py` | Adapter: maps OULAD CSVs into the canonical training dataset. |
-| `train_oulad_models.py` | Trains the adherence regression model with time-aware splits, hyperparameter search, baseline comparison, and report/plot output. |
-| `data/oulad/` | Generated canonical OULAD training dataset and metadata. (gitignored) |
-| `data/snapshots/` | Runtime training snapshots built from app logs via the management command below. (gitignored) |
-| `models/` | Exported model artifacts loaded by `apps.tracking.inference`. (gitignored) |
-| `reports/` | Training reports (JSON) and evaluation plots. (gitignored) |
+| `schema.md` | Forecast panel columns, feature definitions, the mapping from app logs to the panel, and the earlier canonical schema (superseded). |
+| `build_oulad_canonical.py` | Builds the OULAD weekly panel and its metadata. |
+| `train_oulad_models.py` | Selects a Random Forest on validation RMSE, refits it on train + validation, evaluates once on the test presentation against three baselines, and writes the model, meta file, report and plots. |
+| `tests/test_forecast_features.py` | Leakage and span checks for the panel builder. |
+| `data/oulad/` | Generated panel and metadata. (gitignored) |
+| `data/snapshots/` | Runtime training snapshots built from app logs. (gitignored) |
+| `models/` | Exported model and meta file loaded by `apps.tracking.inference`. (gitignored) |
+| `reports/` | Training report (JSON) and plots. (gitignored) |
 
-The evaluation narrative for the current model is in `docs/evaluation-report.md`.
+## Build the panel and train the model
 
-## Train the Adherence Model on OULAD
-
-Prerequisites: the OULAD CSV bundle is available locally (not committed; see the project README for source). Default path is `Dataset/` at the repo root.
+Prerequisites: the OULAD CSV bundle is available locally (not committed; see the project README for the source). The default location is `Dataset/` at the repo root. The training script also imports `matplotlib`, which is not listed in `backend/requirements.txt`; install it in the same environment first.
 
 From the repo root:
 
-1. Build the canonical dataset:
+1. Build the weekly panel:
    - `python backend/ml/build_oulad_canonical.py --input-dir Dataset --output-dir backend/ml/data/oulad`
-2. Train the adherence model:
-   - `python backend/ml/train_oulad_models.py --data backend/ml/data/oulad/training_dataset.csv --output-dir backend/ml/models --report-dir backend/ml/reports`
+2. Train, evaluate and export the model:
+   - `python backend/ml/train_oulad_models.py`
 
-Useful flags on the training script:
+The training script's defaults point at the files the build step writes. Flags on `train_oulad_models.py`:
 
-- `--limit N` — train on the most recent N rows by time (default 200000; pass 0 for the full dataset).
-- `--split {time,random}` — split strategy (default `time`).
-- `--test-size`, `--val-size` — split proportions (default 0.2 and 0.1).
-- `--n-estimators` — RandomForest tree count for the hyperparameter search.
+- `--panel` — path to `forecast_panel.csv`.
+- `--panel-metadata` — path to `forecast_metadata.json`.
+- `--model-dir`, `--report-dir` — where the model and report are written.
+- `--size-limit-mb` — only configs whose compressed file is under this size are eligible (default 30).
+- `--max-train-rows` — subsample the training rows with a fixed seed if greater than 0 (default 0, use all rows).
 
-The trained model is consumed at runtime by `apps.tracking.inference.get_model`, which falls back to `(None, "model_unavailable")` if the artifact is missing.
+Flags on `build_oulad_canonical.py`: `--input-dir`, `--output-dir`, `--chunksize`.
+
+### Output files
+
+| File | Written by | Contents |
+|---|---|---|
+| `data/oulad/forecast_panel.csv` | build | One row per student, module, presentation and week. |
+| `data/oulad/forecast_metadata.json` | build | Span rules, target and feature definitions, counts, splits. |
+| `models/oulad_adherence_forecast.joblib` | train | The fitted pipeline (SimpleImputer, then RandomForestRegressor). |
+| `models/oulad_adherence_forecast.meta.json` | train | Feature order, minimum history, library versions, parameters, test metrics. |
+| `reports/oulad_forecast_report.json` | train | Counts, hyperparameter grid, test metrics overall, by module and by history bucket, feature importance, gate check. |
+| `reports/oulad_forecast_plots/` | train | `predicted_vs_true.png`, `residuals_hist.png`, `model_vs_baselines.png`, `feature_importance.png`. |
+
+Other files that may be present in `data/oulad/`, `models/` and `reports/` (for example `training_dataset.csv`, `oulad_adherence_model.joblib`, `oulad_training_report*.json`, `oulad_plots/`) belong to the earlier same-week model and are not used.
+
+## Run the tests
+
+The ML tests are discovered by the Django test runner, so one command runs everything. From `backend/`:
+
+- `DB_ENGINE=sqlite python manage.py test` — runs the app tests and `ml/tests` together. Setting `DB_ENGINE=sqlite` avoids needing PostgreSQL if `backend/.env` selects it.
+- `python -m unittest discover -s ml/tests` — runs only the ML tests.
+
+## What the app loads
+
+`apps.tracking.inference.get_model` reads the model from the `ADHERENCE_MODEL_PATH` environment variable. The default is `ml/models/oulad_adherence_forecast.joblib`, resolved against `backend/`. It then reads the meta file next to it (same name with `.meta.json`) and uses:
+
+- `feature_order` — the columns passed to the model, in order. Each name must be one the app can compute (`adh_lag1`, `adh_lag2`, `adh_mean3`, `adh_trend`, `weeks_history`); otherwise the model is not loaded.
+- `min_weeks_history` — complete weeks of history required before a forecast is made (2).
+- `sklearn_version` — the major.minor version must match the installed scikit-learn, otherwise the model is not loaded.
+- `model_name` and `created_at` — combined into the model version stored with each session log.
+
+If the model cannot be loaded, forecasts have status `model_unavailable` and the planner falls back to the observed 30-day mean adherence, or to a factor of 1.0 when there are no logs. After retraining, restart the backend: the model is loaded once per process.
 
 ## Build Runtime Training Snapshot from App Logs
 
@@ -59,4 +92,4 @@ Generated files per snapshot:
 1. `training_dataset.csv` (column order aligned to `schema.md`)
 2. `metadata.json` (snapshot version details and source counts)
 
-Runtime snapshots are intended for domain adaptation: retrain on real in-app behaviour once volume is sufficient, then re-evaluate against the OULAD-trained baseline as documented in `docs/evaluation-report.md` §9.
+Runtime snapshots are intended for domain adaptation: retrain on real in-app behaviour once volume is sufficient, then re-evaluate against the OULAD-trained model as described under "Next Evaluation Cycle" in the historical part of `docs/evaluation-report.md`.

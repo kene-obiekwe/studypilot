@@ -1,12 +1,88 @@
 # Training Dataset Schema
 
-This schema is project-semantic first and dataset-neutral.
+This file has four parts:
 
-1. Canonical schema defines what the model should learn for this project.
-2. Source adapter schema defines how any external dataset is mapped into canonical columns.
-3. External data supports model initialization; it does not redefine project meaning.
+1. **Forecast Panel Schema (current model).** The weekly panel, feature definitions and the mapping from app logs. This is what the application's adherence model is trained on and served with.
+2. **Superseded: Canonical Project Schema (earlier same-week model, v1/v2).** The learner-window schema the earlier model used. `build_oulad_canonical.py` no longer produces it.
+3. **External Source Adapter (Template)** and **Runtime App Schema (v2)**, which still apply to adding datasets and to snapshots built from app logs.
+4. **Governance and Reporting Rules.**
 
-## Canonical Project Schema (Used by Model Pipeline)
+## Forecast Panel Schema (Current Model)
+
+Written by `build_oulad_canonical.py` to `data/oulad/forecast_panel.csv`, with definitions and counts in `data/oulad/forecast_metadata.json`.
+
+### Modeling Unit
+
+One row per (`id_student`, `code_module`, `code_presentation`, `week`) over the registration's enrolled span. Week = `date // 7`, counted from week 0 (the presentation start). Clicks with a date before 0 are ignored. Enrolled weeks are `0 .. end_day // 7 - 1` (full weeks only), where `end_day = min(module_presentation_length, date_unregistration if present)`. Registrations that unregistered before day 0, or that have no full enrolled week, are excluded. Enrolled weeks with no `studentVle` rows are gap-filled with zero activity.
+
+### Panel Columns
+
+| Column | Meaning |
+|---|---|
+| `id_student`, `code_module`, `code_presentation` | Registration key. |
+| `week` | Week index from 0. |
+| `split` | `train` (2013B, 2013J), `validation` (2014B) or `test` (2014J). |
+| `gap_filled` | True if the week had no `studentVle` rows. |
+| `total_clicks` | Sum of clicks in the week (0 if gap-filled). |
+| `active_days` | Days with clicks in the week (0 if gap-filled). |
+| `expected_clicks` | Median `total_clicks` over all enrolled students for the same module, presentation and week, zeros included. |
+| `adherence` | Target: `clip(total_clicks / expected_clicks, 0, 1)`; missing when `expected_clicks` is 0. |
+| `adh_lag1`, `adh_lag2`, `adh_mean3`, `adh_trend`, `weeks_history` | Model features (below). |
+| `active_days_lag1`, `active_days_mean3`, `focus_lag1` | Reporting columns, not model inputs (below). |
+| `is_training_row` | `weeks_history >= 2` and `adherence` defined. |
+
+### Feature Definitions
+
+All features for week *t* use only weeks before *t* of the same registration.
+
+| Feature | Definition |
+|---|---|
+| `adh_lag1` | adherence at *t*-1 (missing if `expected_clicks` was 0) |
+| `adh_lag2` | adherence at *t*-2 |
+| `adh_mean3` | mean of the available adherence values at *t*-1 to *t*-3 |
+| `adh_trend` | `adh_lag1 - adh_lag2` |
+| `weeks_history` | number of enrolled weeks before *t* (equals *t*) |
+
+Missing values are filled by the pipeline's `SimpleImputer(strategy="median")`.
+
+Reporting columns, computed with the same prior-weeks-only rule but not used by the model, because the app's per-course active days sit on a lower scale than OULAD's and its focus is a self-reported slider rather than click intensity:
+
+| Column | Definition |
+|---|---|
+| `active_days_lag1` | active days at *t*-1 (0 to 7) |
+| `active_days_mean3` | mean of active days at *t*-1 to *t*-3 (available weeks) |
+| `focus_lag1` | `clip((clicks_{t-1} / max(active_days_{t-1}, 1)) / P90, 0, 1)`, with P90 = 41.5 clicks per active day (non-test presentations) |
+
+### Target
+
+`adherence` for week *t*. A learner's clicks relative to the cohort median, capped at 1. About half the targets are exactly 1 and nearly a third are exactly 0; see `docs/evaluation-report.md`.
+
+### App-Side Mapping
+
+`apps.tracking.inference` rebuilds the same quantities from a user's `StudySessionLog` rows, one course at a time:
+
+| Panel concept | App equivalent |
+|---|---|
+| Week 0 | The date of the course's first log (in `settings.TIME_ZONE`). Weeks are 7-day blocks from there. |
+| Weeks used | Only complete weeks before the week containing today. The current week is never used. |
+| `adherence` | `sum(actual_minutes) / sum(planned_minutes)` over the week's logs, capped to [0, 1]; missing if planned minutes sum to 0. |
+| Gap-filled week | A week with no logs: adherence 0, active days 0, focus 0. |
+| `adh_lag1`, `adh_lag2`, `adh_mean3`, `adh_trend` | The same formulas applied to the weekly adherence values. |
+| `weeks_history` | The number of complete weeks. |
+| Minimum history | `min_weeks_history` from the model's meta file (2). Below it the status is `insufficient_history` and no forecast is made. |
+| Feature order | `feature_order` from the model's meta file. |
+
+Forecast statuses: `ok`, `insufficient_history`, `model_unavailable`, `prediction_failed`. The planner uses the forecast only for `ok`; otherwise it uses the 30-day observed mean adherence for the course, or no adjustment when there are no logs.
+
+### Known Mismatches Between Training and App
+
+1. App adherence is a proxy. It compares actual time with the learner's own plan, while training adherence is clicks relative to the cohort median for the week.
+2. App week 0 is the first log, not the start of a presentation, so a learner who starts logging late has a short history.
+3. A course that stops being logged is zero-filled week by week, so its forecast drifts toward the lowest adherence factor. See "Limitations" in `docs/evaluation-report.md`.
+
+## Superseded: Canonical Project Schema (Earlier Same-Week Model, v1/v2)
+
+This part describes the learner-window schema used by the earlier model. The current build script does not produce it, and the application no longer uses a model trained on it. It is kept for the historical evaluation in `docs/evaluation-report.md`.
 
 ### Modeling Unit
 

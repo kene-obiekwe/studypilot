@@ -4,16 +4,18 @@
 
 The system uses AI for one supervised task and one rule-based task:
 
-1. Predicting adherence to planned study sessions (supervised regression).
+1. Forecasting next-week adherence to planned study sessions (supervised regression).
 2. Recommending a study strategy category for each student context (rule-based engine with heuristic confidence). Supervised strategy classification is deferred until sufficient in-app strategy-label data is collected, because external datasets used for initial training do not carry trustworthy strategy labels.
 
 ## 2. Problem Formulation
 
-### Task A: Adherence Prediction (Regression)
+### Task A: Next-Week Adherence Forecast (Regression)
 
-- Input: learner profile + course/workload + recent study behavior (planned minutes, completion rate, consistency, focus, etc.).
-- Output: predicted adherence score in range [0, 1].
-- Why: helps optimise schedule intensity and reminder frequency.
+- Input: a course's weekly adherence history from the weeks before the one being predicted: adherence at the last two weeks (`adh_lag1`, `adh_lag2`), the mean of the last three (`adh_mean3`), their difference (`adh_trend`) and the number of weeks of history (`weeks_history`).
+- Output: forecast adherence for the coming week, in range [0, 1].
+- Target: in training, `clip(total_clicks / expected_clicks, 0, 1)` for the week, where `expected_clicks` is the cohort median for that module, presentation and week. In the app, adherence is actual minutes over planned minutes for the week, capped at 1.
+- Why: the planner scales each course's allocation by a factor derived from the forecast, so it needs an estimate of next week, not a restatement of the current one.
+- Earlier version: a same-week model with a different feature set and a target that could be rebuilt from its inputs was replaced in October 2026; see `docs/evaluation-report.md`.
 
 ### Task B: Strategy Recommendation (Rule-Based with Confidence)
 
@@ -29,7 +31,7 @@ Primary training data is collected from external educational interaction dataset
 1. External learner-event datasets:
    - longitudinal interaction logs, correctness/performance outcomes, and behavior-related features.
 2. Canonical feature mapping:
-   - map source columns into project semantics (workload, effort, completion, consistency, help-seeking).
+   - map source columns into project semantics. For the adherence forecast this is a weekly panel of click activity and a cohort-relative adherence target (see `backend/ml/schema.md`).
 3. Pilot app data:
    - retained only for monitoring and future domain adaptation when enough records are available.
 4. Runtime transition:
@@ -44,19 +46,20 @@ Data storage principles:
 
 ## 4. Dataset Construction
 
-Create one row per learner-window (or session window) after external-to-canonical mapping, with features such as:
+Task A (adherence forecast): one row per registration and week over the enrolled span, with gap weeks filled with zero activity. Features for week *t* are computed only from weeks before *t*:
 
-1. planned_minutes
-2. completion_rate
-3. focus_score
-4. difficulty_mean
-5. deadlines_within_7_days
-6. sessions_in_last_7_days
-7. style_encoded
-8. target: adherence_score or strategy_label (if a valid label is available)
+1. adh_lag1
+2. adh_lag2
+3. adh_mean3
+4. adh_trend
+5. weeks_history
+6. target: adherence for week *t*
+
+Task B (strategy recommendation, future work): one row per learner-window, with features such as focus_score, completion_rate, difficulty_mean, deadlines_within_7_days, sessions_in_last_7_days and style_encoded, and a strategy_label once a valid label is available.
 
 Notes:
-- actual_minutes is retained for label construction (adherence = actual_minutes / planned_minutes) but is not used as a predictor feature.
+- Nothing from week *t* itself is used as an input to the Task A forecast.
+- In the app, weekly adherence is computed from session logs as actual_minutes / planned_minutes (summed over the week, capped at 1) and enters the model only as the lagged values above.
 
 ## 5. Data Preprocessing and Features
 
@@ -68,8 +71,9 @@ Notes:
 3. Scaling:
    - scale continuous features for linear/boosting models.
 4. Leakage prevention:
-   - split train/test by user and time where possible.
-   - avoid using label-defining variables (e.g., actual_minutes) as input features.
+   - split by presentation, so no student-week is shared between train, validation and test.
+   - build features for week *t* only from weeks before *t*.
+   - do not use inputs that are derived from the same quantity as the target (the earlier same-week model did, which is why it was replaced).
 
 ## 6. Model Training Approach
 
@@ -82,15 +86,15 @@ Baseline and improved models are both required for a strong defence.
 
 ### ML Candidates
 
-1. Adherence prediction (Task A, current scope): RandomForestRegressor or GradientBoostingRegressor.
+1. Adherence forecast (Task A, current scope): RandomForestRegressor (implemented).
 2. Strategy recommendation (Task B, future work): RandomForestClassifier, trained on in-app strategy outcomes once available.
 
 Training protocol (applies to Task A):
 
-1. Train/validation/test split (e.g., 70/15/15).
-2. Cross-validation on training data.
-3. Hyperparameter search (grid or randomized search).
-4. Select model based on validation metrics.
+1. Split by presentation: train on 2013B and 2013J, validate on 2014B, test on 2014J.
+2. Grid search over `max_depth` {8, 12, 16} and `min_samples_leaf` {20, 50, 100}, restricted to configurations whose saved file is under 30 MB.
+3. Select the configuration with the lowest validation RMSE.
+4. Refit on train plus validation and evaluate once on the test presentation.
 
 ## 7. Testing and Evaluation
 
@@ -112,7 +116,7 @@ These metrics are not reported in the current implementation because the rule en
 
 Required comparison:
 
-1. Adherence: baseline (mean of training targets) vs ML model on MAE, RMSE, R².
+1. Adherence: the forecast model against three baselines (the mean of the training targets, last week's adherence, and the mean of the last three weeks) on MAE, RMSE and R². Acceptance is judged on RMSE and R², because the target is bimodal (about half exactly 1, nearly a third exactly 0); MAE is still reported. On the test presentation (2014J) the model scores MAE 0.307, RMSE 0.380, R² 0.314, against 0.268, 0.403 and 0.229 for the 3-week mean and 0.277, 0.462 and −0.014 for last week's adherence. It beats both on RMSE and R² and not on MAE. Details and limitations are in `docs/evaluation-report.md`.
 2. Recommendation: rule-engine outputs reviewed qualitatively against expected strategy patterns; quantitative comparison deferred to future work alongside the supervised classifier.
 
 ## 8. Deployment in the System
@@ -143,7 +147,7 @@ Required comparison:
 ## 11. What to Say in Defence
 
 1. The system started with rule-based modules to guarantee functionality across both AI tasks.
-2. The adherence model (Task A) is trained on a curated external educational dataset because pilot user-input data is too limited for reliable supervised learning, and evaluated against a mean-prediction baseline using MAE, RMSE, and R².
+2. The adherence model (Task A) forecasts next-week adherence from prior weeks. It is trained on a curated external educational dataset (OULAD) because pilot user-input data is too limited for reliable supervised learning, and evaluated on a held-out presentation against train-mean, persistence and 3-week-mean baselines using MAE, RMSE, and R². It beats the baselines on RMSE and R², not on MAE, and explains about a third of the variance; the earlier same-week model reported much higher scores because its target could be rebuilt from its inputs, and that is why it was replaced.
 3. The recommendation module (Task B) is intentionally rule-based with a heuristic confidence score: external datasets do not carry validated strategy labels, so supervised classification would be circular. Supervised classification is deferred to future work once in-app strategy outcomes accumulate at sufficient scale.
 4. Only validated models are deployed, with rule fallback for robustness if the model artifact is missing or inference fails.
 5. Continuous monitoring is active, and retraining shifts progressively to real in-app data once sufficient scale is reached.
