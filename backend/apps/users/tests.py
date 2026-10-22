@@ -1,9 +1,14 @@
 from django.contrib.auth.models import User
+from django.core.cache import cache
+from rest_framework.settings import api_settings
 from rest_framework.test import APITestCase
 
 
 class RegistrationTests(APITestCase):
     url = "/api/users/register/"
+
+    def setUp(self):
+        cache.clear()  # throttle counters live in the cache
 
     def payload(self, **overrides):
         data = {"username": "newuser", "email": "newuser@example.com", "password": "StrongPass123!"}
@@ -73,6 +78,7 @@ class TokenTests(APITestCase):
     refresh_url = "/api/auth/token/refresh/"
 
     def setUp(self):
+        cache.clear()  # throttle counters live in the cache
         self.user = User.objects.create_user(
             username="tokenuser", email="tokenuser@example.com", password="StrongPass123!"
         )
@@ -120,6 +126,94 @@ class TokenTests(APITestCase):
         access = self.obtain().data["access"]
         response = self.client.post(self.refresh_url, {"refresh": access}, format="json")
         self.assertEqual(response.status_code, 401)
+
+
+class PasswordValidatorTests(APITestCase):
+    """Registration applies every rule in AUTH_PASSWORD_VALIDATORS."""
+
+    url = "/api/users/register/"
+
+    def setUp(self):
+        cache.clear()
+
+    def register(self, **overrides):
+        data = {"username": "validator", "email": "validator@example.com", "password": "Sturdy-Pass-7391"}
+        data.update(overrides)
+        return self.client.post(self.url, data, format="json")
+
+    def assert_password_rejected(self, password, **overrides):
+        response = self.register(password=password, **overrides)
+        self.assertEqual(response.status_code, 400, password)
+        self.assertIn("password", response.data)
+        self.assertFalse(User.objects.filter(username=overrides.get("username", "validator")).exists())
+        return response
+
+    def test_common_password_rejected(self):
+        response = self.assert_password_rejected("password123")
+        self.assertTrue(any("common" in message for message in response.data["password"]))
+
+    def test_all_numeric_password_rejected(self):
+        response = self.assert_password_rejected("8274619305")
+        self.assertTrue(any("entirely numeric" in message for message in response.data["password"]))
+
+    def test_password_similar_to_username_rejected(self):
+        response = self.assert_password_rejected("kenekene99", username="kenekene")
+        self.assertTrue(any("too similar" in message for message in response.data["password"]))
+
+    def test_password_similar_to_email_rejected(self):
+        self.assert_password_rejected("sophiaroberts1", username="sr", email="sophiaroberts@example.com")
+
+    def test_several_failures_are_all_reported(self):
+        response = self.register(password="12345678")
+        self.assertEqual(response.status_code, 400)
+        self.assertGreaterEqual(len(response.data["password"]), 2)
+
+    def test_strong_password_accepted(self):
+        response = self.register()
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(User.objects.get(username="validator").check_password("Sturdy-Pass-7391"))
+
+
+class AuthThrottleTests(APITestCase):
+    """register, token and token refresh share the "auth" throttle scope; other endpoints are unthrottled."""
+
+    def setUp(self):
+        cache.clear()
+        self.limit = int(api_settings.DEFAULT_THROTTLE_RATES["auth"].split("/")[0])
+
+    def tearDown(self):
+        cache.clear()
+
+    def assert_throttled_after_limit(self, url, payload):
+        for attempt in range(self.limit):
+            response = self.client.post(url, payload, format="json")
+            self.assertNotEqual(response.status_code, 429, f"request {attempt + 1} was throttled early")
+        response = self.client.post(url, payload, format="json")
+        self.assertEqual(response.status_code, 429)
+        self.assertIn("Retry-After", response.headers)
+
+    def test_register_is_throttled(self):
+        self.assert_throttled_after_limit("/api/users/register/", {})
+
+    def test_token_obtain_is_throttled(self):
+        self.assert_throttled_after_limit("/api/auth/token/", {"username": "nobody", "password": "wrong"})
+
+    def test_token_refresh_is_throttled(self):
+        self.assert_throttled_after_limit("/api/auth/token/refresh/", {"refresh": "not-a-token"})
+
+    def test_throttled_request_is_rejected_even_with_valid_credentials(self):
+        User.objects.create_user(username="throttled", password="Sturdy-Pass-7391")
+        for _ in range(self.limit):
+            self.client.post("/api/auth/token/", {"username": "throttled", "password": "wrong"}, format="json")
+        good = self.client.post("/api/auth/token/", {"username": "throttled", "password": "Sturdy-Pass-7391"}, format="json")
+        self.assertEqual(good.status_code, 429)
+
+    def test_other_endpoints_are_not_throttled(self):
+        user = User.objects.create_user(username="unthrottled", password="Sturdy-Pass-7391")
+        self.client.force_authenticate(user=user)
+        for _ in range(self.limit * 2):
+            self.assertEqual(self.client.get("/api/tracking/history/").status_code, 200)
+            self.assertEqual(self.client.get("/api/planner/history/").status_code, 200)
 
 
 class ProtectedEndpointTests(APITestCase):

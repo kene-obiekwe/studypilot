@@ -28,9 +28,10 @@ class GeneratePlanView(APIView):
         request_serializer.is_valid(raise_exception=True)
 
         data = request_serializer.validated_data
-        allocations = generate_plan(data["total_available_hours"], data["courses"])
+        courses = [dict(course) for course in data["courses"]]
+        allocations = generate_plan(data["total_available_hours"], courses)
 
-        course_names = list(dict.fromkeys(course.get("name", "Unknown") for course in data["courses"]))
+        course_names = [course["name"] for course in courses]
         now = timezone.now()
         rule_means = {
             entry["course_name"]: entry["avg_adherence"]
@@ -67,13 +68,13 @@ class GeneratePlanView(APIView):
         response_serializer.is_valid(raise_exception=True)
 
         allocation_map = {item["course"]: float(item["allocated_hours"]) for item in allocations}
-        for course in data["courses"]:
+        for course in courses:
             Course.objects.update_or_create(
                 user=request.user,
-                name=course.get("name", "Unknown"),
+                name=course["name"],
                 defaults={
-                    "difficulty": int(course.get("difficulty", 3)),
-                    "weekly_target_hours": allocation_map.get(course.get("name", "Unknown"), 3.0),
+                    "difficulty": course["difficulty"],
+                    "weekly_target_hours": allocation_map[course["name"]],
                 },
             )
 
@@ -84,7 +85,7 @@ class GeneratePlanView(APIView):
             week_start=week_start,
             plan_json={
                 "total_available_hours": float(data["total_available_hours"]),
-                "courses": data["courses"],
+                "courses": courses,
                 "allocations": allocations,
                 "adherence_adjustments": adherence_factors,
             },
