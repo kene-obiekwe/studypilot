@@ -26,7 +26,7 @@ The evaluation of the current model, including its limitations, is in `docs/eval
 
 ## Build the panel and train the model
 
-Prerequisites: the OULAD CSV bundle is available locally (not committed; see the project README for the source). The default location is `Dataset/` at the repo root. The training script also imports `matplotlib`, which is not listed in `backend/requirements.txt`; install it in the same environment first.
+Prerequisites: the OULAD CSV bundle is available locally (not committed; see the project README for the source). The default location is `Dataset/` at the repo root. The training script also imports `matplotlib`, which is listed in `backend/requirements-ml.txt` but deliberately left out of the runtime `backend/requirements.txt`; install the training dependencies first with `pip install -r backend/requirements-ml.txt`.
 
 From the repo root:
 
