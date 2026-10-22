@@ -162,3 +162,19 @@ class RecommendationApiTests(APITestCase):
         item = self.client.get(self.history_url).data["items"][0]
         for key in ("id", "focus_score", "completion_rate", "preferred_style", "strategies_json", "confidence", "created_at"):
             self.assertIn(key, item)
+
+
+class RecommendationFiniteFloatTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="finitereco", password="TestPass123!")
+        self.client.force_authenticate(user=self.user)
+
+    def test_non_finite_scores_rejected(self):
+        for field in ("focus_score", "completion_rate"):
+            for value in ("nan", "inf", "-inf"):
+                with self.subTest(field=field, value=value):
+                    data = {"focus_score": 0.4, "completion_rate": 0.3, "preferred_style": "visual", field: value}
+                    response = self.client.post("/api/recommendations/generate/", data, format="json")
+                    self.assertEqual(response.status_code, 400)
+                    self.assertEqual(response.data[field], ["Must be a finite number."])
+        self.assertEqual(RecommendationLog.objects.count(), 0)

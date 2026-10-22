@@ -28,21 +28,23 @@ class GeneratePlanView(APIView):
         request_serializer.is_valid(raise_exception=True)
 
         data = request_serializer.validated_data
-        allocations = generate_plan(data["total_available_hours"], data["courses"])
+        courses = [dict(course) for course in data["courses"]]
+        allocations = generate_plan(data["total_available_hours"], courses)
 
-        course_names = list(dict.fromkeys(course.get("name", "Unknown") for course in data["courses"]))
+        course_names = [course["name"] for course in courses]
         now = timezone.now()
-        rule_means = {
-            entry["course_name"]: entry["avg_adherence"]
-            for entry in StudySessionLog.objects.filter(
+        rule_means = {}
+        for name in course_names:
+            mean = StudySessionLog.objects.filter(
                 user=request.user,
-                course_name__in=course_names,
+                course_name__iexact=name,
                 created_at__gte=now - timedelta(days=30),
-            )
-            .values("course_name")
-            # Logs written before adherence was capped at log time can exceed 1.
-            .annotate(avg_adherence=Avg(Least(Greatest("adherence_score", ZERO), ONE)))
-        }
+            ).aggregate(
+                # Logs written before adherence was capped at log time can exceed 1.
+                avg_adherence=Avg(Least(Greatest("adherence_score", ZERO), ONE))
+            )["avg_adherence"]
+            if mean is not None:
+                rule_means[name] = mean
 
         adjustments: dict[str, dict] = {}
         for name in course_names:
@@ -67,15 +69,19 @@ class GeneratePlanView(APIView):
         response_serializer.is_valid(raise_exception=True)
 
         allocation_map = {item["course"]: float(item["allocated_hours"]) for item in allocations}
-        for course in data["courses"]:
-            Course.objects.update_or_create(
-                user=request.user,
-                name=course.get("name", "Unknown"),
-                defaults={
-                    "difficulty": int(course.get("difficulty", 3)),
-                    "weekly_target_hours": allocation_map.get(course.get("name", "Unknown"), 3.0),
-                },
-            )
+        for course in courses:
+            fields = {
+                "difficulty": course["difficulty"],
+                "weekly_target_hours": allocation_map[course["name"]],
+            }
+            # Course names match case-insensitively; an existing course keeps its stored name.
+            existing = Course.objects.filter(user=request.user, name__iexact=course["name"]).order_by("id").first()
+            if existing is None:
+                Course.objects.create(user=request.user, name=course["name"], **fields)
+            else:
+                for field, value in fields.items():
+                    setattr(existing, field, value)
+                existing.save(update_fields=list(fields))
 
         today = timezone.localdate()
         week_start = today - timedelta(days=today.weekday())
@@ -84,7 +90,7 @@ class GeneratePlanView(APIView):
             week_start=week_start,
             plan_json={
                 "total_available_hours": float(data["total_available_hours"]),
-                "courses": data["courses"],
+                "courses": courses,
                 "allocations": allocations,
                 "adherence_adjustments": adherence_factors,
             },

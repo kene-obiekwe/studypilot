@@ -1,3 +1,4 @@
+from bisect import bisect_left, bisect_right
 from datetime import timedelta
 
 from rest_framework.response import Response
@@ -73,12 +74,15 @@ class AdherencePredictionView(APIView):
         if course_name:
             course_names = [course_name]
         else:
-            course_names = list(
+            # One entry per course regardless of casing, under the casing of its most recent log.
+            latest_name: dict[str, str] = {}
+            for name in (
                 StudySessionLog.objects.filter(user=request.user)
-                .order_by("course_name")
+                .order_by("created_at", "id")
                 .values_list("course_name", flat=True)
-                .distinct()
-            )
+            ):
+                latest_name[name.casefold()] = name
+            course_names = sorted(latest_name.values(), key=str.casefold)
 
         return Response([forecast_payload(name, forecast_course(request.user, name)) for name in course_names])
 
@@ -93,21 +97,26 @@ class SessionHistoryView(APIView):
 class TrainingDataView(APIView):
     def get(self, request):
         rows = []
-        logs = StudySessionLog.objects.filter(user=request.user).order_by("created_at")[:1000]
+        difficulty_by_course: dict[str, int] = {}
+        for name, difficulty in Course.objects.filter(user=request.user).order_by("id").values_list(
+            "name", "difficulty"
+        ):
+            difficulty_by_course.setdefault(name, int(difficulty))
 
-        for log in logs:
-            course = Course.objects.filter(user=request.user, name=log.course_name).first()
-            sessions_last_7_days = StudySessionLog.objects.filter(
-                user=request.user,
-                created_at__gte=log.created_at - timedelta(days=7),
-                created_at__lte=log.created_at,
-            ).count()
+        # The 7-day window counts every log of the user, not only the first 1000 rows returned.
+        logs = list(StudySessionLog.objects.filter(user=request.user).order_by("created_at", "id"))
+        created_times = [log.created_at for log in logs]
+
+        for log in logs[:1000]:
+            window_start = bisect_left(created_times, log.created_at - timedelta(days=7))
+            window_end = bisect_right(created_times, log.created_at)
+            sessions_last_7_days = window_end - window_start
 
             rows.append(
                 {
                     "user_id": request.user.id,
                     "course_name": log.course_name,
-                    "difficulty": int(course.difficulty) if course else 3,
+                    "difficulty": difficulty_by_course.get(log.course_name, 3),
                     "planned_minutes": log.planned_minutes,
                     "actual_minutes": log.actual_minutes,
                     "focus_score": log.focus_score,

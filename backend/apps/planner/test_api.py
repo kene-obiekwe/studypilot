@@ -174,3 +174,173 @@ class PlannerCourseUpsertTests(APITestCase):
         self.assertEqual(Course.objects.filter(name="CSC 401").count(), 2)
         self.assertEqual(Course.objects.get(user=self.user, name="CSC 401").difficulty, 4)
         self.assertEqual(Course.objects.get(user=other, name="CSC 401").difficulty, 1)
+
+
+class PlannerInputValidationTests(APITestCase):
+    generate_url = "/api/planner/generate/"
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="validation", password="TestPass123!")
+        self.client.force_authenticate(user=self.user)
+
+    def generate(self, courses, hours=10):
+        return self.client.post(
+            self.generate_url, {"total_available_hours": hours, "courses": courses}, format="json"
+        )
+
+    def assert_rejected(self, response, field=None):
+        self.assertEqual(response.status_code, 400, response.data)
+        if field:
+            self.assertIn(field, str(response.data))
+        self.assertEqual(StudyPlan.objects.count(), 0)
+        self.assertEqual(Course.objects.count(), 0)
+
+    def test_blank_name_rejected(self):
+        for name in ("", "   "):
+            with self.subTest(name=name):
+                self.assert_rejected(self.generate([{"name": name, "difficulty": 3}]), "name")
+
+    def test_missing_name_rejected(self):
+        self.assert_rejected(self.generate([{"difficulty": 3}]), "name")
+
+    def test_null_name_rejected(self):
+        self.assert_rejected(self.generate([{"name": None, "difficulty": 3}]), "name")
+
+    def test_name_longer_than_120_characters_rejected(self):
+        self.assert_rejected(self.generate([{"name": "x" * 121, "difficulty": 3}]), "name")
+        self.assertEqual(self.generate([{"name": "x" * 120, "difficulty": 3}]).status_code, 200)
+
+    def test_name_is_trimmed(self):
+        response = self.generate([{"name": "  CSC 401  ", "difficulty": 3}])
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([a["course"] for a in response.data["allocations"]], ["CSC 401"])
+        self.assertEqual(Course.objects.get().name, "CSC 401")
+        self.assertEqual(StudyPlan.objects.get().plan_json["courses"], [{"name": "CSC 401", "difficulty": 3}])
+
+    def test_invalid_difficulty_rejected(self):
+        for difficulty in (0, 6, -1, "abc", 3.5, None, [], {}, True):
+            with self.subTest(difficulty=difficulty):
+                self.assert_rejected(self.generate([{"name": "A", "difficulty": difficulty}]), "difficulty")
+
+    def test_missing_difficulty_rejected(self):
+        self.assert_rejected(self.generate([{"name": "A"}]), "difficulty")
+
+    def test_difficulty_bounds_accepted(self):
+        response = self.generate([{"name": "Easy", "difficulty": 1}, {"name": "Hard", "difficulty": 5}])
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Course.objects.get(name="Easy").difficulty, 1)
+        self.assertEqual(Course.objects.get(name="Hard").difficulty, 5)
+
+    def test_course_that_is_not_an_object_rejected(self):
+        self.assert_rejected(self.generate(["CSC 401"]))
+        self.assert_rejected(self.generate("CSC 401"))
+
+    def test_more_than_20_courses_rejected(self):
+        courses = [{"name": f"Course {i}", "difficulty": 3} for i in range(21)]
+        self.assert_rejected(self.generate(courses), "courses")
+
+    def test_20_courses_accepted(self):
+        courses = [{"name": f"Course {i}", "difficulty": 3} for i in range(20)]
+        response = self.generate(courses, hours=40)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["allocations"]), 20)
+
+    def test_duplicate_names_rejected_and_named(self):
+        cases = {
+            "exact": ["CSC 401", "CSC 401"],
+            "case": ["CSC 401", "csc 401"],
+            "whitespace": ["CSC 401", "  CSC 401 "],
+            "case and whitespace": [" csc 401", "CSC 401  "],
+        }
+        for label, names in cases.items():
+            with self.subTest(label=label):
+                courses = [{"name": n, "difficulty": 3} for n in names] + [{"name": "Other", "difficulty": 2}]
+                response = self.generate(courses)
+                self.assert_rejected(response, "Duplicate course name")
+                self.assertIn("401", str(response.data))
+
+    def test_different_names_are_not_duplicates(self):
+        response = self.generate([{"name": "CSC 401", "difficulty": 3}, {"name": "CSC 402", "difficulty": 3}])
+        self.assertEqual(response.status_code, 200)
+
+    def test_total_hours_out_of_range_rejected(self):
+        for hours in (0, 0.99, 169, -5, 1000):
+            with self.subTest(hours=hours):
+                response = self.generate([{"name": "A", "difficulty": 3}], hours=hours)
+                self.assert_rejected(response, "total_available_hours")
+
+    def test_non_numeric_or_non_finite_hours_rejected(self):
+        for hours in ("abc", "nan", "inf", None):
+            with self.subTest(hours=hours):
+                response = self.generate([{"name": "A", "difficulty": 3}], hours=hours)
+                self.assert_rejected(response, "total_available_hours")
+
+    def test_hours_bounds_accepted(self):
+        for hours in (1, 168):
+            with self.subTest(hours=hours):
+                response = self.generate([{"name": "A", "difficulty": 3}], hours=hours)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data["allocations"][0]["allocated_hours"], float(hours))
+
+    def test_extra_course_fields_are_dropped(self):
+        response = self.generate([{"name": "A", "difficulty": 3, "colour": "red"}])
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("colour", StudyPlan.objects.get().plan_json["courses"][0])
+
+
+class PlannerCourseNameMatchingTests(APITestCase):
+    generate_url = "/api/planner/generate/"
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="plannercase", password="TestPass123!")
+        self.other = User.objects.create_user(username="plannercase2", password="TestPass123!")
+        self.client.force_authenticate(user=self.user)
+
+    def generate(self, name, difficulty=3, hours=10):
+        response = self.client.post(
+            self.generate_url,
+            {"total_available_hours": hours, "courses": [{"name": name, "difficulty": difficulty}]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        return response
+
+    def test_differently_cased_names_in_separate_requests_share_one_course(self):
+        self.generate("CSC 401", difficulty=4, hours=10)
+        self.generate(" csc 401 ", difficulty=2, hours=8)
+        courses = Course.objects.filter(user=self.user)
+        self.assertEqual(courses.count(), 1)
+        course = courses.get()
+        self.assertEqual(course.name, "CSC 401")  # the stored name is kept
+        self.assertEqual(course.difficulty, 2)
+        self.assertEqual(course.weekly_target_hours, 8.0)
+
+    def test_new_course_is_created_with_the_submitted_name(self):
+        self.generate("csc 401")
+        self.assertEqual(Course.objects.get().name, "csc 401")
+
+    def test_other_users_courses_do_not_match(self):
+        Course.objects.create(user=self.other, name="CSC 401", difficulty=5)
+        self.generate("csc 401")
+        self.assertEqual(Course.objects.filter(user=self.user).count(), 1)
+        self.assertEqual(Course.objects.get(user=self.other).difficulty, 5)
+
+    @mock.patch.object(inference, "get_model", return_value=FAKE_MODEL)
+    def test_rule_fallback_uses_logs_under_any_casing(self, _):
+        for name, actual in (("csc 401", 50), ("CSC 401", 70)):
+            log = StudySessionLog.objects.create(
+                user=self.user, course_name=name, planned_minutes=100, actual_minutes=actual, adherence_score=actual / 100
+            )
+            StudySessionLog.objects.filter(pk=log.pk).update(created_at=timezone.now() - timedelta(days=1))
+        allocation = self.generate("Csc 401").data["allocations"][0]
+        self.assertEqual(allocation["adjustment_source"], "rule")
+        self.assertAlmostEqual(allocation["adherence_estimate"], 0.6)
+        self.assertEqual(allocation["adherence_factor"], 0.9)
+
+    @mock.patch.object(inference, "get_model", return_value=FAKE_MODEL)
+    def test_rule_fallback_ignores_other_users_logs(self, _):
+        StudySessionLog.objects.create(
+            user=self.other, course_name="CSC 401", planned_minutes=100, actual_minutes=10, adherence_score=0.1
+        )
+        allocation = self.generate("CSC 401").data["allocations"][0]
+        self.assertEqual(allocation["adjustment_source"], "none")

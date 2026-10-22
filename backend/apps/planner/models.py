@@ -8,6 +8,11 @@ class Course(models.Model):
     difficulty = models.IntegerField(default=3)
     weekly_target_hours = models.FloatField(default=3.0)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "name"], name="unique_course_per_user"),
+        ]
+
 
 class StudyPlan(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="study_plans")

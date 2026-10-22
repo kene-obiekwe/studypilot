@@ -31,8 +31,5 @@ def get_recommendations(
     else:
         strategies.append("Combine short videos, notes, and practice questions for each topic.")
 
-    if not strategies:
-        strategies.append("Maintain the current routine and review outcomes weekly.")
-
     confidence = _confidence_score(focus_score, completion_rate)
     return strategies, confidence
