@@ -29,15 +29,21 @@ TEST_PRESENTATIONS = ("2014J",)
 MIN_WEEKS_HISTORY = 2
 
 TARGET_COLUMN = "adherence"
+# Model features: only signals the app can reproduce on the same scale.
 FEATURE_COLUMNS = [
     "adh_lag1",
     "adh_lag2",
     "adh_mean3",
     "adh_trend",
+    "weeks_history",
+]
+# Computed with the same prior-weeks-only rule, kept in the panel for reporting but
+# NOT model features: the app's per-course active days sit on a lower scale than
+# OULAD's, and its focus is a self-reported slider rather than click intensity.
+REPORTING_COLUMNS = [
     "active_days_lag1",
     "active_days_mean3",
     "focus_lag1",
-    "weeks_history",
 ]
 
 
@@ -268,6 +274,7 @@ PANEL_COLUMNS = KEY + [
     "expected_clicks",
     TARGET_COLUMN,
     *FEATURE_COLUMNS,
+    *REPORTING_COLUMNS,
     "is_training_row",
 ]
 
@@ -328,13 +335,17 @@ def main() -> None:
             "adh_lag2": "adherence at t-2",
             "adh_mean3": "mean of available adherence at t-1..t-3",
             "adh_trend": "adh_lag1 - adh_lag2",
+            "weeks_history": "number of enrolled weeks before t (= t)",
+        },
+        "reporting_columns": REPORTING_COLUMNS,
+        "reporting_column_note": "computed from weeks < t like the features, but not model inputs (no app-comparable scale)",
+        "reporting_column_definitions": {
             "active_days_lag1": "active days at t-1 (0-7)",
             "active_days_mean3": "mean of active days at t-1..t-3 (available weeks)",
             "focus_lag1": "clip((clicks_{t-1} / max(active_days_{t-1}, 1)) / P90, 0, 1)",
-            "weeks_history": "number of enrolled weeks before t (= t)",
         },
         "focus_p90_clicks_per_active_day": p90,
-        "focus_p90_definition": "90th percentile of clicks per active day over weeks with active_days > 0 in non-test presentations",
+        "focus_p90_definition": "90th percentile of clicks per active day over weeks with active_days > 0 in non-test presentations; used only by the focus_lag1 reporting column",
         "focus_p90_presentations": sorted(TRAIN_PRESENTATIONS + VAL_PRESENTATIONS),
         "splits": {
             "train": list(TRAIN_PRESENTATIONS),

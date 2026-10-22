@@ -76,11 +76,9 @@ class WeeklyFeatureBuilderTests(SimpleTestCase):
             "adh_lag2": 1.0,
             "adh_mean3": (0.0 + 1.0 + 0.5) / 3,
             "adh_trend": -0.5,
-            "active_days_lag1": 1.0,
-            "active_days_mean3": (0 + 1 + 1) / 3,
-            "focus_lag1": 0.4,
             "weeks_history": 4.0,
         }
+        self.assertEqual(list(features), list(inference.SUPPORTED_FEATURES))
         for name, value in expected.items():
             self.assertAlmostEqual(features[name], value, msg=name)
 
@@ -129,7 +127,7 @@ class WeeklyFeatureBuilderTests(SimpleTestCase):
         self.assertTrue(np.isnan(row["adh_trend"]))
         self.assertEqual(row["adh_lag2"], 1.0)
         self.assertEqual(row["adh_mean3"], 1.0)
-        self.assertEqual(row["active_days_lag1"], 1.0)
+        self.assertEqual(row["weeks_history"], 2.0)
 
     @override_settings(TIME_ZONE="Africa/Lagos")
     def test_log_dates_use_settings_time_zone(self):
@@ -160,6 +158,21 @@ class ModelLoadingTests(SimpleTestCase):
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         features = inference.forecast_features(inference.weekly_summaries(HISTORY, TODAY))
         self.assertEqual(list(features), meta["feature_order"])
+
+    def test_real_model_rewards_perfect_adherence_with_one_log_per_week(self):
+        model_path = Path(settings.ADHERENCE_MODEL_PATH)
+        if not model_path.exists() or not model_path.with_suffix(".meta.json").exists():
+            self.skipTest(f"model files not present: {model_path}")
+        from apps.planner.services import adherence_factor
+
+        points = [point(day, 60, 60, 0.2) for day in (0, 7, 14)]  # 1 log per week, low focus
+        inference.get_model.cache_clear()
+        result = inference.forecast_from_points(points, WEEK0 + timedelta(days=21))
+        self.assertEqual(result.status, inference.STATUS_OK)
+        self.assertEqual(result.weeks_history, 3)
+        self.assertEqual(list(result.features), inference.get_model().feature_order)
+        self.assertGreaterEqual(result.predicted_adherence, 0.85)
+        self.assertEqual(adherence_factor(result.predicted_adherence), 1.1)
 
     def test_sklearn_version_mismatch_is_unavailable(self):
         with tempfile.TemporaryDirectory() as tmp:

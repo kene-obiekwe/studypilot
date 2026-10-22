@@ -43,9 +43,6 @@ SUPPORTED_FEATURES = (
     "adh_lag2",
     "adh_mean3",
     "adh_trend",
-    "active_days_lag1",
-    "active_days_mean3",
-    "focus_lag1",
     "weeks_history",
 )
 
@@ -142,7 +139,11 @@ def weekly_summaries(points: list[SessionPoint], today: date) -> list[WeekSummar
 
 
 def forecast_features(summaries: list[WeekSummary]) -> dict[str, float | None]:
-    """Training features for the week after `summaries` (see ml/build_oulad_canonical.py)."""
+    """Training features for the week after `summaries` (see ml/build_oulad_canonical.py).
+
+    Weekly active days and focus are summarised but deliberately not features: the
+    app's per-course active days and self-reported focus have no OULAD-comparable scale.
+    """
     t = len(summaries)
 
     def back(k: int) -> WeekSummary | None:
@@ -159,9 +160,6 @@ def forecast_features(summaries: list[WeekSummary]) -> dict[str, float | None]:
         "adh_lag2": adh_lag2,
         "adh_mean3": mean(available_adherence) if available_adherence else None,
         "adh_trend": adh_lag1 - adh_lag2 if adh_lag1 is not None and adh_lag2 is not None else None,
-        "active_days_lag1": float(lag1.active_days) if lag1 else None,
-        "active_days_mean3": mean(w.active_days for w in recent) if recent else None,
-        "focus_lag1": lag1.focus if lag1 else None,
         "weeks_history": float(t),
     }
 
@@ -228,6 +226,8 @@ def forecast_from_points(points: list[SessionPoint], today: date) -> ForecastRes
     features = forecast_features(summaries)
     weeks_history = len(summaries)
     loaded = get_model()
+    if loaded:
+        features = {name: features[name] for name in loaded.feature_order}
     version = loaded.version if loaded else None
     min_weeks = loaded.min_weeks_history if loaded else DEFAULT_MIN_WEEKS_HISTORY
 

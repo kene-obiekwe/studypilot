@@ -315,7 +315,6 @@ def main() -> None:
         "target": TARGET_COLUMN,
         "target_definition": panel_metadata["target_definition"],
         "feature_definitions": panel_metadata["feature_definitions"],
-        "focus_p90_clicks_per_active_day": panel_metadata["focus_p90_clicks_per_active_day"],
         "min_weeks_history": MIN_WEEKS_HISTORY,
         "sklearn_version": sklearn.__version__,
         "numpy_version": np.__version__,

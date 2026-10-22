@@ -17,6 +17,8 @@ import build_oulad_canonical as boc  # noqa: E402
 
 NAN = float("nan")
 GAP_WEEKS_S1 = (2, 5)
+# Every column built from prior weeks: model features plus reporting-only columns.
+LAG_COLUMNS = boc.FEATURE_COLUMNS + boc.REPORTING_COLUMNS
 
 
 def make_courses() -> pd.DataFrame:
@@ -157,6 +159,12 @@ class SpanTests(unittest.TestCase):
         self.assertAlmostEqual(r6["adh_mean3"], expected_mean)
 
 
+class FeatureListTests(unittest.TestCase):
+    def test_model_features_are_app_comparable_only(self):
+        self.assertEqual(boc.FEATURE_COLUMNS, ["adh_lag1", "adh_lag2", "adh_mean3", "adh_trend", "weeks_history"])
+        self.assertFalse(set(boc.FEATURE_COLUMNS) & set(boc.REPORTING_COLUMNS))
+
+
 class LeakageTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -171,7 +179,7 @@ class LeakageTests(unittest.TestCase):
                 r = reg.loc[t]
                 self.assertEqual(r["weeks_history"], len(prior))
                 if t == 0:
-                    for col in boc.FEATURE_COLUMNS[:-1]:
+                    for col in [c for c in LAG_COLUMNS if c != "weeks_history"]:
                         self.assertTrue(np.isnan(r[col]), (key, t, col))
                     continue
                 last3 = prior.tail(3)
@@ -214,9 +222,9 @@ class LeakageTests(unittest.TestCase):
             vle = vle[~((vle["id_student"] == 2) & (vle["date"] // 7 == t))]
             perturbed, _, _ = build(vle, p90=self.p90)
             weeks = self.panel.index.get_level_values("week")
-            upto_t = self.panel.loc[weeks <= t, boc.FEATURE_COLUMNS]
+            upto_t = self.panel.loc[weeks <= t, LAG_COLUMNS]
             pd.testing.assert_frame_equal(
-                perturbed.loc[upto_t.index, boc.FEATURE_COLUMNS], upto_t, obj=f"features up to week {t}"
+                perturbed.loc[upto_t.index, LAG_COLUMNS], upto_t, obj=f"features up to week {t}"
             )
 
 
@@ -253,7 +261,7 @@ class SplitTests(unittest.TestCase):
         vle.loc[vle["code_presentation"] == "2013J", "sum_click"] *= 11
         perturbed, _, _ = build(vle, p90=self.p90)
         is_test = self.panel["split"] == "test"
-        cols = ["total_clicks", "active_days", "expected_clicks", boc.TARGET_COLUMN, *boc.FEATURE_COLUMNS]
+        cols = ["total_clicks", "active_days", "expected_clicks", boc.TARGET_COLUMN, *LAG_COLUMNS]
         pd.testing.assert_frame_equal(perturbed.loc[is_test, cols], self.panel.loc[is_test, cols])
 
 

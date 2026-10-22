@@ -1,6 +1,7 @@
 from datetime import timedelta
 
-from django.db.models import Avg
+from django.db.models import Avg, FloatField, Value
+from django.db.models.functions import Greatest, Least
 from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -16,6 +17,9 @@ from .services import (
 )
 from apps.tracking.inference import STATUS_OK, forecast_course
 from apps.tracking.models import StudySessionLog
+
+ZERO = Value(0.0, output_field=FloatField())
+ONE = Value(1.0, output_field=FloatField())
 
 
 class GeneratePlanView(APIView):
@@ -36,7 +40,8 @@ class GeneratePlanView(APIView):
                 created_at__gte=now - timedelta(days=30),
             )
             .values("course_name")
-            .annotate(avg_adherence=Avg("adherence_score"))
+            # Logs written before adherence was capped at log time can exceed 1.
+            .annotate(avg_adherence=Avg(Least(Greatest("adherence_score", ZERO), ONE)))
         }
 
         adjustments: dict[str, dict] = {}

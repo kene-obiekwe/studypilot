@@ -72,6 +72,18 @@ class PlannerAdjustmentSourceTests(APITestCase):
         self.assertEqual(allocation["adherence_factor"], 0.9)
 
     @mock.patch.object(inference, "get_model", return_value=FAKE_MODEL)
+    def test_rule_clamps_legacy_adherence_above_one(self, _):
+        self.log("CSC 401", 1, 100, 50)
+        legacy = StudySessionLog.objects.create(
+            user=self.user, course_name="CSC 401", planned_minutes=100, actual_minutes=250, adherence_score=2.5
+        )
+        StudySessionLog.objects.filter(pk=legacy.pk).update(created_at=timezone.now() - timedelta(days=1))
+        allocation = self.plan("CSC 401")["CSC 401"]
+        self.assertEqual(allocation["adjustment_source"], "rule")
+        self.assertAlmostEqual(allocation["adherence_estimate"], 0.75)  # unclamped mean would be 1.5
+        self.assertEqual(allocation["adherence_factor"], 1.0)
+
+    @mock.patch.object(inference, "get_model", return_value=FAKE_MODEL)
     def test_none_source_without_logs(self, _):
         allocation = self.plan("PHY 301")["PHY 301"]
         self.assertEqual(allocation["adjustment_source"], "none")
