@@ -54,8 +54,8 @@ Prerequisites: Python 3.12+, Node.js 20+, Docker Desktop, Git.
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/kene-obiekwe/cs_fyp_2026.git
-   cd cs_fyp_2026
+   git clone https://github.com/kene-obiekwe/studypilot.git
+   cd studypilot
    ```
 
 2. **Set up environment files**
