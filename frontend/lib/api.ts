@@ -361,26 +361,18 @@ export type TrainingDataResponse = {
   count: number;
 };
 
-export type AdherencePredictionPayload = {
-  planned_minutes: number;
-  focus_score?: number;
-  completion_rate?: number;
-  help_seeking_rate?: number | null;
-  avg_quiz_score_recent?: number | null;
-};
+export type ForecastStatus = "ok" | "insufficient_history" | "model_unavailable" | "prediction_failed";
 
-export type AdherencePredictionResponse = {
-  predicted_adherence: number;
-  model_version: string;
-  inputs: {
-    planned_minutes: number;
-    focus_score: number;
-    completion_rate: number;
-    help_seeking_rate: number | null;
-    avg_quiz_score_recent: number | null;
-    sessions_last_7_days: number;
-    consistency_score: number;
-  };
+export type ForecastFeatureName = "adh_lag1" | "adh_lag2" | "adh_mean3" | "adh_trend" | "weeks_history";
+
+/** One course's next-week forecast. Any feature can be null when the history lacks it. */
+export type ForecastItem = {
+  course_name: string;
+  status: ForecastStatus;
+  predicted_adherence: number | null;
+  model_version: string | null;
+  weeks_history: number;
+  features: Partial<Record<ForecastFeatureName, number | null>>;
 };
 
 export function registerUser(payload: RegisterPayload): Promise<RegisterResponse> {
@@ -419,6 +411,7 @@ export function getTrainingData(): Promise<TrainingDataResponse> {
   return request<TrainingDataResponse>("/tracking/training-data/", "GET");
 }
 
-export function predictAdherence(payload: AdherencePredictionPayload): Promise<AdherencePredictionResponse> {
-  return request<AdherencePredictionResponse>("/tracking/predict/", "POST", payload);
+/** Forecast one course, or every course the user has logged when `courseName` is omitted. */
+export function predictAdherence(courseName?: string): Promise<ForecastItem[]> {
+  return request<ForecastItem[]>("/tracking/predict/", "POST", courseName ? { course_name: courseName } : {});
 }

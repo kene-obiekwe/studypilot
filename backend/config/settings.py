@@ -41,6 +41,7 @@ ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", ["127.0.0.1", "localhost"])
 DEV_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"] if DEBUG else []
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", DEV_ORIGINS)
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", DEV_ORIGINS)
+CORS_EXPOSE_HEADERS = ["Retry-After"]
 
 INSTALLED_APPS = [
     "django.contrib.admin",

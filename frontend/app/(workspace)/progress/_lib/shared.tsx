@@ -22,6 +22,7 @@ import {
   type SessionHistoryItem,
   type TrainingDataItem,
 } from "@/lib/api";
+import { groupByCourse } from "@/lib/courses";
 import { hasSession } from "@/lib/session";
 
 // ---------------------------------------------------------------------------
@@ -127,15 +128,11 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
       },
       { adherence: 0, predicted: 0, predictedCount: 0, focus: 0, completion: 0, planned: 0, actual: 0 },
     );
-    const courseCounts = sessions.reduce<Record<string, number>>((acc, item) => {
-      acc[item.course_name] = (acc[item.course_name] ?? 0) + 1;
-      return acc;
-    }, {});
     let topCourse = "-";
     let topCourseSessions = 0;
-    Object.entries(courseCounts).forEach(([course, count]) => {
+    groupByCourse(sessions).forEach(({ label, count }) => {
       if (count > topCourseSessions) {
-        topCourse = course;
+        topCourse = label;
         topCourseSessions = count;
       }
     });

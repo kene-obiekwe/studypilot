@@ -1,5 +1,6 @@
 from django.contrib.auth.models import User
 from django.core.cache import cache
+from django.test import override_settings
 from rest_framework.settings import api_settings
 from rest_framework.test import APITestCase
 
@@ -207,6 +208,19 @@ class AuthThrottleTests(APITestCase):
             self.client.post("/api/auth/token/", {"username": "throttled", "password": "wrong"}, format="json")
         good = self.client.post("/api/auth/token/", {"username": "throttled", "password": "Sturdy-Pass-7391"}, format="json")
         self.assertEqual(good.status_code, 429)
+
+    @override_settings(CORS_ALLOWED_ORIGINS=["http://localhost:3000"])
+    def test_throttled_response_exposes_retry_after_to_allowed_origins(self):
+        origin = "http://localhost:3000"
+        payload = {"username": "nobody", "password": "wrong"}
+        for _ in range(self.limit):
+            self.client.post("/api/auth/token/", payload, format="json", HTTP_ORIGIN=origin)
+        response = self.client.post("/api/auth/token/", payload, format="json", HTTP_ORIGIN=origin)
+        self.assertEqual(response.status_code, 429)
+        self.assertIn("Retry-After", response.headers)
+        self.assertEqual(response.headers["Access-Control-Allow-Origin"], origin)
+        exposed = [name.strip().lower() for name in response.headers["Access-Control-Expose-Headers"].split(",")]
+        self.assertIn("retry-after", exposed)
 
     def test_other_endpoints_are_not_throttled(self):
         user = User.objects.create_user(username="unthrottled", password="Sturdy-Pass-7391")
