@@ -3,10 +3,10 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Bot, Lightbulb, Sparkles, Wand2 } from "lucide-react";
 import { generateRecommendations, type RecommendationResponse } from "@/lib/api";
-import { getStoredToken } from "@/lib/session";
+import { hasSession } from "@/lib/session";
 
 export default function RecommendationsPage() {
-  const [token, setToken] = useState("");
+  const [signedIn, setSignedIn] = useState(false);
   const [focusScore, setFocusScore] = useState(0.6);
   const [completionRate, setCompletionRate] = useState(0.5);
   const [preferredStyle, setPreferredStyle] = useState<"visual" | "reading" | "practice" | "mixed">("mixed");
@@ -15,7 +15,7 @@ export default function RecommendationsPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    setToken(getStoredToken());
+    setSignedIn(hasSession());
   }, []);
 
   const onSubmit = async (event: FormEvent) => {
@@ -23,14 +23,11 @@ export default function RecommendationsPage() {
     setError("");
     setStatus("Generating recommendations...");
     try {
-      const response = await generateRecommendations(
-        {
-          focus_score: focusScore,
-          completion_rate: completionRate,
-          preferred_style: preferredStyle,
-        },
-        token,
-      );
+      const response = await generateRecommendations({
+        focus_score: focusScore,
+        completion_rate: completionRate,
+        preferred_style: preferredStyle,
+      });
       setResult(response);
       setStatus("Recommendations ready");
     } catch (err) {
@@ -53,7 +50,7 @@ export default function RecommendationsPage() {
         </p>
       </section>
 
-      {!token && (
+      {!signedIn && (
         <div className="notice info">You are not signed in. Visit Authentication to log in first.</div>
       )}
 
@@ -100,7 +97,7 @@ export default function RecommendationsPage() {
               </select>
             </label>
 
-            <button type="submit" disabled={!token}>
+            <button type="submit" disabled={!signedIn}>
               Generate Recommendations
             </button>
           </form>

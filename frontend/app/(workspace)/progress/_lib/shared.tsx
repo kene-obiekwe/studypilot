@@ -22,7 +22,7 @@ import {
   type SessionHistoryItem,
   type TrainingDataItem,
 } from "@/lib/api";
-import { getStoredToken } from "@/lib/session";
+import { hasSession } from "@/lib/session";
 
 // ---------------------------------------------------------------------------
 // Shared progress data context — fetched once at the layout level so all
@@ -30,7 +30,7 @@ import { getStoredToken } from "@/lib/session";
 // ---------------------------------------------------------------------------
 
 type ProgressContextValue = {
-  token: string;
+  signedIn: boolean;
   plans: PlanHistoryItem[];
   recommendations: RecommendationHistoryItem[];
   sessions: SessionHistoryItem[];
@@ -70,7 +70,7 @@ const EMPTY_ANALYTICS: ProgressContextValue["analytics"] = {
 };
 
 export function ProgressProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState("");
+  const [signedIn, setSignedIn] = useState(false);
   const [plans, setPlans] = useState<PlanHistoryItem[]>([]);
   const [recommendations, setRecommendations] = useState<RecommendationHistoryItem[]>([]);
   const [sessions, setSessions] = useState<SessionHistoryItem[]>([]);
@@ -79,19 +79,19 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    setToken(getStoredToken());
+    setSignedIn(hasSession());
   }, []);
 
   const refresh = useCallback(async () => {
-    if (!token) return;
+    if (!signedIn) return;
     setIsLoading(true);
     setError("");
     try {
       const [p, r, s, t] = await Promise.all([
-        getPlanHistory(token),
-        getRecommendationHistory(token),
-        getSessionHistory(token),
-        getTrainingData(token),
+        getPlanHistory(),
+        getRecommendationHistory(),
+        getSessionHistory(),
+        getTrainingData(),
       ]);
       setPlans(p.items);
       setRecommendations(r.items);
@@ -102,11 +102,11 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [token]);
+  }, [signedIn]);
 
   useEffect(() => {
-    if (token) void refresh();
-  }, [token, refresh]);
+    if (signedIn) void refresh();
+  }, [signedIn, refresh]);
 
   const analytics = useMemo(() => {
     if (sessions.length === 0) {
@@ -170,7 +170,7 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
   }, [sessions, trainingRows]);
 
   const value: ProgressContextValue = {
-    token,
+    signedIn,
     plans,
     recommendations,
     sessions,

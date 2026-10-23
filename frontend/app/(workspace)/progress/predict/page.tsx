@@ -7,7 +7,7 @@ import { predictAdherence, type AdherencePredictionResponse } from "@/lib/api";
 import { clampPercent, useProgress } from "../_lib/shared";
 
 export default function ProgressPredictPage() {
-  const { token } = useProgress();
+  const { signedIn } = useProgress();
   const [plannedMinutes, setPlannedMinutes] = useState(120);
   const [focusScore, setFocusScore] = useState(0.6);
   const [completionRate, setCompletionRate] = useState(0.7);
@@ -17,7 +17,7 @@ export default function ProgressPredictPage() {
   const [error, setError] = useState("");
   const [result, setResult] = useState<AdherencePredictionResponse | null>(null);
 
-  if (!token) {
+  if (!signedIn) {
     return (
       <div className="notice info">
         You are not signed in. Visit Authentication to log in first.
@@ -30,16 +30,13 @@ export default function ProgressPredictPage() {
     setError("");
     setStatus("Generating forecast...");
     try {
-      const response = await predictAdherence(
-        {
-          planned_minutes: plannedMinutes,
-          focus_score: focusScore,
-          completion_rate: completionRate,
-          help_seeking_rate: helpSeeking === "" ? null : Number(helpSeeking),
-          avg_quiz_score_recent: avgQuiz === "" ? null : Number(avgQuiz),
-        },
-        token,
-      );
+      const response = await predictAdherence({
+        planned_minutes: plannedMinutes,
+        focus_score: focusScore,
+        completion_rate: completionRate,
+        help_seeking_rate: helpSeeking === "" ? null : Number(helpSeeking),
+        avg_quiz_score_recent: avgQuiz === "" ? null : Number(avgQuiz),
+      });
       setResult(response);
       setStatus("Forecast ready");
     } catch (err) {
