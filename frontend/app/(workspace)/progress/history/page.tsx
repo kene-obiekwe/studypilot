@@ -8,7 +8,7 @@ import { clampPercent, formatDate, useProgress } from "../_lib/shared";
 const PAGE_SIZE = 6;
 
 export default function ProgressHistoryPage() {
-  const { token, plans, recommendations, sessions } = useProgress();
+  const { signedIn, plans, recommendations, sessions } = useProgress();
   const [planPage, setPlanPage] = useState(1);
   const [recPage, setRecPage] = useState(1);
   const [sessionPage, setSessionPage] = useState(1);
@@ -40,7 +40,7 @@ export default function ProgressHistoryPage() {
     [sessions, sessionPage],
   );
 
-  if (!token) {
+  if (!signedIn) {
     return (
       <div className="notice info">
         You are not signed in. Visit Authentication to log in first.

@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { CalendarClock, GraduationCap, Plus, Trash2, Wand2 } from "lucide-react";
 import { generatePlan, type PlanResponse } from "@/lib/api";
-import { getStoredToken } from "@/lib/session";
+import { hasSession } from "@/lib/session";
 
 type CourseInput = {
   id: number;
@@ -12,7 +12,7 @@ type CourseInput = {
 };
 
 export default function PlannerPage() {
-  const [token, setToken] = useState("");
+  const [signedIn, setSignedIn] = useState(false);
   const [totalHours, setTotalHours] = useState(12);
   const [courses, setCourses] = useState<CourseInput[]>([
     { id: 1, name: "CSC 401", difficulty: 4 },
@@ -23,7 +23,7 @@ export default function PlannerPage() {
   const [result, setResult] = useState<PlanResponse | null>(null);
 
   useEffect(() => {
-    setToken(getStoredToken());
+    setSignedIn(hasSession());
   }, []);
 
   const addCourse = () => {
@@ -49,7 +49,7 @@ export default function PlannerPage() {
           .filter((course) => course.name.trim())
           .map(({ name, difficulty }) => ({ name, difficulty })),
       };
-      const response = await generatePlan(payload, token);
+      const response = await generatePlan(payload);
       setResult(response);
       setStatus("Plan generated successfully");
     } catch (err) {
@@ -71,7 +71,7 @@ export default function PlannerPage() {
         </p>
       </section>
 
-      {!token && (
+      {!signedIn && (
         <div className="notice info">You are not signed in. Visit Authentication to log in first.</div>
       )}
 
@@ -140,7 +140,7 @@ export default function PlannerPage() {
               <button type="button" className="secondary" onClick={addCourse}>
                 <Plus size={14} style={{ verticalAlign: "-2px", marginRight: 6 }} /> Add course
               </button>
-              <button type="submit" disabled={!token}>
+              <button type="submit" disabled={!signedIn}>
                 Generate Plan
               </button>
             </div>

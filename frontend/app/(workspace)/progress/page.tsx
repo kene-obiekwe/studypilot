@@ -13,10 +13,10 @@ import {
 import { clampPercent, formatDate, useProgress } from "./_lib/shared";
 
 export default function ProgressOverviewPage() {
-  const { token, sessions, plans, recommendations, trainingRows, analytics, isLoading, error, refresh } =
+  const { signedIn, sessions, plans, recommendations, trainingRows, analytics, isLoading, error, refresh } =
     useProgress();
 
-  if (!token) {
+  if (!signedIn) {
     return (
       <div className="notice info">
         You are not signed in. Visit Authentication to log in first.

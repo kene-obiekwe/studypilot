@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { getStoredToken } from "@/lib/session";
+import { hasSession } from "@/lib/session";
 
 export function WorkspaceGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -11,8 +11,7 @@ export function WorkspaceGuard({ children }: { children: React.ReactNode }) {
   const [hasToken, setHasToken] = useState(false);
 
   useEffect(() => {
-    const token = getStoredToken();
-    const isAuthed = Boolean(token);
+    const isAuthed = hasSession();
     setHasToken(isAuthed);
     setReady(true);
 

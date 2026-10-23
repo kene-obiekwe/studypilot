@@ -7,7 +7,7 @@ import { logSession, type SessionLogResponse } from "@/lib/api";
 import { useProgress, clampPercent } from "../_lib/shared";
 
 export default function ProgressLogPage() {
-  const { token, sessions, refresh } = useProgress();
+  const { signedIn, sessions, refresh } = useProgress();
   const [courseName, setCourseName] = useState("CSC 401");
   const [plannedMinutes, setPlannedMinutes] = useState(120);
   const [actualMinutes, setActualMinutes] = useState(90);
@@ -17,7 +17,7 @@ export default function ProgressLogPage() {
   const [error, setError] = useState("");
   const [result, setResult] = useState<SessionLogResponse | null>(null);
 
-  if (!token) {
+  if (!signedIn) {
     return (
       <div className="notice info">
         You are not signed in. Visit Authentication to log in first.
@@ -30,16 +30,13 @@ export default function ProgressLogPage() {
     setError("");
     setStatus("Logging session...");
     try {
-      const response = await logSession(
-        {
-          course_name: courseName,
-          planned_minutes: plannedMinutes,
-          actual_minutes: actualMinutes,
-          focus_score: focusScore,
-          completion_rate: completionRate,
-        },
-        token,
-      );
+      const response = await logSession({
+        course_name: courseName,
+        planned_minutes: plannedMinutes,
+        actual_minutes: actualMinutes,
+        focus_score: focusScore,
+        completion_rate: completionRate,
+      });
       setResult(response);
       setStatus("Session logged");
       await refresh();
@@ -118,7 +115,7 @@ export default function ProgressLogPage() {
                 onChange={(e) => setCompletionRate(Number(e.target.value))}
               />
             </label>
-            <button type="submit" disabled={!token}>
+            <button type="submit" disabled={!signedIn}>
               Submit Progress Log
             </button>
           </form>

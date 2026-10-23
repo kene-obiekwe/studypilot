@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { clearStoredToken } from "@/lib/session";
+import { clearSession } from "@/lib/session";
 
 const labelMap: Record<string, string> = {
   overview: "Overview",
@@ -51,7 +51,7 @@ export function TopChrome() {
   }, [pathname]);
 
   const onSignOut = () => {
-    clearStoredToken();
+    clearSession();
     router.replace("/");
   };
 

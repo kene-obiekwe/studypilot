@@ -1,22 +1,45 @@
-const TOKEN_KEY = "fyp_access_token";
+// The access key predates refresh tokens, so a session saved before they were stored
+// still loads, as an access-only session (it can't be refreshed once the access expires).
+const ACCESS_KEY = "fyp_access_token";
+const REFRESH_KEY = "fyp_refresh_token";
 
-export function getStoredToken(): string {
+function storage(): Storage | null {
   if (typeof window === "undefined") {
-    return "";
+    return null;
   }
-  return window.localStorage.getItem(TOKEN_KEY) ?? "";
+  return window.localStorage;
 }
 
-export function setStoredToken(token: string): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.setItem(TOKEN_KEY, token);
+export function getAccessToken(): string {
+  return storage()?.getItem(ACCESS_KEY) ?? "";
 }
 
-export function clearStoredToken(): void {
-  if (typeof window === "undefined") {
+export function getRefreshToken(): string {
+  return storage()?.getItem(REFRESH_KEY) ?? "";
+}
+
+export function hasSession(): boolean {
+  return Boolean(getAccessToken() || getRefreshToken());
+}
+
+export function setSession(tokens: { access: string; refresh: string }): void {
+  const store = storage();
+  if (!store) {
     return;
   }
-  window.localStorage.removeItem(TOKEN_KEY);
+  store.setItem(ACCESS_KEY, tokens.access);
+  store.setItem(REFRESH_KEY, tokens.refresh);
+}
+
+export function setAccessToken(access: string): void {
+  storage()?.setItem(ACCESS_KEY, access);
+}
+
+export function clearSession(): void {
+  const store = storage();
+  if (!store) {
+    return;
+  }
+  store.removeItem(ACCESS_KEY);
+  store.removeItem(REFRESH_KEY);
 }

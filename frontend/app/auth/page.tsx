@@ -1,13 +1,35 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, Suspense, useEffect, useState } from "react";
 import { KeyRound, LogIn, Sparkles, UserPlus } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { loginUser, registerUser } from "@/lib/api";
-import { clearStoredToken, getStoredToken, setStoredToken } from "@/lib/session";
+import { useRouter, useSearchParams } from "next/navigation";
+import { loginUser, registerUser, SESSION_EXPIRED_MESSAGE } from "@/lib/api";
+import { clearSession, hasSession, setSession } from "@/lib/session";
+
+// Only same-origin paths: "//host" and "/\host" would leave the site.
+function safeNextPath(next: string | null): string {
+  if (!next || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/\\")) {
+    return "/overview";
+  }
+  if (next === "/auth" || next.startsWith("/auth?") || next.startsWith("/auth/")) {
+    return "/overview";
+  }
+  return next;
+}
 
 export default function AuthPage() {
+  return (
+    <Suspense fallback={null}>
+      <AuthForm />
+    </Suspense>
+  );
+}
+
+function AuthForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const target = safeNextPath(searchParams.get("next"));
+  const expired = searchParams.get("reason") === "expired";
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -15,34 +37,43 @@ export default function AuthPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const token = getStoredToken();
-    if (token) {
+    if (hasSession()) {
       setAuthState("Authenticated");
-      router.replace("/overview");
+      router.replace(target);
     }
-  }, [router]);
+  }, [router, target]);
+
+  const signIn = async () => {
+    const tokens = await loginUser({ username, password });
+    setSession(tokens);
+    setAuthState("Authenticated");
+    router.push(target);
+  };
 
   const onRegister = async (event: FormEvent) => {
     event.preventDefault();
     setError("");
     setAuthState("Creating account...");
+    let created = "";
     try {
-      const response = await registerUser({ username, email, password });
-      setAuthState(`Account created for ${response.username}.`);
+      created = (await registerUser({ username, email, password })).username;
+      setAuthState(`Account created for ${created}. Signing in...`);
+      await signIn();
     } catch (err) {
       setError((err as Error).message);
-      setAuthState("Registration failed");
+      setAuthState(created ? `Account created for ${created}. Sign in to continue.` : "Registration failed");
     }
   };
 
   const onLogin = async () => {
     setError("");
+    if (!username || !password) {
+      setError("Enter your username and password to sign in.");
+      return;
+    }
     setAuthState("Signing in...");
     try {
-      const response = await loginUser({ username, password });
-      setStoredToken(response.access);
-      setAuthState("Authenticated");
-      router.push("/overview");
+      await signIn();
     } catch (err) {
       setError((err as Error).message);
       setAuthState("Login failed");
@@ -50,7 +81,7 @@ export default function AuthPage() {
   };
 
   const onLogout = () => {
-    clearStoredToken();
+    clearSession();
     setAuthState("No active session");
   };
 
@@ -74,13 +105,15 @@ export default function AuthPage() {
           </h3>
           <p className="muted-text" style={{ marginTop: 4 }}>Current state: {authState}</p>
 
+          {expired && <div className="notice info">{SESSION_EXPIRED_MESSAGE}</div>}
+
           <form className="form-grid" onSubmit={onRegister}>
             <label>
               Username
               <input value={username} onChange={(e) => setUsername(e.target.value)} required />
             </label>
             <label>
-              Email
+              Email (registration only)
               <input
                 value={email}
                 type="email"
@@ -126,7 +159,7 @@ export default function AuthPage() {
             <li>Persisted history paginated across plans, recommendations, and sessions.</li>
           </ul>
           <p className="muted-text">
-            New here? Register first; you will be redirected to the overview after a successful login.
+            New here? Register and you will be signed in and taken to the overview straight away.
           </p>
         </article>
       </section>
