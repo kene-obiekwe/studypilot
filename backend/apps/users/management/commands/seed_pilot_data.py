@@ -14,21 +14,30 @@ Re-running the command is safe: it uses get_or_create for users and courses, and
 clears prior plans/recommendations/sessions for the pilot accounts before
 re-seeding so the data stays deterministic across runs.
 
+Passwords: the pilot accounts get the PILOT_PASSWORD environment variable, or, when it is
+unset and DEBUG is True, the development default. With DEBUG off the command refuses to run
+unless --allow-production is passed and PILOT_PASSWORD passes Django's password validators.
+
 Usage (from backend/):
 
     python manage.py seed_pilot_data
     python manage.py seed_pilot_data --reset
+    PILOT_PASSWORD=... python manage.py seed_pilot_data --allow-production
 """
 
 from __future__ import annotations
 
+import os
 import random
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Iterable
 
+from django.conf import settings
 from django.contrib.auth.models import User
-from django.core.management.base import BaseCommand
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
@@ -105,7 +114,8 @@ PILOTS: tuple[PilotProfile, ...] = (
     ),
 )
 
-PILOT_PASSWORD = "Pilot12345!"
+DEV_DEFAULT_PASSWORD = "Pilot12345!"
+PASSWORD_ENV_VAR = "PILOT_PASSWORD"
 
 COURSE_CATALOG: tuple[tuple[str, int, float], ...] = (
     # (name, difficulty 1-5, weekly_target_hours)
@@ -145,10 +155,44 @@ class Command(BaseCommand):
             action="store_true",
             help="Delete prior pilot users entirely before reseeding (default keeps users, clears their data).",
         )
+        parser.add_argument(
+            "--allow-production",
+            action="store_true",
+            help=f"Allow seeding when DEBUG is off. Requires a strong {PASSWORD_ENV_VAR}.",
+        )
+
+    def _resolve_password(self, allow_production: bool) -> tuple[str, str]:
+        """Return (password, source). Raises CommandError before anything is written."""
+        env_password = os.environ.get(PASSWORD_ENV_VAR, "")
+        if settings.DEBUG:
+            if env_password:
+                return env_password, PASSWORD_ENV_VAR
+            return DEV_DEFAULT_PASSWORD, "dev default"
+
+        if not allow_production:
+            raise CommandError(
+                "Refusing to seed demo accounts while DEBUG is off. These are known demo users; "
+                f"to seed anyway pass --allow-production and set {PASSWORD_ENV_VAR} to a strong password."
+            )
+        if not env_password:
+            raise CommandError(
+                f"--allow-production needs the {PASSWORD_ENV_VAR} environment variable set to a strong password."
+            )
+        problems: list[str] = []
+        for profile in PILOTS:
+            candidate = User(username=profile.username, email=f"{profile.username}@studyplanner.local")
+            try:
+                validate_password(env_password, user=candidate)
+            except ValidationError as exc:
+                problems.extend(message for message in exc.messages if message not in problems)
+        if problems:
+            raise CommandError(f"{PASSWORD_ENV_VAR} is too weak: " + " ".join(problems))
+        return env_password, PASSWORD_ENV_VAR
 
     @transaction.atomic
     def handle(self, *args, **options) -> None:
         reset = bool(options.get("reset"))
+        password, password_source = self._resolve_password(bool(options.get("allow_production")))
         rng = random.Random(20260529)
 
         now = timezone.now()
@@ -159,7 +203,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING(f"Reset: deleted {deleted} pilot user records and cascaded data."))
 
         for profile in PILOTS:
-            user = self._upsert_user(profile)
+            user = self._upsert_user(profile, password)
             self._clear_existing_data(user)
             courses = self._upsert_courses(user, profile)
             plan = self._seed_plan(user, courses, now)
@@ -168,16 +212,18 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"Seeded pilot: {user.username} ({profile.full_label})"))
 
         self.stdout.write(self.style.SUCCESS(""))
-        self.stdout.write(self.style.SUCCESS(f"Done. {len(PILOTS)} pilot users seeded. Password for all: {PILOT_PASSWORD}"))
+        self.stdout.write(
+            self.style.SUCCESS(f"Done. {len(PILOTS)} pilot users seeded. Password for all: from {password_source}.")
+        )
 
     # -- helpers ----------------------------------------------------------------
 
-    def _upsert_user(self, profile: PilotProfile) -> User:
+    def _upsert_user(self, profile: PilotProfile, password: str) -> User:
         user, created = User.objects.get_or_create(
             username=profile.username,
             defaults={"email": f"{profile.username}@studyplanner.local"},
         )
-        user.set_password(PILOT_PASSWORD)
+        user.set_password(password)
         user.email = f"{profile.username}@studyplanner.local"
         user.save()
         if created:
