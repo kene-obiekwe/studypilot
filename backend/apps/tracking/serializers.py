@@ -1,6 +1,9 @@
 from rest_framework import serializers
 
 from apps.common.fields import FiniteFloatField
+from apps.planner.models import Course
+
+UNKNOWN_COURSE_MESSAGE = "Add this course in My courses first."
 
 
 class StudySessionLogSerializer(serializers.Serializer):
@@ -9,6 +12,14 @@ class StudySessionLogSerializer(serializers.Serializer):
     actual_minutes = serializers.IntegerField(min_value=0)
     focus_score = FiniteFloatField(min_value=0, max_value=1)
     completion_rate = FiniteFloatField(min_value=0, max_value=1)
+
+    def validate_course_name(self, value: str) -> str:
+        """Match one of the user's courses ignoring case, and return its stored name."""
+        user = self.context["request"].user
+        course = Course.objects.filter(user=user, name__iexact=value).order_by("id").first()
+        if course is None:
+            raise serializers.ValidationError(UNKNOWN_COURSE_MESSAGE)
+        return course.name
 
 
 class StudySessionHistorySerializer(serializers.Serializer):

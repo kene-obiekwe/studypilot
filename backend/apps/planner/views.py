@@ -1,13 +1,20 @@
 from datetime import timedelta
 
+from django.db import transaction
 from django.db.models import Avg, FloatField, Value
-from django.db.models.functions import Greatest, Least
+from django.db.models.functions import Greatest, Least, Lower
 from django.utils import timezone
+from rest_framework import generics
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Course, StudyPlan
-from .serializers import PlanRequestSerializer, PlanResponseSerializer, StudyPlanHistorySerializer
+from .serializers import (
+    CourseSerializer,
+    PlanRequestSerializer,
+    PlanResponseSerializer,
+    StudyPlanHistorySerializer,
+)
 from .services import (
     ADJUSTMENT_SOURCE_NONE,
     annotate_adjustment_sources,
@@ -29,6 +36,16 @@ class GeneratePlanView(APIView):
 
         data = request_serializer.validated_data
         courses = [dict(course) for course in data["courses"]]
+
+        # An existing course keeps its stored name everywhere: allocations, plan history and lookups.
+        stored: dict[str, Course] = {}
+        for existing in Course.objects.filter(user=request.user).order_by("id"):
+            stored.setdefault(existing.name.casefold(), existing)
+        for course in courses:
+            match = stored.get(course["name"].casefold())
+            if match is not None:
+                course["name"] = match.name
+
         allocations = generate_plan(data["total_available_hours"], courses)
 
         course_names = [course["name"] for course in courses]
@@ -74,8 +91,7 @@ class GeneratePlanView(APIView):
                 "difficulty": course["difficulty"],
                 "weekly_target_hours": allocation_map[course["name"]],
             }
-            # Course names match case-insensitively; an existing course keeps its stored name.
-            existing = Course.objects.filter(user=request.user, name__iexact=course["name"]).order_by("id").first()
+            existing = stored.get(course["name"].casefold())
             if existing is None:
                 Course.objects.create(user=request.user, name=course["name"], **fields)
             else:
@@ -105,3 +121,40 @@ class StudyPlanHistoryView(APIView):
         serializer = StudyPlanHistorySerializer(plans, many=True)
         return Response({"items": serializer.data})
 
+
+class CourseListCreateView(generics.ListCreateAPIView):
+    """The signed-in user's courses. GET lists them by name, ignoring case; POST adds one."""
+
+    serializer_class = CourseSerializer
+
+    def get_queryset(self):
+        return Course.objects.filter(user=self.request.user).order_by(Lower("name"), "id")
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """One of the signed-in user's courses; another user's course id is a 404.
+
+    PATCH renames update the user's session logs that carry the old name (ignoring case) in the same
+    transaction, so history stays attached to the course.
+
+    DELETE removes the course only. Session logs and plan history are kept, still carrying the old
+    course name.
+    """
+
+    serializer_class = CourseSerializer
+    http_method_names = ["get", "patch", "delete", "head", "options"]
+
+    def get_queryset(self):
+        return Course.objects.filter(user=self.request.user)
+
+    def perform_update(self, serializer):
+        with transaction.atomic():
+            old_name = serializer.instance.name
+            course = serializer.save()
+            if course.name != old_name:
+                StudySessionLog.objects.filter(user=course.user, course_name__iexact=old_name).update(
+                    course_name=course.name
+                )

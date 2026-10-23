@@ -26,7 +26,7 @@ def forecast_payload(course_name: str, forecast: ForecastResult) -> dict:
 
 class SessionLogView(APIView):
     def post(self, request):
-        serializer = StudySessionLogSerializer(data=request.data)
+        serializer = StudySessionLogSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
 
         payload = serializer.validated_data

@@ -16,6 +16,7 @@ class SessionLogValidationTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="loguser", password="TestPass123!")
         self.client.force_authenticate(user=self.user)
+        Course.objects.create(user=self.user, name="CSC 401")
 
     def post(self, **overrides):
         data = {
@@ -298,6 +299,7 @@ class SessionLogFiniteAndNameTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="finitelog", password="TestPass123!")
         self.client.force_authenticate(user=self.user)
+        Course.objects.create(user=self.user, name="CSC 401")
 
     def post(self, **overrides):
         data = {
@@ -383,3 +385,59 @@ class CourseNameMatchingTests(APITestCase):
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["course_name"], "cSC 401")
         self.assertEqual(response.data[0]["weeks_history"], 2)
+
+
+class SessionLogRequiresCourseTests(APITestCase):
+    url = "/api/tracking/session-log/"
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="needscourse", password="TestPass123!")
+        self.other = User.objects.create_user(username="needscourse2", password="TestPass123!")
+        self.client.force_authenticate(user=self.user)
+
+    def post(self, course_name):
+        return self.client.post(
+            self.url,
+            {
+                "course_name": course_name,
+                "planned_minutes": 60,
+                "actual_minutes": 45,
+                "focus_score": 0.6,
+                "completion_rate": 0.7,
+            },
+            format="json",
+        )
+
+    def test_unknown_course_is_rejected_with_a_readable_message(self):
+        response = self.post("CSC 401")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["course_name"], ["Add this course in My courses first."])
+        self.assertEqual(StudySessionLog.objects.count(), 0)
+
+    def test_misspelt_course_is_rejected(self):
+        Course.objects.create(user=self.user, name="CSC 401 Algorithms")
+        for name in ("CSC 401 Algorithm", "CSC401 Algorithms", "CSC 401"):
+            with self.subTest(name=name):
+                self.assertEqual(self.post(name).status_code, 400)
+        self.assertEqual(StudySessionLog.objects.count(), 0)
+
+    def test_another_users_course_does_not_count(self):
+        Course.objects.create(user=self.other, name="CSC 401")
+        self.assertEqual(self.post("CSC 401").status_code, 400)
+
+    def test_log_is_stored_under_the_courses_stored_name(self):
+        Course.objects.create(user=self.user, name="CSC 401 Algorithms")
+        for typed in ("csc 401 algorithms", "  CSC 401 ALGORITHMS ", "CSC 401 Algorithms"):
+            with self.subTest(typed=typed):
+                self.assertEqual(self.post(typed).status_code, 200)
+        self.assertEqual(
+            set(StudySessionLog.objects.values_list("course_name", flat=True)), {"CSC 401 Algorithms"}
+        )
+        self.assertEqual(StudySessionLog.objects.count(), 3)
+
+    def test_deleted_course_can_no_longer_be_logged(self):
+        course = Course.objects.create(user=self.user, name="CSC 401")
+        self.assertEqual(self.post("CSC 401").status_code, 200)
+        course.delete()
+        self.assertEqual(self.post("CSC 401").status_code, 400)
+        self.assertEqual(StudySessionLog.objects.count(), 1)

@@ -1,6 +1,8 @@
 from django.contrib.auth.models import User
 from rest_framework.test import APITestCase
 
+from apps.planner.models import Course
+
 from .models import StudySessionLog
 
 
@@ -12,6 +14,7 @@ class TrackingApiTests(APITestCase):
             password="TestPass123!",
         )
         self.client.force_authenticate(user=self.user)
+        Course.objects.create(user=self.user, name="CSC 401")
 
     def test_predict_requires_auth(self):
         self.client.force_authenticate(user=None)
