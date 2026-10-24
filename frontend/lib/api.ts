@@ -10,7 +10,7 @@ export const NETWORK_ERROR_MESSAGE = "Can't reach the server. Check your connect
 export const SERVER_ERROR_MESSAGE = "Something went wrong on our side. Please try again.";
 export const SESSION_EXPIRED_MESSAGE = "Your session expired. Please sign in again.";
 
-type RequestMethod = "GET" | "POST";
+type RequestMethod = "GET" | "POST" | "PATCH" | "DELETE";
 type FieldErrors = Record<string, string[]>;
 
 /** A failed API call. `message` is a sentence that can be shown to the user as-is. */
@@ -375,6 +375,39 @@ export type ForecastItem = {
   features: Partial<Record<ForecastFeatureName, number | null>>;
 };
 
+export type LearningDemand = "problem_solving" | "conceptual" | "memorisation" | "writing" | "practical";
+
+export type AssessmentFormat =
+  | "timed_problem_exam"
+  | "multiple_choice"
+  | "essay_exam"
+  | "coursework"
+  | "continuous_quizzes";
+
+/** One of the user's courses. `assessment_format` is "" and the other traits null or empty until answered. */
+export type Course = {
+  id: number;
+  name: string;
+  difficulty: number;
+  learning_demands: LearningDemand[];
+  builds_on_earlier: boolean | null;
+  assessment_format: AssessmentFormat | "";
+  exam_date: string | null;
+  weekly_target_hours: number;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Fields the user can set. On create only `name` is required. */
+export type CourseInput = {
+  name: string;
+  difficulty?: number;
+  learning_demands?: LearningDemand[];
+  builds_on_earlier?: boolean | null;
+  assessment_format?: AssessmentFormat | "";
+  exam_date?: string | null;
+};
+
 export function registerUser(payload: RegisterPayload): Promise<RegisterResponse> {
   return request<RegisterResponse>("/users/register/", "POST", payload, { auth: false });
 }
@@ -414,4 +447,22 @@ export function getTrainingData(): Promise<TrainingDataResponse> {
 /** Forecast one course, or every course the user has logged when `courseName` is omitted. */
 export function predictAdherence(courseName?: string): Promise<ForecastItem[]> {
   return request<ForecastItem[]>("/tracking/predict/", "POST", courseName ? { course_name: courseName } : {});
+}
+
+export function listCourses(): Promise<Course[]> {
+  return request<Course[]>("/planner/courses/", "GET");
+}
+
+export function createCourse(payload: CourseInput): Promise<Course> {
+  return request<Course>("/planner/courses/", "POST", payload);
+}
+
+/** Renaming also moves the course's session logs to the new name. */
+export function updateCourse(id: number, payload: Partial<CourseInput>): Promise<Course> {
+  return request<Course>(`/planner/courses/${id}/`, "PATCH", payload);
+}
+
+/** Deleting a course keeps its session logs and plan history. */
+export async function deleteCourse(id: number): Promise<void> {
+  await request<unknown>(`/planner/courses/${id}/`, "DELETE");
 }

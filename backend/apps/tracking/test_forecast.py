@@ -12,6 +12,8 @@ from django.contrib.auth.models import User
 from django.test import SimpleTestCase, override_settings
 from rest_framework.test import APITestCase
 
+from apps.planner.models import Course
+
 from . import inference
 from .inference import LoadedModel, SessionPoint
 from .models import StudySessionLog
@@ -207,6 +209,7 @@ class TrackingForecastApiTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="forecaster", password="TestPass123!")
         self.client.force_authenticate(user=self.user)
+        Course.objects.create(user=self.user, name="CSC 401")
 
     def test_predict_without_course_covers_all_logged_courses(self):
         for name in ("MTH 401", "CSC 401", "CSC 401"):

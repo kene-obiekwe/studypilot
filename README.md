@@ -106,7 +106,9 @@ python manage.py seed_pilot_data
 ```
 
 Sign in as `pilot_consistent` (password `Pilot12345!`) for the richest seeded
-data.
+data. That default password is for local development only; with `DEBUG` off the
+command refuses to run unless you pass `--allow-production` and set `PILOT_PASSWORD`
+to a strong password.
 
 ## Dataset (OULAD)
 
