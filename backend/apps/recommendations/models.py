@@ -58,3 +58,24 @@ class StrategyFeedback(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["shown", "value"], name="unique_feedback_value_per_shown"),
         ]
+
+
+class GeneratedPlan(models.Model):
+    """A validated AI-written weekly plan, cached per user, course, ISO week and engine output."""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="generated_plans")
+    course = models.ForeignKey("planner.Course", on_delete=models.CASCADE, related_name="generated_plans")
+    week_start = models.DateField()
+    input_hash = models.CharField(max_length=64)
+    content = models.JSONField()  # {"intro": str, "items": [{"strategy_id", "title", "body"}]}
+    model_id = models.CharField(max_length=100)
+    input_tokens = models.PositiveIntegerField(default=0)
+    output_tokens = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "course", "week_start", "input_hash"], name="unique_generated_plan_per_input"
+            ),
+        ]

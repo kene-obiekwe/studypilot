@@ -85,3 +85,7 @@ class StudyPlanHistorySerializer(serializers.Serializer):
     plan_json = serializers.JSONField()
     created_at = serializers.DateTimeField()
 
+
+
+class TraitSuggestionRequestSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=120)

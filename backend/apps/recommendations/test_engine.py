@@ -119,11 +119,12 @@ class SpacingTests(SimpleTestCase):
     def on_days(self, *days_ago):
         return data([session(days_ago=d) for d in days_ago])
 
-    def test_fires_at_a_four_day_median_gap(self):
-        self.assertIn("sparse_spacing", fired(self.on_days(1, 5, 9)))
+    def test_fires_at_a_five_day_median_gap(self):
+        self.assertIn("sparse_spacing", fired(self.on_days(1, 6, 11)))
 
-    def test_three_day_gaps_do_not_fire(self):
-        self.assertNotIn("sparse_spacing", fired(self.on_days(1, 4, 7)))
+    def test_four_day_gaps_do_not_fire(self):
+        # Twice a week per course (three courses in rotation) is fine.
+        self.assertNotIn("sparse_spacing", fired(self.on_days(1, 5, 9)))
 
     def test_needs_three_study_days(self):
         self.assertNotIn("sparse_spacing", fired(self.on_days(1, 20)))

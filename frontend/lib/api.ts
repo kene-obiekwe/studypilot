@@ -476,6 +476,27 @@ export type CourseRecommendationsResponse = {
 
 export type StrategyFeedbackResponse = StrategyFeedbackState & { shown_id: number };
 
+/** This week's plan for a course. "ai" only when the write-up passed validation; otherwise rules-only. */
+export type CoursePlan = {
+  source: "ai" | "rules";
+  week_start: string;
+  intro: string;
+  items: Array<{ strategy_id: string; title: string; body: string }>;
+  /** True when the daily AI budget was used up, so the rules-only plan was served. */
+  throttled: boolean;
+  /** The model id, present only when source is "ai". */
+  model?: string;
+};
+
+/** Suggested traits for a course name, for the user to confirm. Nothing is saved. */
+export type TraitSuggestion = {
+  source: "ai" | "keywords";
+  learning_demands: LearningDemand[];
+  builds_on_earlier: boolean | null;
+  assessment_format: AssessmentFormat | null;
+  throttled: boolean;
+};
+
 export function registerUser(payload: RegisterPayload): Promise<RegisterResponse> {
   return request<RegisterResponse>("/users/register/", "POST", payload, { auth: false });
 }
@@ -539,6 +560,14 @@ export async function deleteCourse(id: number): Promise<void> {
 export function getCourseRecommendations(courseId?: number): Promise<CourseRecommendationsResponse> {
   const query = courseId === undefined ? "" : `?course_id=${encodeURIComponent(String(courseId))}`;
   return request<CourseRecommendationsResponse>(`/recommendations/courses/${query}`, "GET");
+}
+
+export function getCoursePlan(courseId: number): Promise<CoursePlan> {
+  return request<CoursePlan>(`/recommendations/courses/${encodeURIComponent(String(courseId))}/plan/`, "GET");
+}
+
+export function suggestCourseTraits(name: string): Promise<TraitSuggestion> {
+  return request<TraitSuggestion>("/planner/courses/suggest-traits/", "POST", { name });
 }
 
 /** "helpful" and "not_helpful" replace each other; "tried" is independent. */

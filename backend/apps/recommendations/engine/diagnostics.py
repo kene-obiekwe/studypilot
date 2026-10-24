@@ -27,7 +27,7 @@ LONG_FINISH_CEILING = 0.60
 
 # sparse_spacing
 MIN_STUDY_DAYS_FOR_SPACING = 3
-SPARSE_MEDIAN_GAP_DAYS = 4
+SPARSE_MEDIAN_GAP_DAYS = 5
 
 # declining_trend and low_forecast
 MIN_WEEKS_FOR_TREND = 3

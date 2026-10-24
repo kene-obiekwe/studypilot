@@ -9,6 +9,7 @@ from apps.planner.models import Course
 from .engine import recommend
 from .engine.gather import gather_course_data, local_today, week_start
 from .models import RecommendationLog, ShownStrategy
+from .plan import build_plan
 from .serializers import RecommendationRequestSerializer, RecommendationResponseSerializer
 from .serializers import RecommendationHistorySerializer, StrategyFeedbackRequestSerializer
 from .services import get_recommendations
@@ -92,3 +93,15 @@ class StrategyFeedbackView(APIView):
         if shown is None:
             raise NotFound("Strategy not found.")
         return Response(record_feedback(shown, serializer.validated_data["value"]))
+
+
+class CoursePlanView(APIView):
+    """This week's plan for one course: AI-written when enabled and valid, otherwise rules-only."""
+
+    def get(self, request, pk):
+        course = Course.objects.filter(pk=pk, user=request.user).first()
+        if course is None:
+            raise NotFound("Course not found.")
+        now = timezone.now()
+        output = recommend(gather_course_data(request.user, course, now))
+        return Response(build_plan(request, course, output, week_start(local_today(now))))
