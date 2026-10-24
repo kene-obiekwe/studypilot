@@ -7,6 +7,10 @@ spread over the last 28 days. Timestamps are backdated so the planner's 30-day
 adherence-factor lookup and the progress dashboard's history paging both show
 meaningful content immediately.
 
+Courses carry learning traits, with exam dates relative to the seed date. Some profiles also
+have a session "shape" (an adherence trend, or long sessions that finish poorly) so the
+course recommendation engine's patterns show up in the demo.
+
 This is demo data for system validation, NOT real pilot user feedback. Real pilot
 feedback is collected separately and remains future work.
 
@@ -43,7 +47,7 @@ from django.utils import timezone
 
 from apps.planner.models import Course, StudyPlan
 from apps.planner.services import generate_plan
-from apps.recommendations.models import RecommendationLog
+from apps.recommendations.models import RecommendationLog, ShownStrategy
 from apps.recommendations.services import get_recommendations
 from apps.tracking.inference import STATUS_OK, forecast_course
 from apps.tracking.models import StudySessionLog
@@ -59,6 +63,10 @@ class PilotProfile:
     focus_mean: float
     completion_mean: float
     sessions_per_week: int      # roughly how many sessions to seed per 7-day window
+    # Session "shapes" so the recommendation engine's patterns show up in the demo:
+    adherence_trend: float = 0.0               # change in mean adherence from first to last session
+    alternate_session_lengths: bool = False    # alternate short (45-60) and long (90-120) plans
+    long_session_completion_drop: float = 0.0  # completion lost on 90+ minute sessions
 
 
 PILOTS: tuple[PilotProfile, ...] = (
@@ -91,6 +99,7 @@ PILOTS: tuple[PilotProfile, ...] = (
         focus_mean=0.65,
         completion_mean=0.68,
         sessions_per_week=4,
+        adherence_trend=0.30,
     ),
     PilotProfile(
         username="pilot_declining",
@@ -101,16 +110,19 @@ PILOTS: tuple[PilotProfile, ...] = (
         focus_mean=0.55,
         completion_mean=0.55,
         sessions_per_week=4,
+        adherence_trend=-0.40,
     ),
     PilotProfile(
         username="pilot_average",
-        full_label="Average mixed learner",
+        full_label="Average mixed learner whose long sessions fade",
         preferred_style="mixed",
         adherence_mean=0.75,
         adherence_jitter=0.10,
         focus_mean=0.70,
         completion_mean=0.72,
-        sessions_per_week=4,
+        sessions_per_week=5,
+        alternate_session_lengths=True,
+        long_session_completion_drop=0.35,
     ),
 )
 
@@ -126,6 +138,16 @@ COURSE_CATALOG: tuple[tuple[str, int, float], ...] = (
     ("ENG 401 Software Engineering", 4, 5.0),
 )
 
+# Learning traits per course: (learning_demands, builds_on_earlier, assessment_format,
+# exam in N days from the seed date or None). Relative dates keep the demo current.
+COURSE_TRAITS: dict[str, tuple[list[str], bool, str, int | None]] = {
+    "CSC 401 Algorithms": (["problem_solving", "conceptual"], True, "timed_problem_exam", 18),
+    "MTH 401 Numerical Methods": (["problem_solving"], True, "timed_problem_exam", 6),
+    "STA 401 Probability Models": (["problem_solving", "memorisation"], True, "continuous_quizzes", None),
+    "PHY 301 Modern Physics": (["conceptual", "problem_solving"], False, "multiple_choice", 35),
+    "ENG 401 Software Engineering": (["writing", "practical"], False, "coursework", None),
+}
+
 # Each pilot picks three courses by index (deterministic per pilot)
 PILOT_COURSE_INDICES = {
     "pilot_consistent": (0, 1, 4),
@@ -136,6 +158,7 @@ PILOT_COURSE_INDICES = {
 }
 
 SEED_DAYS_WINDOW = 28
+SEEDED_SESSION_HOURS = 1.5  # mean planned session length (60-120 minutes)
 
 
 def _clamp(value: float, lo: float = 0.0, hi: float = 1.0) -> float:
@@ -206,7 +229,7 @@ class Command(BaseCommand):
             user = self._upsert_user(profile, password)
             self._clear_existing_data(user)
             courses = self._upsert_courses(user, profile)
-            plan = self._seed_plan(user, courses, now)
+            plan = self._seed_plan(user, profile, courses, now)
             self._seed_recommendations(user, profile, plan, seed_start, now)
             self._seed_sessions(user, profile, courses, seed_start, now, rng)
             self.stdout.write(self.style.SUCCESS(f"Seeded pilot: {user.username} ({profile.full_label})"))
@@ -233,25 +256,37 @@ class Command(BaseCommand):
     def _clear_existing_data(self, user: User) -> None:
         StudySessionLog.objects.filter(user=user).delete()
         RecommendationLog.objects.filter(user=user).delete()
+        ShownStrategy.objects.filter(user=user).delete()
         StudyPlan.objects.filter(user=user).delete()
         # Courses are kept (re-upserted) to preserve external referential pointers
 
     def _upsert_courses(self, user: User, profile: PilotProfile) -> list[Course]:
         indices = PILOT_COURSE_INDICES[profile.username]
+        today = timezone.localdate()
         result: list[Course] = []
         for idx in indices:
             name, difficulty, weekly = COURSE_CATALOG[idx]
+            demands, builds_on_earlier, assessment_format, exam_in_days = COURSE_TRAITS[name]
             course, _ = Course.objects.update_or_create(
                 user=user,
                 name=name,
-                defaults={"difficulty": difficulty, "weekly_target_hours": weekly},
+                defaults={
+                    "difficulty": difficulty,
+                    "weekly_target_hours": weekly,
+                    "learning_demands": demands,
+                    "builds_on_earlier": builds_on_earlier,
+                    "assessment_format": assessment_format,
+                    "exam_date": today + timedelta(days=exam_in_days) if exam_in_days is not None else None,
+                },
             )
             result.append(course)
         return result
 
-    def _seed_plan(self, user: User, courses: list[Course], now) -> StudyPlan:
+    def _seed_plan(self, user: User, profile: PilotProfile, courses: list[Course], now) -> StudyPlan:
         course_payload = [{"name": c.name, "difficulty": c.difficulty} for c in courses]
-        total_hours = sum(c.weekly_target_hours for c in courses)
+        # Sized to the hours the profile actually plans, so "under-studied vs this week's plan"
+        # reflects the profile (low adherers fall behind) rather than an oversized plan.
+        total_hours = profile.sessions_per_week * SEEDED_SESSION_HOURS
         allocations = generate_plan(total_hours, course_payload)
         week_start = (now - timedelta(days=now.weekday())).date()
         plan = StudyPlan.objects.create(
@@ -309,14 +344,24 @@ class Command(BaseCommand):
 
         course_cycle: Iterable[Course] = _round_robin(courses)
         for i, course in zip(range(total_sessions), course_cycle):
-            planned_minutes = rng.choice([60, 75, 90, 105, 120])
-            adherence_ratio = _bounded_normal(rng, profile.adherence_mean, profile.adherence_jitter)
+            if profile.alternate_session_lengths:
+                # With three courses in rotation, each course also alternates short and long.
+                planned_minutes = rng.choice([45, 60] if i % 2 == 0 else [90, 120])
+            else:
+                planned_minutes = rng.choice([60, 75, 90, 105, 120])
+            progress = i / max(1, total_sessions - 1)
+            adherence_mean = profile.adherence_mean + profile.adherence_trend * (progress - 0.5)
+            adherence_ratio = _bounded_normal(rng, adherence_mean, profile.adherence_jitter)
             actual_minutes = max(0, int(round(planned_minutes * adherence_ratio)))
             adherence_score = round(min(1.0, actual_minutes / max(1, planned_minutes)), 2)
             focus_score = round(_bounded_normal(rng, profile.focus_mean, profile.adherence_jitter / 2), 2)
-            completion_rate = round(_bounded_normal(rng, profile.completion_mean, profile.adherence_jitter / 2), 2)
+            completion_mean = profile.completion_mean
+            if planned_minutes >= 90:
+                completion_mean -= profile.long_session_completion_drop
+            completion_rate = round(_bounded_normal(rng, completion_mean, profile.adherence_jitter / 2), 2)
 
-            target_ts = seed_start + timedelta(seconds=session_gap_seconds * i)
+            # Half a gap in from the window start, so every session is inside the last 28 days.
+            target_ts = seed_start + timedelta(seconds=session_gap_seconds * i + session_gap_seconds // 2)
 
             # Same forecast SessionLogView stores at log time: this course's
             # current week, from the complete weeks already seeded before it.

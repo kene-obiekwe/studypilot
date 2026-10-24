@@ -144,6 +144,13 @@ ADHERENCE_MODEL_PATH = Path(
 if not ADHERENCE_MODEL_PATH.is_absolute():
     ADHERENCE_MODEL_PATH = BASE_DIR / ADHERENCE_MODEL_PATH
 
+# Optional AI-written study plans and trait suggestions. On only when ANTHROPIC_API_KEY is set;
+# the SDK reads the key from the environment itself, so it is never stored in settings.
+AI_PLAN_ENABLED = bool(os.getenv("ANTHROPIC_API_KEY", "").strip())
+AI_PLAN_MODEL = os.getenv("AI_PLAN_MODEL", "").strip() or "claude-haiku-5-5"
+AI_PLAN_DAILY_LIMIT = int(os.getenv("AI_PLAN_DAILY_LIMIT", "").strip() or 20)
+AI_PLAN_TIMEOUT_SECONDS = float(os.getenv("AI_PLAN_TIMEOUT_SECONDS", "").strip() or 20)
+
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STORAGES = {
@@ -155,6 +162,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "auth": os.getenv("AUTH_THROTTLE_RATE", "").strip() or "10/minute",
+        # Counted only when a model call is about to be made (cache hits and rules-only plans are free).
+        "ai_plan": f"{AI_PLAN_DAILY_LIMIT}/day",
     },
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",

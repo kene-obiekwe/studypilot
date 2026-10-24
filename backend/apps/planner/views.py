@@ -14,6 +14,7 @@ from .serializers import (
     PlanRequestSerializer,
     PlanResponseSerializer,
     StudyPlanHistorySerializer,
+    TraitSuggestionRequestSerializer,
 )
 from .services import (
     ADJUSTMENT_SOURCE_NONE,
@@ -22,6 +23,7 @@ from .services import (
     generate_plan,
     resolve_adjustment,
 )
+from .traits import suggest_traits
 from apps.tracking.inference import STATUS_OK, forecast_course
 from apps.tracking.models import StudySessionLog
 
@@ -158,3 +160,12 @@ class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
                 StudySessionLog.objects.filter(user=course.user, course_name__iexact=old_name).update(
                     course_name=course.name
                 )
+
+
+class SuggestTraitsView(APIView):
+    """Suggested learning traits for a course name, for the user to confirm. Nothing is saved."""
+
+    def post(self, request):
+        serializer = TraitSuggestionRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response(suggest_traits(request, serializer.validated_data["name"]))

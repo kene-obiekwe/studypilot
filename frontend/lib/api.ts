@@ -408,6 +408,95 @@ export type CourseInput = {
   exam_date?: string | null;
 };
 
+export type StrategyKind = "technique" | "schedule" | "habit" | "focus" | "exam";
+export type EvidenceBasis = "history" | "settings";
+export type StrategyFeedbackValue = "helpful" | "not_helpful" | "tried";
+
+export type StrategyFeedbackState = {
+  rating: "helpful" | "not_helpful" | null;
+  tried: boolean;
+};
+
+/** One structured recommendation. All display text is in title / what / how / why / source. */
+export type CourseRecommendation = {
+  shown_id: number;
+  strategy_id: string;
+  kind: StrategyKind;
+  priority: number;
+  basis: EvidenceBasis;
+  title: string;
+  what: string;
+  how: string[];
+  why: string;
+  /** Diagnostic ids that chose this strategy; empty when it came from the course settings. */
+  triggers: string[];
+  /** The numbers behind `why` (e.g. n_long, median_gap_days, exam_in_days). */
+  facts: Record<string, number | string | boolean | null>;
+  source: { citation: string; short: string; note?: string };
+  feedback: StrategyFeedbackState;
+};
+
+export type CourseEvidence = {
+  basis: EvidenceBasis;
+  /** e.g. "Based on 14 sessions over 4 weeks" or "Based on your course settings only". */
+  summary: string;
+  window_days: number;
+  sessions: number;
+  total_sessions: number;
+  study_days: number;
+  weeks: number;
+  mean_adherence: number | null;
+  mean_completion: number | null;
+  mean_focus: number | null;
+  forecast: { status: ForecastStatus; predicted_adherence: number | null; weeks_history: number };
+  exam_in_days: number | null;
+  plan: { allocated_hours: number; logged_hours: number } | null;
+  diagnostics: string[];
+};
+
+export type CourseRecommendations = {
+  course: {
+    id: number;
+    name: string;
+    difficulty: number;
+    learning_demands: LearningDemand[];
+    builds_on_earlier: boolean | null;
+    assessment_format: AssessmentFormat | null;
+    exam_date: string | null;
+  };
+  evidence: CourseEvidence;
+  recommendations: CourseRecommendation[];
+};
+
+export type CourseRecommendationsResponse = {
+  generated_at: string;
+  week_start: string;
+  courses: CourseRecommendations[];
+};
+
+export type StrategyFeedbackResponse = StrategyFeedbackState & { shown_id: number };
+
+/** This week's plan for a course. "ai" only when the write-up passed validation; otherwise rules-only. */
+export type CoursePlan = {
+  source: "ai" | "rules";
+  week_start: string;
+  intro: string;
+  items: Array<{ strategy_id: string; title: string; body: string }>;
+  /** True when the daily AI budget was used up, so the rules-only plan was served. */
+  throttled: boolean;
+  /** The model id, present only when source is "ai". */
+  model?: string;
+};
+
+/** Suggested traits for a course name, for the user to confirm. Nothing is saved. */
+export type TraitSuggestion = {
+  source: "ai" | "keywords";
+  learning_demands: LearningDemand[];
+  builds_on_earlier: boolean | null;
+  assessment_format: AssessmentFormat | null;
+  throttled: boolean;
+};
+
 export function registerUser(payload: RegisterPayload): Promise<RegisterResponse> {
   return request<RegisterResponse>("/users/register/", "POST", payload, { auth: false });
 }
@@ -465,4 +554,23 @@ export function updateCourse(id: number, payload: Partial<CourseInput>): Promise
 /** Deleting a course keeps its session logs and plan history. */
 export async function deleteCourse(id: number): Promise<void> {
   await request<unknown>(`/planner/courses/${id}/`, "DELETE");
+}
+
+/** Structured recommendations for every course, or one. Each one shown is logged once per week. */
+export function getCourseRecommendations(courseId?: number): Promise<CourseRecommendationsResponse> {
+  const query = courseId === undefined ? "" : `?course_id=${encodeURIComponent(String(courseId))}`;
+  return request<CourseRecommendationsResponse>(`/recommendations/courses/${query}`, "GET");
+}
+
+export function getCoursePlan(courseId: number): Promise<CoursePlan> {
+  return request<CoursePlan>(`/recommendations/courses/${encodeURIComponent(String(courseId))}/plan/`, "GET");
+}
+
+export function suggestCourseTraits(name: string): Promise<TraitSuggestion> {
+  return request<TraitSuggestion>("/planner/courses/suggest-traits/", "POST", { name });
+}
+
+/** "helpful" and "not_helpful" replace each other; "tried" is independent. */
+export function sendStrategyFeedback(shownId: number, value: StrategyFeedbackValue): Promise<StrategyFeedbackResponse> {
+  return request<StrategyFeedbackResponse>("/recommendations/feedback/", "POST", { shown_id: shownId, value });
 }
