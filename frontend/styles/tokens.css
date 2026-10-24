@@ -1,0 +1,188 @@
+/*
+ * StudyPilot design tokens ("Calm focus"). Every token is prefixed --sp- so it can't collide
+ * with the legacy unprefixed variables in app/globals.css, which old pages still use until 5.5.
+ *
+ * Themes: light is the default; [data-theme="dark"] is a full, separately designed set (layered
+ * dark surfaces, one strong accent), not an inversion. The root layout's inline script sets
+ * data-theme on <html> before paint. Any element can also carry data-theme to scope a theme
+ * (the styleguide shows both side by side).
+ *
+ * Contrast for the key text/background pairs is checked by styles/tokens.test.ts (WCAG AA).
+ */
+
+:root,
+[data-theme="light"] {
+  /* Surfaces */
+  --sp-canvas: #f7f9fc;
+  --sp-surface: #ffffff;
+  --sp-raised: #ffffff;
+  --sp-sunken: #eef2f8;
+  --sp-overlay: rgba(15, 42, 68, 0.42);
+
+  /* Text */
+  --sp-ink: #0f2a44;
+  --sp-ink-soft: #4a607a;
+  --sp-muted: #586c82;
+
+  /* Lines: hairlines are decorative; line-strong marks control boundaries (3:1). */
+  --sp-line: #d9e2ee;
+  --sp-line-strong: #7a8ca2;
+
+  /* The one accent: primary actions, links, progress, focus */
+  --sp-accent: #2b67d1;
+  --sp-accent-hover: #2459b8;
+  --sp-accent-soft: #d9e7fb;
+  --sp-accent-ink: #1d4c9e;
+  --sp-on-accent: #ffffff;
+  --sp-focus: #2b67d1;
+
+  /* Exam / warning: amber is a fill with dark text; exam-strong is for icons and borders. */
+  --sp-exam: #e0a13a;
+  --sp-on-exam: #3d2600;
+  --sp-exam-strong: #a66b0e;
+  --sp-exam-soft: #fcefd5;
+  --sp-exam-ink: #7a4a06;
+
+  /* Status */
+  --sp-success: #2e8a5f;
+  --sp-success-soft: #ddf2e7;
+  --sp-success-ink: #1c5e3e;
+  --sp-danger: #c4404f;
+  --sp-danger-hover: #a8323f;
+  --sp-danger-soft: #fbe3e5;
+  --sp-danger-ink: #8e2733;
+  --sp-on-danger: #ffffff;
+
+  /* Course palette: dot and bar fill, soft tint, readable text on the tint */
+  --sp-course-0-dot: #4f5bd5; --sp-course-0-tint: #e6e8fb; --sp-course-0-ink: #2e3796; /* indigo */
+  --sp-course-1-dot: #0f8a80; --sp-course-1-tint: #d8f1ee; --sp-course-1-ink: #075a53; /* teal */
+  --sp-course-2-dot: #3c8a2e; --sp-course-2-tint: #e1f2dc; --sp-course-2-ink: #255a1c; /* green */
+  --sp-course-3-dot: #8a4fcf; --sp-course-3-tint: #f0e6fb; --sp-course-3-ink: #5b2d93; /* violet */
+  --sp-course-4-dot: #c8457a; --sp-course-4-tint: #fbe4ee; --sp-course-4-ink: #8a2550; /* rose */
+  --sp-course-5-dot: #1f82b8; --sp-course-5-tint: #dceef8; --sp-course-5-ink: #11577d; /* cyan */
+  --sp-course-6-dot: #7a7a1a; --sp-course-6-tint: #f0f0d6; --sp-course-6-ink: #4f4f0c; /* olive */
+  --sp-course-7-dot: #b85a35; --sp-course-7-tint: #f8e5dc; --sp-course-7-ink: #7e3a1e; /* clay */
+
+  /* Shadows: subtle in light */
+  --sp-shadow-1: 0 1px 2px rgba(15, 42, 68, 0.06), 0 1px 1px rgba(15, 42, 68, 0.04);
+  --sp-shadow-2: 0 4px 12px -2px rgba(15, 42, 68, 0.1), 0 2px 4px rgba(15, 42, 68, 0.05);
+  --sp-shadow-3: 0 18px 40px -12px rgba(15, 42, 68, 0.28);
+
+  --sp-color-scheme: light; /* applied by the new UI root wrapper only, not to legacy pages */
+}
+
+[data-theme="dark"] {
+  /* Layered dark surfaces: canvas < surface < raised */
+  --sp-canvas: #0b1220;
+  --sp-surface: #121b2c;
+  --sp-raised: #18243a;
+  --sp-sunken: #0e1626;
+  --sp-overlay: rgba(3, 7, 15, 0.66);
+
+  --sp-ink: #e7eef8;
+  --sp-ink-soft: #aebdd1;
+  --sp-muted: #8c9db4;
+
+  --sp-line: #26344c;
+  --sp-line-strong: #5a6c88;
+
+  /* One strong accent, brighter for dark; text on it is dark. */
+  --sp-accent: #5c9dff;
+  --sp-accent-hover: #7eb1ff;
+  --sp-accent-soft: #1b2f52;
+  --sp-accent-ink: #b3cfff;
+  --sp-on-accent: #081223;
+  --sp-focus: #7eb1ff;
+
+  --sp-exam: #f0b75a;
+  --sp-on-exam: #2a1a00;
+  --sp-exam-strong: #f0b75a;
+  --sp-exam-soft: #3a2b12;
+  --sp-exam-ink: #f6d18f;
+
+  --sp-success: #4cc28a;
+  --sp-success-soft: #123326;
+  --sp-success-ink: #97e3bc;
+  --sp-danger: #ff7a86;
+  --sp-danger-hover: #ff97a0;
+  --sp-danger-soft: #3d161c;
+  --sp-danger-ink: #ffb7be;
+  --sp-on-danger: #1f0508;
+
+  --sp-course-0-dot: #8f98ff; --sp-course-0-tint: #20234a; --sp-course-0-ink: #c9cdff;
+  --sp-course-1-dot: #3cc7ba; --sp-course-1-tint: #0e2e2c; --sp-course-1-ink: #a6eae3;
+  --sp-course-2-dot: #7bcb6a; --sp-course-2-tint: #18301a; --sp-course-2-ink: #bfe8b4;
+  --sp-course-3-dot: #bc93ff; --sp-course-3-tint: #2c1f45; --sp-course-3-ink: #e0ccff;
+  --sp-course-4-dot: #ff8db8; --sp-course-4-tint: #3d1828; --sp-course-4-ink: #ffc6dc;
+  --sp-course-5-dot: #5cc1f2; --sp-course-5-tint: #0f2a3a; --sp-course-5-ink: #b0e2fa;
+  --sp-course-6-dot: #c2c25a; --sp-course-6-tint: #2b2b12; --sp-course-6-ink: #e6e6a8;
+  --sp-course-7-dot: #f09a73; --sp-course-7-tint: #3a2017; --sp-course-7-ink: #ffcdb8;
+
+  /* In dark, elevation comes mostly from the surface steps; shadows only deepen edges. */
+  --sp-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --sp-shadow-2: 0 6px 16px -4px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  --sp-shadow-3: 0 24px 48px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.04);
+
+  --sp-color-scheme: dark;
+}
+
+/* Theme-independent scales */
+:root {
+  --sp-font-sans: var(--font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Type scale (px) and weights: regular + semibold only */
+  --sp-text-xs: 0.75rem;   /* 12 */
+  --sp-text-sm: 0.8125rem; /* 13 */
+  --sp-text-md: 0.9375rem; /* 15: body */
+  --sp-text-lg: 1.0625rem; /* 17 */
+  --sp-text-xl: 1.25rem;   /* 20 */
+  --sp-text-2xl: 1.5rem;   /* 24: large text from here (WCAG 18.66px bold / 24px regular) */
+  --sp-text-3xl: 1.875rem; /* 30 */
+  --sp-text-stat: 2rem;    /* 32: big numbers */
+  --sp-leading-tight: 1.25;
+  --sp-leading-normal: 1.5;
+  --sp-weight-regular: 400;
+  --sp-weight-strong: 600;
+
+  /* Spacing (4px base) */
+  --sp-space-0: 0;
+  --sp-space-1: 4px;
+  --sp-space-2: 8px;
+  --sp-space-3: 12px;
+  --sp-space-4: 16px;
+  --sp-space-5: 20px;
+  --sp-space-6: 24px;
+  --sp-space-7: 32px;
+  --sp-space-8: 40px;
+  --sp-space-9: 48px;
+  --sp-space-10: 64px;
+
+  /* Radii */
+  --sp-radius-sm: 6px;
+  --sp-radius-md: 10px;
+  --sp-radius-lg: 14px;
+  --sp-radius-pill: 999px;
+
+  /* Layers */
+  --sp-z-base: 0;
+  --sp-z-dropdown: 100;
+  --sp-z-sticky: 200;
+  --sp-z-overlay: 300;
+  --sp-z-dialog: 400;
+  --sp-z-toast: 500;
+
+  /* Motion */
+  --sp-duration-fast: 120ms;
+  --sp-duration-base: 180ms;
+  --sp-duration-slow: 260ms;
+  --sp-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --sp-ease-emphasized: cubic-bezier(0.3, 0, 0, 1.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --sp-duration-fast: 0ms;
+    --sp-duration-base: 0ms;
+    --sp-duration-slow: 0ms;
+  }
+}
