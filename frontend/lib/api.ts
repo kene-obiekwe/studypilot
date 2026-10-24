@@ -13,17 +13,31 @@ export const SESSION_EXPIRED_MESSAGE = "Your session expired. Please sign in aga
 type RequestMethod = "GET" | "POST" | "PATCH" | "DELETE";
 type FieldErrors = Record<string, string[]>;
 
-/** A failed API call. `message` is a sentence that can be shown to the user as-is. */
+/** The `code` of the sign-in error returned when the username and password are right but the email is unverified. */
+export const EMAIL_NOT_VERIFIED_CODE = "email_not_verified";
+
+/**
+ * A failed API call. `message` is a sentence that can be shown to the user as-is.
+ * `code` is the API's machine-readable error code when it sends one (otherwise ""); see
+ * `isEmailNotVerified` for the sign-in case.
+ */
 export class ApiError extends Error {
   readonly status: number;
   readonly fieldErrors: FieldErrors;
+  readonly code: string;
 
-  constructor(status: number, message: string, fieldErrors: FieldErrors = {}) {
+  constructor(status: number, message: string, fieldErrors: FieldErrors = {}, code = "") {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.fieldErrors = fieldErrors;
+    this.code = code;
   }
+}
+
+/** True for the sign-in error that means "enter the code we emailed you" (status 400, code email_not_verified). */
+export function isEmailNotVerified(error: unknown): boolean {
+  return error instanceof ApiError && error.code === EMAIL_NOT_VERIFIED_CODE;
 }
 
 function fieldLabel(field: string): string {
@@ -77,11 +91,15 @@ export function toApiError(status: number, payload: unknown, retryAfter: string 
 
   const messages: string[] = [];
   const fieldErrors: FieldErrors = {};
+  let code = "";
   if (payload && typeof payload === "object" && !Array.isArray(payload)) {
     const body = payload as Record<string, unknown>;
     messages.push(...collectMessages(body.detail), ...collectMessages(body.non_field_errors));
+    if (typeof body.code === "string") {
+      code = body.code;
+    }
     for (const [field, value] of Object.entries(body)) {
-      if (field === "detail" || field === "non_field_errors") {
+      if (field === "detail" || field === "non_field_errors" || (field === "code" && typeof value === "string")) {
         continue;
       }
       const fieldMessages = collectMessages(value);
@@ -96,7 +114,7 @@ export function toApiError(status: number, payload: unknown, retryAfter: string 
   }
 
   const message = messages.join(" ") || `The request couldn't be completed (error ${status}).`;
-  return new ApiError(status, message, fieldErrors);
+  return new ApiError(status, message, fieldErrors, code);
 }
 
 async function parseResponse(response: Response): Promise<unknown> {
@@ -242,6 +260,9 @@ async function request<T>(
 
 export type RegisterPayload = { username: string; email: string; password: string };
 export type RegisterResponse = { id: number; username: string };
+
+/** Registering creates an unverified account and emails a 6-digit code; no tokens are issued yet. */
+export type RegisterVerificationResponse = { status: "verification_required"; email: string };
 
 export type LoginPayload = { username: string; password: string };
 export type LoginResponse = { access: string; refresh: string };
@@ -573,4 +594,37 @@ export function suggestCourseTraits(name: string): Promise<TraitSuggestion> {
 /** "helpful" and "not_helpful" replace each other; "tried" is independent. */
 export function sendStrategyFeedback(shownId: number, value: StrategyFeedbackValue): Promise<StrategyFeedbackResponse> {
   return request<StrategyFeedbackResponse>("/recommendations/feedback/", "POST", { shown_id: shownId, value });
+}
+
+/**
+ * Register a new account. The server answers 201 with `verification_required`: the user must then
+ * enter the emailed code (`verifyEmail`). Use this instead of `registerUser`, whose response type
+ * describes the old sign-up that returned the created user.
+ */
+export function startRegistration(payload: RegisterPayload): Promise<RegisterVerificationResponse> {
+  return request<RegisterVerificationResponse>("/users/register/", "POST", payload, { auth: false });
+}
+
+/** Check the emailed code. On success the account is verified and the tokens sign the user straight in. */
+export function verifyEmail(email: string, code: string): Promise<LoginResponse> {
+  return request<LoginResponse>("/users/verify-email/", "POST", { email, code }, { auth: false });
+}
+
+export type MessageResponse = { detail: string };
+
+/** Ask for a fresh verification code. The server always answers 200, whether or not the email has an account. */
+export function resendCode(email: string): Promise<MessageResponse> {
+  return request<MessageResponse>("/users/resend-code/", "POST", { email, purpose: "verify" }, { auth: false });
+}
+
+/** Ask for a password reset code. The server always answers 200, whether or not the email has an account. */
+export function requestPasswordReset(email: string): Promise<MessageResponse> {
+  return request<MessageResponse>("/users/password-reset/request/", "POST", { email }, { auth: false });
+}
+
+export type PasswordResetPayload = { email: string; code: string; new_password: string };
+
+/** Set a new password with the emailed code. A weak password is a 400 with `fieldErrors.new_password`. */
+export function confirmPasswordReset(payload: PasswordResetPayload): Promise<MessageResponse> {
+  return request<MessageResponse>("/users/password-reset/confirm/", "POST", payload, { auth: false });
 }

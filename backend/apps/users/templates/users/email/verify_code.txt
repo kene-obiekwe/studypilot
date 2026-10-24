@@ -1,0 +1,9 @@
+Hi {{ username }},
+
+Your StudyPilot verification code is:
+
+{{ code }}
+
+It expires in {{ expiry_minutes }} minutes.
+
+If you didn't ask for this, you can ignore this email.

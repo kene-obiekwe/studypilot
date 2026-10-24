@@ -51,6 +51,7 @@ from apps.recommendations.models import RecommendationLog, ShownStrategy
 from apps.recommendations.services import get_recommendations
 from apps.tracking.inference import STATUS_OK, forecast_course
 from apps.tracking.models import StudySessionLog
+from apps.users.verification import mark_verified
 
 
 @dataclass(frozen=True)
@@ -249,6 +250,7 @@ class Command(BaseCommand):
         user.set_password(password)
         user.email = f"{profile.username}@studyplanner.local"
         user.save()
+        mark_verified(user)  # demo accounts have no inbox to verify from
         if created:
             self.stdout.write(f"  + created user {profile.username}")
         return user

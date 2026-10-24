@@ -4,6 +4,8 @@ from django.test import override_settings
 from rest_framework.settings import api_settings
 from rest_framework.test import APITestCase
 
+from .verification import is_verified, mark_verified
+
 
 class RegistrationTests(APITestCase):
     url = "/api/users/register/"
@@ -20,9 +22,10 @@ class RegistrationTests(APITestCase):
         response = self.client.post(self.url, self.payload(), format="json")
         self.assertEqual(response.status_code, 201)
         user = User.objects.get(username="newuser")
-        self.assertEqual(response.data, {"id": user.id, "username": "newuser"})
+        self.assertEqual(response.data, {"status": "verification_required", "email": "newuser@example.com"})
         self.assertEqual(user.email, "newuser@example.com")
         self.assertTrue(user.check_password("StrongPass123!"))
+        self.assertFalse(is_verified(user))
 
     def test_register_does_not_echo_password(self):
         response = self.client.post(self.url, self.payload(), format="json")
@@ -83,6 +86,7 @@ class TokenTests(APITestCase):
         self.user = User.objects.create_user(
             username="tokenuser", email="tokenuser@example.com", password="StrongPass123!"
         )
+        mark_verified(self.user)
 
     def obtain(self, **overrides):
         data = {"username": "tokenuser", "password": "StrongPass123!"}
@@ -194,7 +198,15 @@ class AuthThrottleTests(APITestCase):
         self.assertIn("Retry-After", response.headers)
 
     def test_register_is_throttled(self):
-        self.assert_throttled_after_limit("/api/users/register/", {})
+        # Register shares the "auth" bucket and also has the stricter "email" bucket; the smaller limit bites first.
+        email_limit = int(api_settings.DEFAULT_THROTTLE_RATES["email"].split("/")[0])
+        allowed = min(self.limit, email_limit)
+        for attempt in range(allowed):
+            response = self.client.post("/api/users/register/", {}, format="json")
+            self.assertNotEqual(response.status_code, 429, f"request {attempt + 1} was throttled early")
+        response = self.client.post("/api/users/register/", {}, format="json")
+        self.assertEqual(response.status_code, 429)
+        self.assertIn("Retry-After", response.headers)
 
     def test_token_obtain_is_throttled(self):
         self.assert_throttled_after_limit("/api/auth/token/", {"username": "nobody", "password": "wrong"})
