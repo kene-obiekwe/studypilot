@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { COURSE_HUE_COUNT } from "./contrast";
-import { COURSE_HUES, courseColor } from "./course-colors";
+import { buildCourseColorMap, colorFromMap, COURSE_HUES, courseColor } from "./course-colors";
 
 describe("courseColor", () => {
   it("is stable for a given id", () => {
@@ -41,5 +41,51 @@ describe("courseColor", () => {
 
   it("rejects non-numbers", () => {
     expect(() => courseColor(Number.NaN)).toThrow();
+  });
+});
+
+describe("buildCourseColorMap", () => {
+  const course = (id: number) => ({ id });
+
+  it("gives the first 8 courses 8 different colours, even when their ids collide modulo 8", () => {
+    const ids = [1, 9, 17, 25, 33, 41, 49, 57];
+    expect(new Set(ids.map((id) => courseColor(id).index)).size).toBe(1); // the id-only colour collides
+    const map = buildCourseColorMap(ids.map(course));
+    expect(new Set([...map.values()].map((color) => color.index)).size).toBe(COURSE_HUE_COUNT);
+  });
+
+  it("hands colours out in id order, whatever order the list arrives in", () => {
+    const sorted = buildCourseColorMap([course(4), course(10), course(22)]);
+    const shuffled = buildCourseColorMap([course(22), course(4), course(10)]);
+    expect(shuffled).toEqual(sorted);
+    expect([4, 10, 22].map((id) => sorted.get(id)?.index)).toEqual([0, 1, 2]);
+  });
+
+  it("starts again after the 8th course", () => {
+    const map = buildCourseColorMap(Array.from({ length: 10 }, (_, i) => course(i + 1)));
+    expect(map.get(9)?.index).toBe(0);
+    expect(map.get(10)?.index).toBe(1);
+    expect(map.size).toBe(10);
+  });
+
+  it("uses the same theme-aware variables as courseColor", () => {
+    const map = buildCourseColorMap([course(5)]);
+    expect(map.get(5)?.style).toEqual(courseColor(0).style);
+    expect(map.get(5)?.hue).toBe(COURSE_HUES[0]);
+  });
+
+  it("ignores duplicate ids and handles an empty list", () => {
+    expect(buildCourseColorMap([]).size).toBe(0);
+    const map = buildCourseColorMap([course(3), course(3), course(7)]);
+    expect(map.size).toBe(2);
+    expect(map.get(7)?.index).toBe(1);
+  });
+});
+
+describe("colorFromMap", () => {
+  it("returns the mapped colour, or the id-based colour for an unknown course", () => {
+    const map = buildCourseColorMap([{ id: 9 }]);
+    expect(colorFromMap(map, 9).index).toBe(0);
+    expect(colorFromMap(map, 12)).toEqual(courseColor(12));
   });
 });

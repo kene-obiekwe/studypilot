@@ -15,15 +15,7 @@ export type CourseColor = {
   style: CSSProperties;
 };
 
-/**
- * A stable colour for a course. Course ids are assigned sequentially, so id modulo the palette
- * size gives one user's courses different colours and never changes for a given id.
- */
-export function courseColor(courseId: number): CourseColor {
-  if (!Number.isFinite(courseId)) {
-    throw new Error(`courseColor needs a numeric course id, got ${courseId}`);
-  }
-  const index = ((Math.trunc(courseId) % COURSE_HUE_COUNT) + COURSE_HUE_COUNT) % COURSE_HUE_COUNT;
+function colorAt(index: number): CourseColor {
   return {
     index,
     hue: COURSE_HUES[index],
@@ -33,4 +25,32 @@ export function courseColor(courseId: number): CourseColor {
       "--course-ink": `var(--sp-course-${index}-ink)`,
     } as CSSProperties,
   };
+}
+
+/**
+ * A stable colour for a course id alone: id modulo the palette size. Two of a user's courses can
+ * share a colour this way (ids 1 and 9), so prefer `buildCourseColorMap` when you have the list.
+ */
+export function courseColor(courseId: number): CourseColor {
+  if (!Number.isFinite(courseId)) {
+    throw new Error(`courseColor needs a numeric course id, got ${courseId}`);
+  }
+  return colorAt(((Math.trunc(courseId) % COURSE_HUE_COUNT) + COURSE_HUE_COUNT) % COURSE_HUE_COUNT);
+}
+
+/**
+ * Colours for one user's courses: sorted by id, then handed out in palette order, so the first
+ * 8 courses never share a colour (a 9th reuses the first). The result does not depend on the
+ * order of `courses`. Deleting a course moves the colours of the courses added after it.
+ */
+export function buildCourseColorMap(courses: ReadonlyArray<{ id: number }>): Map<number, CourseColor> {
+  const map = new Map<number, CourseColor>();
+  const ids = [...new Set(courses.map((course) => course.id))].sort((a, b) => a - b);
+  ids.forEach((id, position) => map.set(id, colorAt(position % COURSE_HUE_COUNT)));
+  return map;
+}
+
+/** The colour from a map built by `buildCourseColorMap`, or the id-based colour for an unknown id. */
+export function colorFromMap(map: ReadonlyMap<number, CourseColor>, courseId: number): CourseColor {
+  return map.get(courseId) ?? courseColor(courseId);
 }

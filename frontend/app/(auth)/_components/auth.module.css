@@ -38,6 +38,16 @@
   flex: 1;
 }
 
+/* On larger screens the card sits in the middle of the space between the header and the footer. */
+@media (min-width: 721px) {
+  .main {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-bottom: var(--sp-space-8);
+  }
+}
+
 .footer {
   width: 100%;
   max-width: 420px;
@@ -121,6 +131,12 @@
   text-align: center;
   font-variant-numeric: tabular-nums;
   padding-left: 0.4em;
+}
+
+/* Bullets keep the spacing even; digits in a placeholder looked unevenly spaced. */
+.code::placeholder {
+  letter-spacing: 0.4em;
+  opacity: 0.6;
 }
 
 .resendRow {

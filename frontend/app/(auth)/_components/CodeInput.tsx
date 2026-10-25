@@ -41,7 +41,7 @@ export const CodeInput = forwardRef<HTMLInputElement, CodeInputProps>(function C
       autoComplete="one-time-code"
       pattern="[0-9]*"
       maxLength={CODE_LENGTH}
-      placeholder="000000"
+      placeholder="••••••"
       spellCheck={false}
       disabled={disabled}
       onChange={(event: ChangeEvent<HTMLInputElement>) => apply(event.target.value)}

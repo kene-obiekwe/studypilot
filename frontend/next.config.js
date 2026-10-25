@@ -4,6 +4,11 @@ const PHASE_PRODUCTION_BUILD = "phase-production-build";
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  async redirects() {
+    // The old combined sign-in and sign-up page. Next keeps the query string on a redirect, so the
+    // session-expiry link /auth?next=...&reason=expired lands on /sign-in with both values intact.
+    return [{ source: "/auth", destination: "/sign-in", permanent: false }];
+  },
 };
 
 module.exports = (phase) => {

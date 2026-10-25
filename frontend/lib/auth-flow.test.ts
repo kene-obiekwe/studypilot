@@ -9,7 +9,6 @@ import {
   RESEND_COOLDOWN_SECONDS,
   safeNextPath,
   sanitizeCode,
-  signInRedirectTarget,
 } from "./auth-flow";
 
 describe("safeNextPath", () => {
@@ -103,37 +102,6 @@ describe("resend countdown", () => {
 
   it("accepts a custom cooldown", () => {
     expect(resendSecondsLeft(resendReadyAt(0, 10), 0)).toBe(10);
-  });
-});
-
-describe("signInRedirectTarget", () => {
-  it("goes to /sign-in when there is no query", () => {
-    expect(signInRedirectTarget({})).toBe("/sign-in");
-    expect(signInRedirectTarget()).toBe("/sign-in");
-  });
-
-  it("preserves next and reason for the expiry redirect", () => {
-    expect(signInRedirectTarget({ next: "/planner", reason: "expired" })).toBe(
-      "/sign-in?next=%2Fplanner&reason=expired",
-    );
-  });
-
-  it("preserves unknown keys, encoded values and repeated keys", () => {
-    expect(signInRedirectTarget({ next: "/progress/history?page=2&x=a b", utm: "x" })).toBe(
-      "/sign-in?next=%2Fprogress%2Fhistory%3Fpage%3D2%26x%3Da+b&utm=x",
-    );
-    expect(signInRedirectTarget({ tag: ["a", "b"] })).toBe("/sign-in?tag=a&tag=b");
-  });
-
-  it("skips undefined values", () => {
-    expect(signInRedirectTarget({ next: undefined, reason: "expired" })).toBe("/sign-in?reason=expired");
-  });
-
-  it("round-trips through URLSearchParams", () => {
-    const target = signInRedirectTarget({ next: "/planner?week=2", reason: "expired" });
-    const query = new URLSearchParams(target.split("?")[1]);
-    expect(query.get("next")).toBe("/planner?week=2");
-    expect(query.get("reason")).toBe("expired");
   });
 });
 

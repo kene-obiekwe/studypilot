@@ -40,26 +40,6 @@ export function resendReadyAt(now: number, cooldownSeconds: number = RESEND_COOL
   return now + cooldownSeconds * 1000;
 }
 
-type SearchParamValue = string | string[] | undefined;
-
-/**
- * Where the old /auth URL should go: /sign-in with the query string intact, so the session-expiry
- * redirect (/auth?next=...&reason=expired) keeps working.
- */
-export function signInRedirectTarget(params: Record<string, SearchParamValue> = {}): string {
-  const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value === undefined) {
-      continue;
-    }
-    for (const item of Array.isArray(value) ? value : [value]) {
-      query.append(key, item);
-    }
-  }
-  const text = query.toString();
-  return text ? `/sign-in?${text}` : "/sign-in";
-}
-
 /** A link to another auth screen that carries `next` along, so it survives sign-up and verification. */
 export function authLink(path: string, params: { next?: string | null; email?: string | null; sent?: boolean } = {}): string {
   const query = new URLSearchParams();
