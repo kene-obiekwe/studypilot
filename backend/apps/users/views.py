@@ -140,3 +140,11 @@ class ThrottledTokenObtainPairView(TokenObtainPairView):
 class ThrottledTokenRefreshView(TokenRefreshView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "auth"
+
+
+class MeView(APIView):
+    """The signed-in user's own identity, for the app shell. Authenticated by the project default."""
+
+    def get(self, request):
+        user = request.user
+        return Response({"id": user.id, "username": user.username, "email": user.email})

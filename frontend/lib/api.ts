@@ -526,6 +526,13 @@ export function loginUser(payload: LoginPayload): Promise<LoginResponse> {
   return request<LoginResponse>("/auth/token/", "POST", payload, { auth: false });
 }
 
+export type Me = { id: number; username: string; email: string };
+
+/** The signed-in user. */
+export function getMe(): Promise<Me> {
+  return request<Me>("/users/me/", "GET");
+}
+
 export function generatePlan(payload: PlanPayload): Promise<PlanResponse> {
   return request<PlanResponse>("/planner/generate/", "POST", payload);
 }
