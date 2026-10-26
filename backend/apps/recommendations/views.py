@@ -4,6 +4,7 @@ from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.common.ai import ai_enabled
 from apps.planner.models import Course
 
 from .engine import recommend
@@ -44,7 +45,15 @@ class CourseRecommendationsView(APIView):
                     rec["feedback"] = states[row.id]
                 results.append(output)
 
-        return Response({"generated_at": now.isoformat(), "week_start": monday.isoformat(), "courses": results})
+        return Response(
+            {
+                "generated_at": now.isoformat(),
+                "week_start": monday.isoformat(),
+                # Lets the client hide "Write my weekly plan" when only the rules plan exists.
+                "ai_plan_available": ai_enabled(),
+                "courses": results,
+            }
+        )
 
 
 class StrategyFeedbackView(APIView):

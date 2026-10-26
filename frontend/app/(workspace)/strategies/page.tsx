@@ -16,12 +16,12 @@ import styles from "./strategies.module.css";
 
 const NO_COURSES: CourseRecommendations[] = [];
 
-type Loaded = { courses: CourseRecommendations[] } | { error: string };
+type Loaded = { courses: CourseRecommendations[]; aiPlanAvailable: boolean } | { error: string };
 
 /** Never rejects, so use() never throws into an error boundary; failures render as a Notice. */
 function loadStrategies(): Promise<Loaded> {
   return getCourseRecommendations().then(
-    (response) => ({ courses: response.courses }),
+    (response) => ({ courses: response.courses, aiPlanAvailable: response.ai_plan_available }),
     (error: Error) => ({ error: error.message }),
   );
 }
@@ -113,13 +113,27 @@ function Strategies({ promise, onRetry }: { promise: Promise<Loaded>; onRetry: (
         </div>
       )}
       {shown.map((entry) => (
-        <CourseSection key={entry.course.id} entry={entry} color={colorFor(entry.course.id)} />
+        <CourseSection
+          key={entry.course.id}
+          entry={entry}
+          color={colorFor(entry.course.id)}
+          aiPlanAvailable={loaded.aiPlanAvailable}
+        />
       ))}
     </>
   );
 }
 
-function CourseSection({ entry, color }: { entry: CourseRecommendations; color: CourseColor }) {
+function CourseSection({
+  entry,
+  color,
+  aiPlanAvailable,
+}: {
+  entry: CourseRecommendations;
+  color: CourseColor;
+  /** With AI plans off the weekly plan only restates the checklist, so the button is hidden. */
+  aiPlanAvailable: boolean;
+}) {
   const { course, evidence, recommendations } = entry;
   const plan = useWeeklyPlan(course.id);
   const headingId = `course-${course.id}-heading`;
@@ -134,7 +148,9 @@ function CourseSection({ entry, color }: { entry: CourseRecommendations; color: 
           </h2>
           <p className={styles.evidence}>{evidence.summary}</p>
         </div>
-        <WeeklyPlanButton state={plan.state} onWrite={() => void plan.write()} onToggle={plan.toggle} />
+        {aiPlanAvailable && (
+          <WeeklyPlanButton state={plan.state} onWrite={() => void plan.write()} onToggle={plan.toggle} />
+        )}
       </div>
       <WeeklyPlanPanel state={plan.state} courseName={course.name} />
       <ul className={styles.list} aria-label={`Strategies for ${course.name}`}>

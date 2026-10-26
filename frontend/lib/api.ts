@@ -466,6 +466,8 @@ export type CourseRecommendations = {
 export type CourseRecommendationsResponse = {
   generated_at: string;
   week_start: string;
+  /** False when the server has AI plans turned off, so "Write my weekly plan" would only repeat the checklist. */
+  ai_plan_available: boolean;
   courses: CourseRecommendations[];
 };
 

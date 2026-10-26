@@ -96,6 +96,12 @@ class CourseRecommendationsApiTests(APITestCase):
                 for field in ("strategy_id", "kind", "title", "what", "how", "why", "source", "priority", "basis", "facts"):
                     self.assertIn(field, rec)
 
+    def test_reports_whether_ai_plans_are_available(self, _):
+        with override_settings(AI_PLAN_ENABLED=False):
+            self.assertIs(self.get()["ai_plan_available"], False)
+        with override_settings(AI_PLAN_ENABLED=True):
+            self.assertIs(self.get()["ai_plan_available"], True)
+
     def test_calculus_history_through_the_database(self, _):
         self.seed_calculus_history()
         item = self.by_name(self.get(course_id=self.calculus.id))["Calculus"]

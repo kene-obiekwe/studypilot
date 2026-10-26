@@ -24,6 +24,7 @@ class MemoryStorage {
 const RESPONSE: CourseRecommendationsResponse = {
   generated_at: "2026-10-24T12:00:00Z",
   week_start: "2026-10-19",
+  ai_plan_available: false,
   courses: [
     {
       course: {

@@ -2,13 +2,18 @@ import { describe, expect, it } from "vitest";
 
 import type { PlanHistoryItem, SessionHistoryItem } from "./api";
 import {
+  courseHoursThisWeek,
   formatHours,
+  formatMinutes,
+  formatMinutesShort,
+  hasPlanThisWeek,
   localDateKey,
   loggedHoursThisWeek,
   meterText,
   plannedHoursThisWeek,
   startOfLocalWeek,
   summariseWeek,
+  weekStrip,
 } from "./week";
 
 // Local-time constructors keep these tests correct in any time zone the suite runs in.
@@ -39,7 +44,7 @@ function session(createdAt: Date, actualMinutes: number): SessionHistoryItem {
   };
 }
 
-// Wednesday 22 October 2026, 15:00 local.
+// Thursday 22 October 2026, 15:00 local.
 const NOW = at(2026, 10, 22, 15);
 
 describe("local week boundaries", () => {
@@ -116,5 +121,73 @@ describe("summary and text", () => {
 
   it("formats hours with at most one decimal", () => {
     expect([formatHours(7.5), formatHours(12), formatHours(0.04), formatHours(2.96)]).toEqual(["7.5", "12", "0", "3"]);
+  });
+});
+
+describe("week strip", () => {
+  const courses = [
+    { id: 3, name: "Calculus" },
+    { id: 9, name: "HIS 210" },
+  ];
+  const log = (courseName: string, when: Date, minutes: number): SessionHistoryItem => ({ ...session(when, minutes), course_name: courseName });
+
+  it("covers Monday to Sunday with today marked", () => {
+    const days = weekStrip([], courses, NOW);
+    expect(days.map((day) => day.label)).toEqual(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+    expect(days[0].date).toBe("2026-10-19");
+    expect(days[6].date).toBe("2026-10-25");
+    expect(days.filter((day) => day.isToday).map((day) => day.label)).toEqual(["Thu"]);
+    expect(days.every((day) => day.minutes === 0 && day.segments.length === 0)).toBe(true);
+  });
+
+  it("sums minutes per day and course, in course order, with unknown courses as Other", () => {
+    const days = weekStrip(
+      [
+        log("HIS 210", at(2026, 10, 20, 9), 30),
+        log("calculus", at(2026, 10, 20, 10), 45), // case-insensitive, like the backend
+        log("Calculus", at(2026, 10, 20, 23, 30), 15),
+        log("Deleted course", at(2026, 10, 20, 11), 20),
+        log("Calculus", at(2026, 10, 18, 12), 60), // last Sunday: not this week
+        log("Calculus", at(2026, 10, 22, 8), 0), // zero minutes: skipped
+      ],
+      courses,
+      NOW,
+    );
+    const tuesday = days[1];
+    expect(tuesday.minutes).toBe(110);
+    expect(tuesday.segments).toEqual([
+      { courseId: 3, courseName: "Calculus", minutes: 60 },
+      { courseId: 9, courseName: "HIS 210", minutes: 30 },
+      { courseId: null, courseName: "Other", minutes: 20 },
+    ]);
+    expect(days.reduce((sum, day) => sum + day.minutes, 0)).toBe(110);
+  });
+
+  it("formats minutes", () => {
+    expect(formatMinutes(0)).toBe("0 min");
+    expect(formatMinutes(45)).toBe("45 min");
+    expect(formatMinutes(120)).toBe("2 h");
+    expect(formatMinutes(85)).toBe("1 h 25 min");
+    expect(formatMinutesShort(45)).toBe("45m");
+    expect(formatMinutesShort(120)).toBe("2h");
+    expect(formatMinutesShort(65)).toBe("1h 5m");
+  });
+});
+
+describe("per-course hours", () => {
+  const plans = [plan(1, "2026-10-19", at(2026, 10, 19, 8), [3.5, 2])]; // courses C0 and C1
+
+  it("matches the plan allocation and logged sessions by name", () => {
+    const sessions = [
+      { ...session(at(2026, 10, 20), 90), course_name: "c0" },
+      { ...session(at(2026, 10, 21), 30), course_name: "C1" },
+    ];
+    expect(courseHoursThisWeek("C0", plans, sessions, NOW)).toEqual({ loggedHours: 1.5, plannedHours: 3.5 });
+    expect(courseHoursThisWeek("Elsewhere", plans, sessions, NOW)).toEqual({ loggedHours: 0, plannedHours: null });
+  });
+
+  it("knows whether this week has a plan", () => {
+    expect(hasPlanThisWeek(plans, NOW)).toBe(true);
+    expect(hasPlanThisWeek(plans, at(2026, 10, 27))).toBe(false);
   });
 });

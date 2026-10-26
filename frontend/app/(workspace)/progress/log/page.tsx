@@ -1,180 +1,220 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { BarChart3, Send, Target } from "lucide-react";
+import { Suspense, use, useId, useState, type FormEvent } from "react";
+import Link from "next/link";
+import { BookOpen, Play, Square } from "lucide-react";
 
-import { logSession, type SessionLogResponse } from "@/lib/api";
-import { useProgress, clampPercent } from "../_lib/shared";
+import { useShellData } from "@/components/app-shell";
+import {
+  CompletionScale,
+  DEFAULT_COMPLETION,
+  DEFAULT_FOCUS,
+  ElapsedTime,
+  FocusScale,
+  useActiveTimer,
+  useTimerActions,
+} from "@/components/timer";
+import { Button, Card, EmptyState, Field, Input, Notice, Select, Skeleton } from "@/components/ui";
+import { listCourses, type Course } from "@/lib/api";
+import { defaultPlannedMinutes, MAX_ACTUAL_MINUTES, PLANNED_MAX, PLANNED_MIN } from "@/lib/timer";
+import { logStudySession } from "@/lib/timer-refresh";
+
+import { useProgress } from "../_lib/shared";
+import styles from "./log.module.css";
+
+type Loaded = { courses: Course[] } | { error: string };
+
+/** Never rejects; a failure renders as a Notice with a retry. */
+function loadCourses(): Promise<Loaded> {
+  return listCourses().then(
+    (courses) => ({ courses }),
+    (error: Error) => ({ error: error.message }),
+  );
+}
 
 export default function ProgressLogPage() {
-  const { signedIn, sessions, refresh } = useProgress();
-  const [courseName, setCourseName] = useState("CSC 401");
-  const [plannedMinutes, setPlannedMinutes] = useState(120);
-  const [actualMinutes, setActualMinutes] = useState(90);
-  const [focusScore, setFocusScore] = useState(0.6);
-  const [completionRate, setCompletionRate] = useState(0.7);
-  const [status, setStatus] = useState("Ready");
-  const [error, setError] = useState("");
-  const [result, setResult] = useState<SessionLogResponse | null>(null);
+  // Fetched once per page view (a lazy initialiser read with use(), not an effect).
+  const [promise, setPromise] = useState(loadCourses);
+  return (
+    <Suspense fallback={<LogSkeleton />}>
+      <LogSession promise={promise} onRetry={() => setPromise(loadCourses())} />
+    </Suspense>
+  );
+}
 
-  if (!signedIn) {
+function LogSession({ promise, onRetry }: { promise: Promise<Loaded>; onRetry: () => void }) {
+  const loaded = use(promise);
+  if ("error" in loaded) {
     return (
-      <div className="notice info">
-        You are not signed in. Visit Authentication to log in first.
-      </div>
+      <Notice tone="danger" title="Could not load your courses">
+        <p>{loaded.error}</p>
+        <Button size="sm" onClick={onRetry}>
+          Try again
+        </Button>
+      </Notice>
     );
   }
+  if (loaded.courses.length === 0) {
+    return (
+      <EmptyState
+        icon={<BookOpen size={28} />}
+        title="Add a course first"
+        description="Sessions are logged against one of your courses."
+        action={
+          <Link href="/courses" className={styles.link}>
+            Go to courses
+          </Link>
+        }
+      />
+    );
+  }
+  return <LogForm courses={loaded.courses} />;
+}
+
+function LogForm({ courses }: { courses: Course[] }) {
+  const { plans, sessions } = useShellData();
+  const { refresh } = useProgress();
+  const { openStart, openStop } = useTimerActions();
+  const timer = useActiveTimer();
+  const formId = useId();
+
+  const suggest = (course: Course) =>
+    String(
+      defaultPlannedMinutes({
+        courseName: course.name,
+        weeklyTargetHours: course.weekly_target_hours,
+        plans: plans ?? [],
+        sessions: sessions ?? [],
+        now: new Date(),
+      }),
+    );
+
+  const [courseId, setCourseId] = useState(courses[0].id);
+  const course = courses.find((item) => item.id === courseId) ?? courses[0];
+  const [planned, setPlanned] = useState(() => suggest(courses[0]));
+  const [actual, setActual] = useState(() => suggest(courses[0]));
+  const [focus, setFocus] = useState(DEFAULT_FOCUS);
+  const [completion, setCompletion] = useState(DEFAULT_COMPLETION);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState("");
+
+  const plannedValue = Number(planned);
+  const actualValue = Number(actual);
+  const plannedInvalid = !Number.isInteger(plannedValue) || planned.trim() === "" || plannedValue < PLANNED_MIN || plannedValue > PLANNED_MAX;
+  // 0 is allowed for a past session: a planned session that didn't happen still counts.
+  const actualInvalid = !Number.isInteger(actualValue) || actual.trim() === "" || actualValue < 0 || actualValue > MAX_ACTUAL_MINUTES;
+
+  const chooseCourse = (id: number) => {
+    const next = courses.find((item) => item.id === id) ?? courses[0];
+    setCourseId(next.id);
+    setPlanned(suggest(next));
+    setActual(suggest(next));
+  };
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    if (plannedInvalid || actualInvalid || saving) return;
+    setSaving(true);
     setError("");
-    setStatus("Logging session...");
+    setSaved("");
     try {
-      const response = await logSession({
-        course_name: courseName,
-        planned_minutes: plannedMinutes,
-        actual_minutes: actualMinutes,
-        focus_score: focusScore,
-        completion_rate: completionRate,
+      const response = await logStudySession({
+        course_name: course.name,
+        planned_minutes: plannedValue,
+        actual_minutes: actualValue,
+        focus_score: Number(focus),
+        completion_rate: Number(completion),
       });
-      setResult(response);
-      setStatus("Session logged");
-      await refresh();
-    } catch (err) {
-      setStatus("Log failed");
-      setError((err as Error).message);
+      setSaved(
+        `Logged ${actualValue} min of ${course.name}. Adherence ${Math.round(response.computed.adherence * 100)}% of the planned time.`,
+      );
+      // The progress tabs share their own copy of the history; bring it up to date too.
+      void refresh();
+    } catch (failure) {
+      setError((failure as Error).message);
+    } finally {
+      setSaving(false);
     }
   };
 
-  const adherencePct = result ? clampPercent(result.computed.adherence) : 0;
-  const predictedPct = result ? clampPercent(result.computed.predicted_adherence) : 0;
-
   return (
-    <div className="grid" style={{ gap: 18 }}>
-      <section className="hero animate-in">
-        <span className="kicker">
-          <BarChart3 size={12} /> Log Session
-        </span>
-        <h2>Capture What Just Happened</h2>
-        <p>
-          Log the outcome of a study session. Your numbers feed the adherence model, refine
-          recommendations, and show up immediately in the overview tab.
-        </p>
-        <p className="muted-text" style={{ marginTop: 8 }}>
-          {sessions.length} sessions logged so far.
-        </p>
-      </section>
+    <div className={styles.page}>
+      <Field label="Course" hint="Used by both the timer and the form below.">
+        <Select value={String(course.id)} onChange={(event) => chooseCourse(Number(event.target.value))}>
+          {courses.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
+          ))}
+        </Select>
+      </Field>
 
-      <section className="grid two stagger">
-        <article className="card">
-          <h3>
-            <Send size={16} /> Session Details
-          </h3>
-          <form className="form-grid" onSubmit={onSubmit}>
-            <label>
-              Course name
-              <input value={courseName} onChange={(e) => setCourseName(e.target.value)} />
-            </label>
-            <label>
-              Planned minutes
-              <input
-                type="number"
-                min={1}
-                value={plannedMinutes}
-                onChange={(e) => setPlannedMinutes(Number(e.target.value))}
-              />
-            </label>
-            <label>
-              Actual minutes
-              <input
-                type="number"
-                min={0}
-                value={actualMinutes}
-                onChange={(e) => setActualMinutes(Number(e.target.value))}
-              />
-            </label>
-            <label>
-              Focus score (0 to 1)
-              <input
-                type="number"
-                min={0}
-                max={1}
-                step={0.01}
-                value={focusScore}
-                onChange={(e) => setFocusScore(Number(e.target.value))}
-              />
-            </label>
-            <label>
-              Completion rate (0 to 1)
-              <input
-                type="number"
-                min={0}
-                max={1}
-                step={0.01}
-                value={completionRate}
-                onChange={(e) => setCompletionRate(Number(e.target.value))}
-              />
-            </label>
-            <button type="submit" disabled={!signedIn}>
-              Submit Progress Log
-            </button>
-          </form>
+      <Card as="section" aria-labelledby={`${formId}-timer`}>
+        <div className={styles.timerRow}>
+          <div>
+            <h2 id={`${formId}-timer`} className={styles.heading}>
+              Study now
+            </h2>
+            <p className={styles.muted}>Start a timer and log the session when you stop it.</p>
+          </div>
+          {timer ? (
+            <Button icon={<Square size={14} />} onClick={openStop}>
+              Stop {timer.courseName} <ElapsedTime timer={timer} />
+            </Button>
+          ) : (
+            <Button
+              icon={<Play size={16} />}
+              onClick={() => openStart({ id: course.id, name: course.name, weeklyTargetHours: course.weekly_target_hours })}
+            >
+              Start timer for {course.name}
+            </Button>
+          )}
+        </div>
+      </Card>
 
-          <div className="notice ok">Status: {status}</div>
-          {error && <div className="notice error">{error}</div>}
-        </article>
+      <Card as="section" aria-labelledby={`${formId}-past`}>
+        <h2 id={`${formId}-past`} className={styles.heading}>
+          Log a past session
+        </h2>
+        <p className={styles.muted}>For a session of {course.name} you didn&rsquo;t time here.</p>
+        <form id={formId} className={styles.form} onSubmit={onSubmit}>
+          <div className={styles.pair}>
+            <Field label="Planned minutes" error={plannedInvalid ? `Enter ${PLANNED_MIN} to ${PLANNED_MAX}.` : undefined}>
+              <Input type="number" inputMode="numeric" min={PLANNED_MIN} max={PLANNED_MAX} value={planned} onChange={(event) => setPlanned(event.target.value)} />
+            </Field>
+            <Field
+              label="Actual minutes"
+              hint="0 if the session didn't happen."
+              error={actualInvalid ? `Enter 0 to ${MAX_ACTUAL_MINUTES}.` : undefined}
+            >
+              <Input type="number" inputMode="numeric" min={0} max={MAX_ACTUAL_MINUTES} value={actual} onChange={(event) => setActual(event.target.value)} />
+            </Field>
+          </div>
+          <FocusScale value={focus} onChange={setFocus} />
+          <CompletionScale value={completion} onChange={setCompletion} />
+          {error && (
+            <Notice tone="danger" title="Couldn't log the session">
+              {error}
+            </Notice>
+          )}
+          {saved && <Notice tone="success">{saved}</Notice>}
+          <div>
+            <Button variant="primary" type="submit" loading={saving} disabled={plannedInvalid || actualInvalid}>
+              Log session
+            </Button>
+          </div>
+        </form>
+      </Card>
+    </div>
+  );
+}
 
-        <article className="card">
-          <h3>
-            <Target size={16} /> What the Numbers Mean
-          </h3>
-          <ul style={{ paddingLeft: 18 }}>
-            <li>
-              <strong>Adherence</strong> = actual / planned minutes, capped at 1.
-            </li>
-            <li>
-              <strong>Focus score</strong> reflects perceived concentration during the session.
-            </li>
-            <li>
-              <strong>Completion rate</strong> reflects how much of the planned material was covered.
-            </li>
-            <li>
-              <strong>Predicted adherence</strong> is the model&apos;s estimate based on your rolling
-              behaviour; it gets stored alongside the actual adherence for later comparison.
-            </li>
-          </ul>
-        </article>
-      </section>
-
-      {result && (
-        <section className="grid four stagger">
-          <article className="stat">
-            <span className="stat-label">
-              <Target size={14} /> Adherence
-            </span>
-            <p className="stat-value">{adherencePct.toFixed(0)}%</p>
-            <div className="progress-wrap">
-              <div className="progress-bar" style={{ width: `${adherencePct}%` }} />
-            </div>
-          </article>
-
-          <article className="forecast-card stat">
-            <span className="stat-label">Predicted</span>
-            <p className="stat-value">{predictedPct.toFixed(0)}%</p>
-            <p className="stat-meta">Model: {result.computed.model_version}</p>
-          </article>
-
-          <article className="stat">
-            <span className="stat-label">Focus signal</span>
-            <p className="stat-value">{(result.computed.focus_score * 100).toFixed(0)}%</p>
-          </article>
-
-          <article className="stat">
-            <span className="stat-label">Completion signal</span>
-            <p className="stat-value">{(result.computed.completion_rate * 100).toFixed(0)}%</p>
-          </article>
-        </section>
-      )}
+function LogSkeleton() {
+  return (
+    <div className={styles.page} aria-busy="true" aria-label="Loading">
+      <Skeleton height={88} radius="lg" />
+      <Skeleton height={360} radius="lg" />
     </div>
   );
 }
