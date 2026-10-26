@@ -1,0 +1,224 @@
+.page {
+  display: grid;
+  gap: var(--sp-space-7);
+}
+
+/* -- Filter: segmented on desktop, select on phones ------------------------------------- */
+
+.filterDesktop {
+  display: none;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.filterPhone {
+  display: block;
+  max-width: 360px;
+}
+
+@media (min-width: 768px) {
+  .filterDesktop {
+    display: block;
+  }
+
+  .filterPhone {
+    display: none;
+  }
+}
+
+/* -- Course section -------------------------------------------------------------------- */
+
+.course {
+  display: grid;
+  gap: var(--sp-space-4);
+}
+
+.courseHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-space-3);
+}
+
+.courseTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-space-2);
+  margin: 0;
+  font-size: var(--sp-text-xl);
+}
+
+.dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--course-dot);
+}
+
+.evidence {
+  margin: var(--sp-space-1) 0 0;
+  color: var(--sp-ink-soft);
+  font-size: var(--sp-text-sm);
+}
+
+/* -- Checklist ------------------------------------------------------------------------- */
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--sp-line);
+  border-radius: var(--sp-radius-lg);
+  background: var(--sp-surface);
+}
+
+.item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-space-3);
+  padding: var(--sp-space-4) var(--sp-space-5);
+}
+
+.item + .item {
+  border-top: 1px solid var(--sp-line);
+}
+
+.itemHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-space-2);
+}
+
+.itemTitle {
+  margin: 0;
+  font-size: var(--sp-text-md);
+  font-weight: var(--sp-weight-strong);
+  color: var(--sp-ink);
+}
+
+.what {
+  margin: 2px 0 0;
+  color: var(--sp-ink);
+}
+
+.why {
+  margin: 0;
+  color: var(--sp-ink-soft);
+  font-size: var(--sp-text-sm);
+}
+
+.steps {
+  margin: 0;
+  padding-left: var(--sp-space-5);
+  color: var(--sp-ink);
+  font-size: var(--sp-text-sm);
+  display: grid;
+  gap: var(--sp-space-1);
+}
+
+.source {
+  margin: 0;
+  color: var(--sp-muted);
+  font-size: var(--sp-text-xs);
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-space-3);
+}
+
+.done {
+  color: var(--sp-success-ink);
+  font-weight: var(--sp-weight-strong);
+}
+
+.rating {
+  display: inline-flex;
+  gap: var(--sp-space-1);
+}
+
+/* Compact toggle buttons; aria-pressed marks the active rating. */
+.ratingButton[aria-pressed="true"] {
+  background: var(--sp-accent-soft);
+  color: var(--sp-accent-ink);
+  border-color: transparent;
+}
+
+/* -- Weekly plan ------------------------------------------------------------------------ */
+
+.plan {
+  display: grid;
+  gap: var(--sp-space-3);
+}
+
+.planLabel {
+  margin: 0;
+  font-size: var(--sp-text-xs);
+  font-weight: var(--sp-weight-strong);
+  color: var(--sp-accent-ink);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.planIntro {
+  margin: 0;
+  color: var(--sp-ink);
+}
+
+.planItems {
+  margin: 0;
+  padding-left: var(--sp-space-5);
+  display: grid;
+  gap: var(--sp-space-3);
+}
+
+.planItemTitle {
+  font-weight: var(--sp-weight-strong);
+}
+
+.planItemBody {
+  margin: 2px 0 0;
+  color: var(--sp-ink-soft);
+}
+
+.muted {
+  margin: 0;
+  color: var(--sp-muted);
+  font-size: var(--sp-text-sm);
+}
+
+.secondaryLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-space-2);
+  height: 40px;
+  padding: 0 var(--sp-space-4);
+  border: 1px solid var(--sp-line-strong);
+  border-radius: var(--sp-radius-md);
+  background: var(--sp-surface);
+  color: var(--sp-ink);
+  font-weight: var(--sp-weight-strong);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.secondaryLink:hover {
+  background: var(--sp-sunken);
+}
+
+.secondaryLink:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 2px;
+}
+
+.skeletonList {
+  display: grid;
+  gap: var(--sp-space-3);
+}

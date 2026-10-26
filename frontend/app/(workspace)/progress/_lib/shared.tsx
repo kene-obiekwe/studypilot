@@ -14,11 +14,9 @@ import { ClipboardCheck, History, LineChart, Sparkles } from "lucide-react";
 
 import {
   getPlanHistory,
-  getRecommendationHistory,
   getSessionHistory,
   getTrainingData,
   type PlanHistoryItem,
-  type RecommendationHistoryItem,
   type SessionHistoryItem,
   type TrainingDataItem,
 } from "@/lib/api";
@@ -33,7 +31,6 @@ import { hasSession } from "@/lib/session";
 type ProgressContextValue = {
   signedIn: boolean;
   plans: PlanHistoryItem[];
-  recommendations: RecommendationHistoryItem[];
   sessions: SessionHistoryItem[];
   trainingRows: TrainingDataItem[];
   isLoading: boolean;
@@ -73,7 +70,6 @@ const EMPTY_ANALYTICS: ProgressContextValue["analytics"] = {
 export function ProgressProvider({ children }: { children: React.ReactNode }) {
   const [signedIn, setSignedIn] = useState(false);
   const [plans, setPlans] = useState<PlanHistoryItem[]>([]);
-  const [recommendations, setRecommendations] = useState<RecommendationHistoryItem[]>([]);
   const [sessions, setSessions] = useState<SessionHistoryItem[]>([]);
   const [trainingRows, setTrainingRows] = useState<TrainingDataItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -88,14 +84,12 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     setError("");
     try {
-      const [p, r, s, t] = await Promise.all([
+      const [p, s, t] = await Promise.all([
         getPlanHistory(),
-        getRecommendationHistory(),
         getSessionHistory(),
         getTrainingData(),
       ]);
       setPlans(p.items);
-      setRecommendations(r.items);
       setSessions(s.items);
       setTrainingRows(t.rows);
     } catch (e) {
@@ -169,7 +163,6 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
   const value: ProgressContextValue = {
     signedIn,
     plans,
-    recommendations,
     sessions,
     trainingRows,
     isLoading,

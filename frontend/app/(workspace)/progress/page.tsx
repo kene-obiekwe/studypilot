@@ -13,7 +13,7 @@ import {
 import { clampPercent, formatDate, useProgress } from "./_lib/shared";
 
 export default function ProgressOverviewPage() {
-  const { signedIn, sessions, plans, recommendations, trainingRows, analytics, isLoading, error, refresh } =
+  const { signedIn, sessions, plans, trainingRows, analytics, isLoading, error, refresh } =
     useProgress();
 
   if (!signedIn) {
@@ -26,7 +26,6 @@ export default function ProgressOverviewPage() {
 
   const recentSessions = sessions.slice(0, 5);
   const latestPlan = plans[0];
-  const latestRecommendation = recommendations[0];
 
   return (
     <div className="grid" style={{ gap: 18 }}>
@@ -36,13 +35,12 @@ export default function ProgressOverviewPage() {
         </span>
         <h2>Your Study Overview</h2>
         <p>
-          Real-time analytics from your persisted planner, recommendation, and tracking history. Use the tabs
+          Real-time analytics from your persisted planner and tracking history. Use the tabs
           above to log a session, run a forecast, or browse the full archive.
         </p>
         <div className="pill-row">
           <span className="pill">{sessions.length} sessions</span>
           <span className="pill">{plans.length} plans</span>
-          <span className="pill">{recommendations.length} recommendation events</span>
           <span className="pill accent">Model: {analytics.latestModelVersion}</span>
         </div>
       </section>
@@ -179,36 +177,6 @@ export default function ProgressOverviewPage() {
           )}
         </article>
 
-        <article className="card">
-          <div className="section-head">
-            <h3>
-              <Sparkles size={16} /> Latest Recommendation
-            </h3>
-            <a className="text-link" href="/progress/history">
-              View all
-            </a>
-          </div>
-          {latestRecommendation ? (
-            <>
-              <p>
-                <strong>{latestRecommendation.preferred_style}</strong> ·{" "}
-                {formatDate(latestRecommendation.created_at)}
-              </p>
-              <p className="muted-text">
-                Focus {(latestRecommendation.focus_score * 100).toFixed(0)}% · Completion{" "}
-                {(latestRecommendation.completion_rate * 100).toFixed(0)}% · Confidence{" "}
-                {(latestRecommendation.confidence * 100).toFixed(0)}%
-              </p>
-              <ul className="strategy-list">
-                {latestRecommendation.strategies_json.slice(0, 3).map((s) => (
-                  <li key={s}>{s}</li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <p>No recommendations yet. Run one in the Recommendations tab.</p>
-          )}
-        </article>
       </section>
 
       <div className="notice ok">

@@ -1,145 +1,158 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { Bot, Lightbulb, Sparkles, Wand2 } from "lucide-react";
-import { generateRecommendations, type RecommendationResponse } from "@/lib/api";
-import { hasSession } from "@/lib/session";
+import { Suspense, use, useMemo, useState } from "react";
+import Link from "next/link";
+import { Lightbulb, Settings2 } from "lucide-react";
 
-export default function RecommendationsPage() {
-  const [signedIn, setSignedIn] = useState(false);
-  const [focusScore, setFocusScore] = useState(0.6);
-  const [completionRate, setCompletionRate] = useState(0.5);
-  const [preferredStyle, setPreferredStyle] = useState<"visual" | "reading" | "practice" | "mixed">("mixed");
-  const [result, setResult] = useState<RecommendationResponse | null>(null);
-  const [status, setStatus] = useState("Ready");
-  const [error, setError] = useState("");
+import { PageAction } from "@/components/app-shell";
+import { Button, EmptyState, Field, Notice, SegmentedControl, Select, Skeleton } from "@/components/ui";
+import { getCourseRecommendations, type CourseRecommendations } from "@/lib/api";
+import type { CourseColor } from "@/lib/course-colors";
+import { useCourseColors } from "@/lib/use-course-colors";
 
-  useEffect(() => {
-    setSignedIn(hasSession());
-  }, []);
+import { StrategyItem } from "./StrategyItem";
+import { WeeklyPlanButton, WeeklyPlanPanel, useWeeklyPlan } from "./WeeklyPlan";
+import styles from "./strategies.module.css";
 
-  const onSubmit = async (event: FormEvent) => {
-    event.preventDefault();
-    setError("");
-    setStatus("Generating recommendations...");
-    try {
-      const response = await generateRecommendations({
-        focus_score: focusScore,
-        completion_rate: completionRate,
-        preferred_style: preferredStyle,
-      });
-      setResult(response);
-      setStatus("Recommendations ready");
-    } catch (err) {
-      setError((err as Error).message);
-      setStatus("Request failed");
-    }
-  };
+const NO_COURSES: CourseRecommendations[] = [];
+
+type Loaded = { courses: CourseRecommendations[] } | { error: string };
+
+/** Never rejects, so use() never throws into an error boundary; failures render as a Notice. */
+function loadStrategies(): Promise<Loaded> {
+  return getCourseRecommendations().then(
+    (response) => ({ courses: response.courses }),
+    (error: Error) => ({ error: error.message }),
+  );
+}
+
+export default function StrategiesPage() {
+  // One request per page view: a lazy initialiser, read with use() below. (React StrictMode
+  // mounts twice in development, so dev shows two requests; production makes one.)
+  const [promise, setPromise] = useState(loadStrategies);
 
   return (
-    <div className="grid" style={{ gap: 18 }}>
-      <section className="hero animate-in">
-        <span className="kicker">
-          <Bot size={12} /> Step 3
-        </span>
-        <h2>AI Strategy Recommendations</h2>
-        <p>
-          Tell the engine how recent sessions have been going and pick a learning style preference. It
-          returns a short, practical strategy set with a confidence score derived from how distinctive your
-          signals are.
-        </p>
-      </section>
+    <div className={styles.page}>
+      <PageAction>
+        <Link href="/courses" className={styles.secondaryLink}>
+          <Settings2 size={16} aria-hidden="true" />
+          Manage courses
+        </Link>
+      </PageAction>
+      <Suspense fallback={<StrategiesSkeleton />}>
+        <Strategies promise={promise} onRetry={() => setPromise(loadStrategies())} />
+      </Suspense>
+    </div>
+  );
+}
 
-      {!signedIn && (
-        <div className="notice info">You are not signed in. Visit Authentication to log in first.</div>
+function Strategies({ promise, onRetry }: { promise: Promise<Loaded>; onRetry: () => void }) {
+  const loaded = use(promise);
+  // Colours come from the full course list, so they match /courses even when a course is hidden here.
+  const allCourses = "courses" in loaded ? loaded.courses : NO_COURSES;
+  const courseIds = useMemo(() => allCourses.map((entry) => ({ id: entry.course.id })), [allCourses]);
+  const { colorFor } = useCourseColors(courseIds);
+  const [filter, setFilter] = useState("all");
+
+  if ("error" in loaded) {
+    return (
+      <Notice tone="danger" title="Could not load your strategies">
+        <p>{loaded.error}</p>
+        <Button size="sm" onClick={onRetry}>
+          Try again
+        </Button>
+      </Notice>
+    );
+  }
+
+  if (allCourses.length === 0) {
+    return (
+      <EmptyState
+        icon={<Lightbulb size={24} />}
+        title="Add a course to get strategies"
+        description="Strategies are matched to each course's settings and to the sessions you log."
+        action={
+          <Link href="/courses" className={styles.secondaryLink}>
+            Go to courses
+          </Link>
+        }
+      />
+    );
+  }
+
+  const withRecs = allCourses.filter((entry) => entry.recommendations.length > 0);
+  if (withRecs.length === 0) {
+    return <p className={styles.muted}>No strategies for your courses yet. Log a few sessions and check back.</p>;
+  }
+
+  const options = [
+    { value: "all", label: "All courses" },
+    ...withRecs.map((entry) => ({ value: String(entry.course.id), label: entry.course.name })),
+  ];
+  const active = options.some((option) => option.value === filter) ? filter : "all";
+  const shown = active === "all" ? withRecs : withRecs.filter((entry) => String(entry.course.id) === active);
+
+  return (
+    <>
+      {withRecs.length > 1 && (
+        <div>
+          <div className={styles.filterDesktop}>
+            <SegmentedControl label="Show strategies for" options={options} value={active} onChange={setFilter} />
+          </div>
+          <div className={styles.filterPhone}>
+            <Field label="Show strategies for">
+              <Select value={active} onChange={(event) => setFilter(event.target.value)}>
+                {options.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+        </div>
       )}
+      {shown.map((entry) => (
+        <CourseSection key={entry.course.id} entry={entry} color={colorFor(entry.course.id)} />
+      ))}
+    </>
+  );
+}
 
-      <section className="grid two">
-        <article className="card">
-          <h3>
-            <Wand2 size={16} /> Recommendation Inputs
-          </h3>
-          <form className="form-grid" onSubmit={onSubmit}>
-            <label>
-              Focus score (0 to 1)
-              <input
-                type="number"
-                min={0}
-                max={1}
-                step={0.01}
-                value={focusScore}
-                onChange={(e) => setFocusScore(Number(e.target.value))}
-              />
-            </label>
+function CourseSection({ entry, color }: { entry: CourseRecommendations; color: CourseColor }) {
+  const { course, evidence, recommendations } = entry;
+  const plan = useWeeklyPlan(course.id);
+  const headingId = `course-${course.id}-heading`;
 
-            <label>
-              Completion rate (0 to 1)
-              <input
-                type="number"
-                min={0}
-                max={1}
-                step={0.01}
-                value={completionRate}
-                onChange={(e) => setCompletionRate(Number(e.target.value))}
-              />
-            </label>
+  return (
+    <section className={styles.course} aria-labelledby={headingId} style={color.style}>
+      <div className={styles.courseHead}>
+        <div>
+          <h2 id={headingId} className={styles.courseTitle}>
+            <span className={styles.dot} aria-hidden="true" />
+            {course.name}
+          </h2>
+          <p className={styles.evidence}>{evidence.summary}</p>
+        </div>
+        <WeeklyPlanButton state={plan.state} onWrite={() => void plan.write()} onToggle={plan.toggle} />
+      </div>
+      <WeeklyPlanPanel state={plan.state} courseName={course.name} />
+      <ul className={styles.list} aria-label={`Strategies for ${course.name}`}>
+        {recommendations.map((rec) => (
+          <StrategyItem key={rec.shown_id} rec={rec} />
+        ))}
+      </ul>
+    </section>
+  );
+}
 
-            <label>
-              Preferred learning style
-              <select
-                value={preferredStyle}
-                onChange={(e) => setPreferredStyle(e.target.value as typeof preferredStyle)}
-              >
-                <option value="mixed">mixed</option>
-                <option value="visual">visual</option>
-                <option value="reading">reading</option>
-                <option value="practice">practice</option>
-              </select>
-            </label>
-
-            <button type="submit" disabled={!signedIn}>
-              Generate Recommendations
-            </button>
-          </form>
-
-          <div className="notice ok">Status: {status}</div>
-          {error && <div className="notice error">{error}</div>}
-        </article>
-
-        <article className="card">
-          <h3>
-            <Lightbulb size={16} /> What this engine actually does
-          </h3>
-          <p>
-            Task B is a transparent rule engine, not a supervised classifier. Strategies are selected from
-            your focus / completion signals and your stated style preference. The confidence score
-            increases as your signals deviate further from the midpoint — high-signal inputs map to higher
-            confidence.
-          </p>
-          <p className="muted-text">
-            A supervised classifier is deferred until enough in-app strategy outcomes are available. See
-            <code> docs/ai-methodology.md</code> for the rationale.
-          </p>
-        </article>
-      </section>
-
-      {result && (
-        <section className="grid stagger" style={{ gap: 12 }}>
-          <article className="card animate-in">
-            <div className="section-head">
-              <h3>
-                <Sparkles size={16} /> Recommended Strategy Set
-              </h3>
-              <span className="pill accent">{(result.confidence * 100).toFixed(0)}% confidence</span>
-            </div>
-            <ul className="strategy-list">
-              {result.strategies.map((strategy) => (
-                <li key={strategy}>{strategy}</li>
-              ))}
-            </ul>
-          </article>
-        </section>
-      )}
+function StrategiesSkeleton() {
+  return (
+    <div className={styles.skeletonList} aria-busy="true" aria-label="Loading strategies">
+      <Skeleton width={220} height={24} />
+      <Skeleton width="60%" />
+      <Skeleton height={120} radius="lg" />
+      <Skeleton height={120} radius="lg" />
     </div>
   );
 }

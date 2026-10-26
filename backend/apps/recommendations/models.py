@@ -3,15 +3,6 @@ from django.db import models
 from django.utils import timezone
 
 
-class RecommendationLog(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="recommendation_logs")
-    focus_score = models.FloatField()
-    completion_rate = models.FloatField()
-    preferred_style = models.CharField(max_length=20)
-    strategies_json = models.JSONField(default=list)
-    confidence = models.FloatField(default=0.0)
-    created_at = models.DateTimeField(auto_now_add=True)
-
 
 class StrategyFeedbackValue(models.TextChoices):
     HELPFUL = "helpful", "Helpful"

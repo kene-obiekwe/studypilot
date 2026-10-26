@@ -8,7 +8,7 @@ const REFRESH_PATH = "/auth/token/refresh/";
 
 export const NETWORK_ERROR_MESSAGE = "Can't reach the server. Check your connection and try again.";
 export const SERVER_ERROR_MESSAGE = "Something went wrong on our side. Please try again.";
-export const SESSION_EXPIRED_MESSAGE = "Your session expired. Please sign in again.";
+export const SESSION_EXPIRED_MESSAGE = "Your session expired. Sign in again.";
 
 type RequestMethod = "GET" | "POST" | "PATCH" | "DELETE";
 type FieldErrors = Record<string, string[]>;
@@ -157,7 +157,7 @@ function redirectToSignIn(): void {
   // A full page load on purpose: it drops all in-memory state of the expired session, and this
   // module runs outside React, where useRouter() isn't available.
   // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-  window.location.assign(`/auth?next=${encodeURIComponent(next)}&reason=expired`);
+  window.location.assign(`/sign-in?next=${encodeURIComponent(next)}&reason=expired`);
 }
 
 let onSessionExpired: SessionExpiredHandler = redirectToSignIn;
@@ -259,7 +259,6 @@ async function request<T>(
 }
 
 export type RegisterPayload = { username: string; email: string; password: string };
-export type RegisterResponse = { id: number; username: string };
 
 /** Registering creates an unverified account and emails a 6-digit code; no tokens are issued yet. */
 export type RegisterVerificationResponse = { status: "verification_required"; email: string };
@@ -301,31 +300,6 @@ export type PlanHistoryItem = {
 
 export type PlanHistoryResponse = {
   items: PlanHistoryItem[];
-};
-
-export type RecommendationPayload = {
-  focus_score: number;
-  completion_rate: number;
-  preferred_style: "visual" | "reading" | "practice" | "mixed";
-};
-
-export type RecommendationResponse = {
-  strategies: string[];
-  confidence: number;
-};
-
-export type RecommendationHistoryItem = {
-  id: number;
-  focus_score: number;
-  completion_rate: number;
-  preferred_style: string;
-  strategies_json: string[];
-  confidence: number;
-  created_at: string;
-};
-
-export type RecommendationHistoryResponse = {
-  items: RecommendationHistoryItem[];
 };
 
 export type SessionLogPayload = {
@@ -518,10 +492,6 @@ export type TraitSuggestion = {
   throttled: boolean;
 };
 
-export function registerUser(payload: RegisterPayload): Promise<RegisterResponse> {
-  return request<RegisterResponse>("/users/register/", "POST", payload, { auth: false });
-}
-
 export function loginUser(payload: LoginPayload): Promise<LoginResponse> {
   return request<LoginResponse>("/auth/token/", "POST", payload, { auth: false });
 }
@@ -539,14 +509,6 @@ export function generatePlan(payload: PlanPayload): Promise<PlanResponse> {
 
 export function getPlanHistory(): Promise<PlanHistoryResponse> {
   return request<PlanHistoryResponse>("/planner/history/", "GET");
-}
-
-export function generateRecommendations(payload: RecommendationPayload): Promise<RecommendationResponse> {
-  return request<RecommendationResponse>("/recommendations/generate/", "POST", payload);
-}
-
-export function getRecommendationHistory(): Promise<RecommendationHistoryResponse> {
-  return request<RecommendationHistoryResponse>("/recommendations/history/", "GET");
 }
 
 export function logSession(payload: SessionLogPayload): Promise<SessionLogResponse> {
@@ -605,8 +567,7 @@ export function sendStrategyFeedback(shownId: number, value: StrategyFeedbackVal
 
 /**
  * Register a new account. The server answers 201 with `verification_required`: the user must then
- * enter the emailed code (`verifyEmail`). Use this instead of `registerUser`, whose response type
- * describes the old sign-up that returned the created user.
+ * enter the emailed code (`verifyEmail`).
  */
 export function startRegistration(payload: RegisterPayload): Promise<RegisterVerificationResponse> {
   return request<RegisterVerificationResponse>("/users/register/", "POST", payload, { auth: false });

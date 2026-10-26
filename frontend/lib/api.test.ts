@@ -6,7 +6,7 @@ import {
   getPlanHistory,
   loginUser,
   NETWORK_ERROR_MESSAGE,
-  registerUser,
+  startRegistration,
   SERVER_ERROR_MESSAGE,
   SESSION_EXPIRED_MESSAGE,
   setSessionExpiredHandler,
@@ -130,7 +130,7 @@ describe("error mapping", () => {
     });
 
     serve(() => json(400, { password: ["This password is too common."] }));
-    await expect(registerUser({ username: "a", email: "a@b.c", password: "password123" })).rejects.toMatchObject({
+    await expect(startRegistration({ username: "a", email: "a@b.c", password: "password123" })).rejects.toMatchObject({
       message: "Password: This password is too common.",
       fieldErrors: { password: ["This password is too common."] },
     });
@@ -218,7 +218,7 @@ describe("session refresh", () => {
       status: 401,
       message: "No active account found with the given credentials",
     });
-    await expect(registerUser({ username: "a", email: "a@b.c", password: "x" })).rejects.toMatchObject({
+    await expect(startRegistration({ username: "a", email: "a@b.c", password: "x" })).rejects.toMatchObject({
       status: 401,
     });
 
@@ -244,6 +244,6 @@ describe("session refresh", () => {
     serve(() => json(401, TOKEN_INVALID));
 
     await expect(getPlanHistory()).rejects.toBeInstanceOf(ApiError);
-    expect(assign).toHaveBeenCalledWith("/auth?next=%2Fplanner%3Fweek%3D2&reason=expired");
+    expect(assign).toHaveBeenCalledWith("/sign-in?next=%2Fplanner%3Fweek%3D2&reason=expired");
   });
 });

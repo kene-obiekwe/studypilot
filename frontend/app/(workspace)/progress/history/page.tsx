@@ -1,28 +1,23 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BarChart3, History, ListChecks, Sparkles } from "lucide-react";
+import { BarChart3, History, ListChecks } from "lucide-react";
 
 import { clampPercent, formatDate, useProgress } from "../_lib/shared";
 
 const PAGE_SIZE = 6;
 
 export default function ProgressHistoryPage() {
-  const { signedIn, plans, recommendations, sessions } = useProgress();
+  const { signedIn, plans, sessions } = useProgress();
   const [planPage, setPlanPage] = useState(1);
-  const [recPage, setRecPage] = useState(1);
   const [sessionPage, setSessionPage] = useState(1);
 
   const planTotal = Math.max(1, Math.ceil(plans.length / PAGE_SIZE));
-  const recTotal = Math.max(1, Math.ceil(recommendations.length / PAGE_SIZE));
   const sessionTotal = Math.max(1, Math.ceil(sessions.length / PAGE_SIZE));
 
   useEffect(() => {
     setPlanPage((prev) => Math.min(prev, planTotal));
   }, [planTotal]);
-  useEffect(() => {
-    setRecPage((prev) => Math.min(prev, recTotal));
-  }, [recTotal]);
   useEffect(() => {
     setSessionPage((prev) => Math.min(prev, sessionTotal));
   }, [sessionTotal]);
@@ -30,10 +25,6 @@ export default function ProgressHistoryPage() {
   const pagedPlans = useMemo(
     () => plans.slice((planPage - 1) * PAGE_SIZE, planPage * PAGE_SIZE),
     [plans, planPage],
-  );
-  const pagedRecs = useMemo(
-    () => recommendations.slice((recPage - 1) * PAGE_SIZE, recPage * PAGE_SIZE),
-    [recommendations, recPage],
   );
   const pagedSessions = useMemo(
     () => sessions.slice((sessionPage - 1) * PAGE_SIZE, sessionPage * PAGE_SIZE),
@@ -56,12 +47,11 @@ export default function ProgressHistoryPage() {
         </span>
         <h2>Your Complete Archive</h2>
         <p>
-          Paginated, ordered most-recent first. Every plan, recommendation, and session you have logged
+          Paginated, ordered most-recent first. Every plan and session you have logged
           shows up here.
         </p>
         <div className="pill-row">
           <span className="pill">{plans.length} plans</span>
-          <span className="pill">{recommendations.length} recommendations</span>
           <span className="pill accent">{sessions.length} sessions</span>
         </div>
       </section>
@@ -109,46 +99,6 @@ export default function ProgressHistoryPage() {
         )}
       </article>
 
-      <article className="card">
-        <div className="section-head">
-          <h3>
-            <Sparkles size={16} /> All Recommendation Events
-          </h3>
-          <span className="muted-text">
-            Page {recPage} of {recTotal}
-          </span>
-        </div>
-        {recommendations.length === 0 ? (
-          <p>No recommendations yet.</p>
-        ) : (
-          <div className="grid" style={{ gap: 10, marginTop: 12 }}>
-            {pagedRecs.map((rec) => (
-              <div key={rec.id} className="history-row">
-                <div className="row-head">
-                  <span>{rec.preferred_style}</span>
-                  <span className="pill accent">{(rec.confidence * 100).toFixed(0)}% confidence</span>
-                </div>
-                <div className="row-meta">
-                  {formatDate(rec.created_at)} · focus {(rec.focus_score * 100).toFixed(0)}% · completion{" "}
-                  {(rec.completion_rate * 100).toFixed(0)}%
-                </div>
-                {rec.strategies_json.length > 0 && (
-                  <div className="pill-row">
-                    {rec.strategies_json.slice(0, 3).map((s) => (
-                      <span className="pill" key={`${rec.id}-${s}`}>
-                        {s}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-        {recommendations.length > PAGE_SIZE && (
-          <Pager page={recPage} total={recTotal} onChange={setRecPage} />
-        )}
-      </article>
 
       <article className="card">
         <div className="section-head">

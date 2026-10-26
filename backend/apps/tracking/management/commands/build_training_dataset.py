@@ -12,7 +12,6 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from apps.planner.models import Course, StudyPlan
-from apps.recommendations.models import RecommendationLog
 from apps.tracking.models import StudySessionLog
 
 STYLE_VALUES = {"visual", "reading", "practice", "mixed"}
@@ -143,7 +142,7 @@ def safe_relative_path(path: Path) -> str:
 
 
 class Command(BaseCommand):
-    help = "Build a schema-aligned training dataset snapshot from planner/recommendation/tracking tables."
+    help = "Build a schema-aligned training dataset snapshot from planner and tracking tables."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -191,11 +190,6 @@ class Command(BaseCommand):
             key = (course.user_id, normalize_course_name(course.name))
             courses_lookup[key] = clip_difficulty(to_int(course.difficulty, 3))
 
-        recommendations_by_user: dict[int, list[RecommendationLog]] = defaultdict(list)
-        for recommendation in RecommendationLog.objects.order_by("user_id", "created_at").only(
-            "user_id", "created_at", "preferred_style", "strategies_json"
-        ):
-            recommendations_by_user[recommendation.user_id].append(recommendation)
 
         plans_by_user: dict[int, list[StudyPlan]] = defaultdict(list)
         for plan in StudyPlan.objects.order_by("user_id", "created_at").only("user_id", "created_at", "plan_json"):
@@ -204,7 +198,6 @@ class Command(BaseCommand):
         user_state: dict[int, dict[str, Any]] = defaultdict(
             lambda: {
                 "recent_sessions": deque(),
-                "recommendation_idx": -1,
                 "plan_idx": -1,
             }
         )
@@ -215,18 +208,6 @@ class Command(BaseCommand):
             user_id = session.user_id
             state = user_state[user_id]
 
-            recommendations = recommendations_by_user.get(user_id, [])
-            while (
-                state["recommendation_idx"] + 1 < len(recommendations)
-                and recommendations[state["recommendation_idx"] + 1].created_at <= session.created_at
-            ):
-                state["recommendation_idx"] += 1
-
-            matched_recommendation = (
-                recommendations[state["recommendation_idx"]]
-                if state["recommendation_idx"] >= 0
-                else (recommendations[-1] if recommendations else None)
-            )
 
             plans = plans_by_user.get(user_id, [])
             while (
@@ -250,9 +231,9 @@ class Command(BaseCommand):
                 plan_course_payload = get_matching_course_payload(matched_plan, session.course_name) if matched_plan else None
                 difficulty = clip_difficulty(to_int((plan_course_payload or {}).get("difficulty"), 3))
 
-            preferred_style = normalize_style(
-                matched_recommendation.preferred_style if matched_recommendation else "mixed"
-            )
+            # Learning styles were retired with the slider recommender (5.3c); the schema keeps the
+            # column with the neutral value the command always used when no style was recorded.
+            preferred_style = normalize_style("mixed")
 
             planned_minutes = max(1, to_int(session.planned_minutes, 1))
             actual_minutes = max(0, to_int(session.actual_minutes, 0))
@@ -295,7 +276,6 @@ class Command(BaseCommand):
                 "study_session_log_total": total_sessions,
                 "study_session_log_exported": len(rows),
                 "study_plan": StudyPlan.objects.count(),
-                "recommendation_log": RecommendationLog.objects.count(),
                 "course": Course.objects.count(),
             },
             "defaults": {

@@ -248,8 +248,8 @@ class ProtectedEndpointTests(APITestCase):
     protected = [
         ("get", "/api/planner/history/"),
         ("post", "/api/planner/generate/"),
-        ("get", "/api/recommendations/history/"),
-        ("post", "/api/recommendations/generate/"),
+        ("get", "/api/recommendations/courses/"),
+        ("post", "/api/recommendations/feedback/"),
         ("get", "/api/tracking/history/"),
         ("get", "/api/tracking/training-data/"),
         ("post", "/api/tracking/session-log/"),
