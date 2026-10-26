@@ -1,56 +1,54 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { Activity, Compass, Sparkles } from "lucide-react";
+import { useEffect, useState, type CSSProperties } from "react";
 
+import { Badge, EmptyState, Notice, ProgressBar, Skeleton } from "@/components/ui";
 import { predictAdherence, type ForecastItem } from "@/lib/api";
-import { clampPercent, useProgress } from "../_lib/shared";
+
+import styles from "../_lib/progress.module.css";
+import { useSavedCourses } from "../_lib/useSavedCourses";
 
 const MIN_WEEKS = 2;
 
 function percent(value: number | null | undefined): string {
-  return typeof value === "number" ? `${clampPercent(value).toFixed(0)}%` : "n/a";
+  return typeof value === "number" ? `${Math.round(Math.min(1, Math.max(0, value)) * 100)}%` : "n/a";
 }
 
 function trendText(value: number | null | undefined): string {
-  if (typeof value !== "number") {
-    return "n/a";
-  }
+  if (typeof value !== "number") return "n/a";
   const points = Math.round(value * 100);
-  if (points === 0) {
-    return "flat";
-  }
+  if (points === 0) return "flat";
   return `${points > 0 ? "up" : "down"} ${Math.abs(points)} points`;
 }
 
-function ForecastCard({ item }: { item: ForecastItem }) {
+function ForecastCard({ item, colorStyle }: { item: ForecastItem; colorStyle: CSSProperties | undefined }) {
+  const title = (
+    <h2 className={styles.cardTitle}>
+      <span className={styles.dot} aria-hidden="true" />
+      {item.course_name}
+    </h2>
+  );
+
   if (item.status === "ok") {
-    const pct = clampPercent(item.predicted_adherence ?? 0);
+    const forecast = Math.min(1, Math.max(0, item.predicted_adherence ?? 0));
     const { adh_lag1, adh_mean3, adh_trend } = item.features;
     return (
-      <article className="forecast-card animate-in">
-        <span className="stat-label">
-          <Activity size={14} /> {item.course_name}
-        </span>
-        <p className="stat-value">{pct.toFixed(0)}%</p>
-        <div className="progress-wrap">
-          <div className="progress-bar" style={{ width: `${pct}%` }} />
-        </div>
-        <p className="stat-meta" style={{ marginTop: 12 }}>
-          Forecast for next week, from your last week ({percent(adh_lag1)}), your 3-week average (
-          {percent(adh_mean3)}) and your trend ({trendText(adh_trend)}), over {item.weeks_history} week
-          {item.weeks_history === 1 ? "" : "s"} of history.
+      <li className={styles.card} style={colorStyle}>
+        {title}
+        <p className={styles.bigNumber}>{percent(forecast)}</p>
+        <ProgressBar label={`${item.course_name} forecast`} value={forecast} max={1} hideHeader valueText={`${percent(forecast)} forecast`} />
+        <p className={styles.muted}>
+          Next week, from your last week ({percent(adh_lag1)}), your 3-week average ({percent(adh_mean3)}) and your trend (
+          {trendText(adh_trend)}), over {item.weeks_history} {item.weeks_history === 1 ? "week" : "weeks"} of history.
         </p>
-        <hr className="divider" />
-        <div className="pill-row">
-          <span className="pill">last week {percent(adh_lag1)}</span>
-          <span className="pill">3-week average {percent(adh_mean3)}</span>
-          <span className="pill">trend {trendText(adh_trend)}</span>
-          <span className="pill accent">{item.weeks_history} weeks of history</span>
+        <div className={styles.facts}>
+          <Badge>Last week {percent(adh_lag1)}</Badge>
+          <Badge>3-week average {percent(adh_mean3)}</Badge>
+          <Badge>Trend {trendText(adh_trend)}</Badge>
         </div>
-        {item.model_version && <p className="stat-meta">Model version: {item.model_version}</p>}
-      </article>
+        {item.model_version && <p className={styles.muted}>Model {item.model_version}</p>}
+      </li>
     );
   }
 
@@ -59,94 +57,72 @@ function ForecastCard({ item }: { item: ForecastItem }) {
       ? `Needs at least ${MIN_WEEKS} complete weeks of logged sessions for this course (you have ${item.weeks_history}).`
       : "Forecast unavailable right now. The planner falls back to your recent average.";
   return (
-    <article className="card">
-      <h3>
-        <Activity size={16} /> {item.course_name}
-      </h3>
-      <p>{message}</p>
-    </article>
+    <li className={styles.card} style={colorStyle}>
+      {title}
+      <p className={styles.muted}>{message}</p>
+    </li>
   );
 }
 
 export default function ProgressPredictPage() {
-  const { signedIn } = useProgress();
-  const [status, setStatus] = useState("Loading forecasts...");
-  const [error, setError] = useState("");
   const [forecasts, setForecasts] = useState<ForecastItem[] | null>(null);
+  const [error, setError] = useState("");
+  const { colorStyle } = useSavedCourses();
 
   useEffect(() => {
-    if (!signedIn) {
-      return;
-    }
     let cancelled = false;
     predictAdherence()
       .then((items) => {
-        if (!cancelled) {
-          setForecasts(items);
-          setStatus("Forecasts ready");
-        }
+        if (!cancelled) setForecasts(items);
       })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setStatus("Forecast failed");
-          setError((err as Error).message);
-        }
+      .catch((failure: unknown) => {
+        if (!cancelled) setError((failure as Error).message);
       });
     return () => {
       cancelled = true;
     };
-  }, [signedIn]);
-
-  if (!signedIn) {
-    return (
-      <div className="notice info">
-        You are not signed in. Visit Authentication to log in first.
-      </div>
-    );
-  }
+  }, []);
 
   return (
-    <div className="grid" style={{ gap: 18 }}>
-      <section className="hero animate-in">
-        <span className="kicker">
-          <Sparkles size={12} /> Predictor
-        </span>
-        <h2>Your Next-Week Forecast</h2>
-        <p>
-          The forecast estimates how much of your plan you will complete next week, from your recent weeks of
-          logged sessions. The planner uses it to adjust the hours it gives each course.
-        </p>
-      </section>
+    <div className={styles.page}>
+      <p className={styles.muted}>
+        The forecast estimates how much of your plan you will complete next week, from your recent weeks of
+        logged sessions. The planner uses it to adjust the hours it gives each course. A course needs at least{" "}
+        {MIN_WEEKS} complete weeks of logged sessions before it can be forecast.
+      </p>
 
-      <section className="grid two stagger">
-        <article className="card">
-          <h3>
-            <Compass size={16} /> What You Get
-          </h3>
-          <p>
-            Each course you have logged gets its own forecast: a number between 0% and 100% for the share of
-            planned time you are expected to complete. A course needs at least {MIN_WEEKS} complete weeks of
-            logged sessions before it can be forecast.
-          </p>
-          <div className="notice ok">Status: {status}</div>
-          {error && <div className="notice error">{error}</div>}
-        </article>
+      {error && (
+        <Notice tone="danger" title="Could not load your forecasts">
+          {error}
+        </Notice>
+      )}
 
-        {forecasts !== null && forecasts.length === 0 && (
-          <article className="card">
-            <h3>
-              <Activity size={16} /> No forecasts yet
-            </h3>
-            <p>
-              Log a few sessions first, then come back. <Link href="/progress/log">Log a session</Link>
-            </p>
-          </article>
-        )}
+      {forecasts === null && !error && (
+        <div className={styles.cards} aria-busy="true" aria-label="Loading your forecasts">
+          <Skeleton height={180} radius="lg" />
+          <Skeleton height={180} radius="lg" />
+        </div>
+      )}
 
-        {forecasts?.map((item) => (
-          <ForecastCard key={item.course_name.toLowerCase()} item={item} />
-        ))}
-      </section>
+      {forecasts !== null && forecasts.length === 0 && (
+        <EmptyState
+          title="No forecasts yet"
+          description="Log a few sessions first, then come back."
+          action={
+            <Link href="/progress/log" className={styles.link}>
+              Log a session
+            </Link>
+          }
+        />
+      )}
+
+      {forecasts !== null && forecasts.length > 0 && (
+        <ul className={styles.cards} aria-label="Forecast by course">
+          {forecasts.map((item) => (
+            <ForecastCard key={item.course_name.toLowerCase()} item={item} colorStyle={colorStyle(item.course_name)} />
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

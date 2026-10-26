@@ -1,182 +1,78 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { BarChart3, History, ListChecks } from "lucide-react";
+import Link from "next/link";
 
-import { clampPercent, formatDate, useProgress } from "../_lib/shared";
+import { Button, EmptyState, Notice, Skeleton } from "@/components/ui";
 
-const PAGE_SIZE = 6;
+import { PlansList } from "../_lib/PlansList";
+import { SessionsTable } from "../_lib/SessionsTable";
+import styles from "../_lib/progress.module.css";
+import { useProgress } from "../_lib/shared";
+import { useSavedCourses } from "../_lib/useSavedCourses";
 
 export default function ProgressHistoryPage() {
-  const { signedIn, plans, sessions } = useProgress();
-  const [planPage, setPlanPage] = useState(1);
-  const [sessionPage, setSessionPage] = useState(1);
-
-  const planTotal = Math.max(1, Math.ceil(plans.length / PAGE_SIZE));
-  const sessionTotal = Math.max(1, Math.ceil(sessions.length / PAGE_SIZE));
-
-  useEffect(() => {
-    setPlanPage((prev) => Math.min(prev, planTotal));
-  }, [planTotal]);
-  useEffect(() => {
-    setSessionPage((prev) => Math.min(prev, sessionTotal));
-  }, [sessionTotal]);
-
-  const pagedPlans = useMemo(
-    () => plans.slice((planPage - 1) * PAGE_SIZE, planPage * PAGE_SIZE),
-    [plans, planPage],
-  );
-  const pagedSessions = useMemo(
-    () => sessions.slice((sessionPage - 1) * PAGE_SIZE, sessionPage * PAGE_SIZE),
-    [sessions, sessionPage],
-  );
-
-  if (!signedIn) {
-    return (
-      <div className="notice info">
-        You are not signed in. Visit Authentication to log in first.
-      </div>
-    );
-  }
+  const { plans, sessions, isLoading, error, refresh } = useProgress();
+  const { colorStyle } = useSavedCourses();
+  const loading = isLoading && sessions.length === 0 && plans.length === 0;
 
   return (
-    <div className="grid" style={{ gap: 18 }}>
-      <section className="hero animate-in">
-        <span className="kicker">
-          <History size={12} /> History
-        </span>
-        <h2>Your Complete Archive</h2>
-        <p>
-          Paginated, ordered most-recent first. Every plan and session you have logged
-          shows up here.
-        </p>
-        <div className="pill-row">
-          <span className="pill">{plans.length} plans</span>
-          <span className="pill accent">{sessions.length} sessions</span>
+    <div className={styles.page}>
+      {error && (
+        <Notice tone="danger" title="Could not load your history">
+          {error}{" "}
+          <Button size="sm" variant="ghost" onClick={() => void refresh()}>
+            Try again
+          </Button>
+        </Notice>
+      )}
+
+      {loading && (
+        <div className={styles.section} aria-busy="true" aria-label="Loading your history">
+          <Skeleton height={40} />
+          <Skeleton height={200} />
         </div>
+      )}
+
+      <section className={styles.section} aria-labelledby="sessions-title">
+        <div className={styles.sectionHead}>
+          <h2 id="sessions-title" className={styles.sectionTitle}>
+            Sessions
+          </h2>
+          <p className={styles.muted}>{sessions.length} logged</p>
+        </div>
+        {sessions.length === 0 && !loading ? (
+          <EmptyState
+            title="No sessions yet"
+            description="Sessions you log show up here, newest first."
+            action={
+              <Link href="/progress/log" className={styles.link}>
+                Log a session
+              </Link>
+            }
+          />
+        ) : (
+          sessions.length > 0 && <SessionsTable sessions={sessions} colorStyle={colorStyle} />
+        )}
       </section>
 
-      <article className="card">
-        <div className="section-head">
-          <h3>
-            <ListChecks size={16} /> All Planner Plans
-          </h3>
-          <span className="muted-text">
-            Page {planPage} of {planTotal}
-          </span>
+      <section className={styles.section} aria-labelledby="plans-title">
+        <div className={styles.sectionHead}>
+          <h2 id="plans-title" className={styles.sectionTitle}>
+            Plans
+          </h2>
+          <p className={styles.muted}>{plans.length} saved</p>
         </div>
-        {plans.length === 0 ? (
-          <p>No plans yet.</p>
+        {plans.length === 0 && !loading ? (
+          <p className={styles.muted}>
+            No plans yet.{" "}
+            <Link href="/planner" className={styles.link}>
+              Generate one in the planner
+            </Link>
+          </p>
         ) : (
-          <div className="grid" style={{ gap: 10, marginTop: 12 }}>
-            {pagedPlans.map((plan) => {
-              const allocations = plan.plan_json.allocations ?? [];
-              return (
-                <div key={plan.id} className="history-row">
-                  <div className="row-head">
-                    <span>Plan #{plan.id}</span>
-                    <span className="pill">{plan.plan_json.total_available_hours ?? "-"}h total</span>
-                  </div>
-                  <div className="row-meta">
-                    {formatDate(plan.created_at)} · {(plan.plan_json.courses ?? []).length} courses
-                  </div>
-                  {allocations.length > 0 && (
-                    <div className="pill-row">
-                      {allocations.slice(0, 4).map((a) => (
-                        <span className="pill" key={`${plan.id}-${a.course}`}>
-                          {a.course}: {a.allocated_hours}h
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          plans.length > 0 && <PlansList plans={plans} colorStyle={colorStyle} />
         )}
-        {plans.length > PAGE_SIZE && (
-          <Pager page={planPage} total={planTotal} onChange={setPlanPage} />
-        )}
-      </article>
-
-
-      <article className="card">
-        <div className="section-head">
-          <h3>
-            <BarChart3 size={16} /> All Session Logs
-          </h3>
-          <span className="muted-text">
-            Page {sessionPage} of {sessionTotal}
-          </span>
-        </div>
-        {sessions.length === 0 ? (
-          <p>No sessions yet.</p>
-        ) : (
-          <div className="grid" style={{ gap: 10, marginTop: 12 }}>
-            {pagedSessions.map((item) => {
-              const adherencePct = clampPercent(item.adherence_score);
-              const predictedPct =
-                typeof item.predicted_adherence === "number"
-                  ? clampPercent(item.predicted_adherence)
-                  : null;
-              return (
-                <div key={item.id} className="history-row">
-                  <div className="row-head">
-                    <span>{item.course_name}</span>
-                    <span className="pill">
-                      {item.actual_minutes}/{item.planned_minutes}m
-                    </span>
-                  </div>
-                  <div className="row-meta">
-                    {formatDate(item.created_at)} · adherence {adherencePct.toFixed(0)}%
-                    {predictedPct !== null ? ` · predicted ${predictedPct.toFixed(0)}%` : ""}
-                    {item.model_version ? ` · ${item.model_version}` : ""}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-        {sessions.length > PAGE_SIZE && (
-          <Pager page={sessionPage} total={sessionTotal} onChange={setSessionPage} />
-        )}
-      </article>
-    </div>
-  );
-}
-
-function Pager({
-  page,
-  total,
-  onChange,
-}: {
-  page: number;
-  total: number;
-  onChange: (next: number) => void;
-}) {
-  return (
-    <div className="pager">
-      <span>
-        Page {page} of {total}
-      </span>
-      <div className="pager-controls">
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => onChange(Math.max(1, page - 1))}
-          disabled={page === 1}
-        >
-          Previous
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => onChange(Math.min(total, page + 1))}
-          disabled={page === total}
-        >
-          Next
-        </button>
-      </div>
+      </section>
     </div>
   );
 }

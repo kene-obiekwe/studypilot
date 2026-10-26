@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import {
   createContext,
   useCallback,
@@ -10,7 +8,6 @@ import {
   useMemo,
   useState,
 } from "react";
-import { ClipboardCheck, History, LineChart, Sparkles } from "lucide-react";
 
 import {
   getPlanHistory,
@@ -180,35 +177,6 @@ export function useProgress(): ProgressContextValue {
     throw new Error("useProgress must be used inside a ProgressProvider");
   }
   return ctx;
-}
-
-// ---------------------------------------------------------------------------
-// Tab navigation for /progress sub-routes
-// ---------------------------------------------------------------------------
-
-const tabs = [
-  { href: "/progress", label: "Overview", icon: LineChart },
-  { href: "/progress/log", label: "Log Session", icon: ClipboardCheck },
-  { href: "/progress/predict", label: "Predictor", icon: Sparkles },
-  { href: "/progress/history", label: "History", icon: History },
-] as const;
-
-export function ProgressTabNav() {
-  const pathname = usePathname();
-  return (
-    <nav className="tab-nav animate-in" aria-label="Progress tabs">
-      {tabs.map(({ href, label, icon: Icon }) => {
-        const active =
-          href === "/progress" ? pathname === "/progress" : pathname.startsWith(href);
-        return (
-          <Link key={href} href={href} className={`tab-link ${active ? "active" : ""}`}>
-            <Icon size={15} />
-            <span>{label}</span>
-          </Link>
-        );
-      })}
-    </nav>
-  );
 }
 
 // ---------------------------------------------------------------------------

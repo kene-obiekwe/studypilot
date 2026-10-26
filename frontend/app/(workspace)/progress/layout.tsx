@@ -1,9 +1,10 @@
-import { ProgressProvider, ProgressTabNav } from "./_lib/shared";
+import { ProgressProvider } from "./_lib/shared";
+import { ProgressTabs } from "./_lib/ProgressTabs";
 
 export default function ProgressLayout({ children }: { children: React.ReactNode }) {
   return (
     <ProgressProvider>
-      <ProgressTabNav />
+      <ProgressTabs />
       {children}
     </ProgressProvider>
   );
