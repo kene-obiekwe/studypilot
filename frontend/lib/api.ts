@@ -279,6 +279,10 @@ export type PlanResponse = {
     break_minutes: number;
     base_hours?: number;
     adherence_factor?: number;
+    /** Where the adherence adjustment came from; absent on plans from before adjustments. */
+    adjustment_source?: "model" | "rule" | "none";
+    /** The adherence the plan expected for this course, or null when there was nothing to estimate from. */
+    adherence_estimate?: number | null;
   }>;
 };
 

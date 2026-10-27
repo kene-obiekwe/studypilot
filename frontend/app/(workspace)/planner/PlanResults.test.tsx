@@ -4,12 +4,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "@/test/dom";
 
 import { PlanResults } from "./PlanResults";
-import type { PlanAllocation } from "./plan-model";
+import type { PlanResponse } from "@/lib/api";
 
 afterEach(cleanup);
 
 const base = { focus_block_minutes: 50, break_minutes: 10 };
-const ALLOCATIONS: PlanAllocation[] = [
+const ALLOCATIONS: PlanResponse["allocations"] = [
   { course: "CSC 401", allocated_hours: 6.9, base_hours: 8.1, adherence_factor: 0.9, adjustment_source: "model", adherence_estimate: 0.63, ...base },
   { course: "MTH 401", allocated_hours: 5.1, base_hours: 5.1, adherence_factor: 1, adjustment_source: "rule", adherence_estimate: 0.78, ...base },
   { course: "STA 401", allocated_hours: 4, base_hours: 4, adherence_factor: 0.9, adjustment_source: "model", adherence_estimate: 0.66, ...base },

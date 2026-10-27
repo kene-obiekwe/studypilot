@@ -19,6 +19,7 @@ import {
 } from "@/lib/api";
 import { groupByCourse } from "@/lib/courses";
 import { hasSession } from "@/lib/session";
+import { onSessionsChanged } from "@/lib/timer-refresh";
 
 // ---------------------------------------------------------------------------
 // Shared progress data context — fetched once at the layout level so all
@@ -43,7 +44,6 @@ type ProgressContextValue = {
     topCourse: string;
     topCourseSessions: number;
     weeklyIntensity: number;
-    latestModelVersion: string;
     difficultyMix: { low: number; medium: number; high: number };
   };
 };
@@ -60,7 +60,6 @@ const EMPTY_ANALYTICS: ProgressContextValue["analytics"] = {
   topCourse: "-",
   topCourseSessions: 0,
   weeklyIntensity: 0,
-  latestModelVersion: "-",
   difficultyMix: { low: 0, medium: 0, high: 0 },
 };
 
@@ -100,6 +99,9 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
     if (signedIn) void refresh();
   }, [signedIn, refresh]);
 
+  // A session saved by the timer (here or in another tab) changes everything these views show.
+  useEffect(() => (signedIn ? onSessionsChanged(() => void refresh()) : undefined), [signedIn, refresh]);
+
   const analytics = useMemo(() => {
     if (sessions.length === 0) {
       return EMPTY_ANALYTICS;
@@ -131,8 +133,6 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
       trainingRows.length > 0
         ? trainingRows.reduce((acc, row) => acc + row.sessions_last_7_days, 0) / trainingRows.length
         : 0;
-    const latestModelVersion =
-      sessions.find((item) => item.model_version && item.model_version.length > 0)?.model_version ?? "-";
     const difficultyMix = trainingRows.reduce(
       (acc, row) => {
         if (row.difficulty <= 2) acc.low += 1;
@@ -152,7 +152,6 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
       topCourse,
       topCourseSessions,
       weeklyIntensity,
-      latestModelVersion,
       difficultyMix,
     };
   }, [sessions, trainingRows]);

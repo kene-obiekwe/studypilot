@@ -19,7 +19,6 @@ import {
   newRow,
   rowsFromCourses,
   validatePlanInput,
-  type PlanAllocation,
   type PlanProblems,
   type PlannerRow,
 } from "./plan-model";
@@ -128,7 +127,7 @@ export default function PlannerPage() {
     }
   };
 
-  const allocations = (result?.allocations ?? []) as PlanAllocation[];
+  const allocations = result?.allocations ?? [];
   const noCourses = courses !== null && courses.length === 0;
 
   return (

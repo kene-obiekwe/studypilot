@@ -7,6 +7,7 @@ import { Suspense, useRef, useState, type FormEvent } from "react";
 import { Button, Field, Input, Notice } from "@/components/ui";
 import { ApiError, resendCode, verifyEmail } from "@/lib/api";
 import { authLink, CODE_LENGTH, safeNextPath } from "@/lib/auth-flow";
+import { postVerifyDestination } from "@/lib/onboarding";
 import { setSession } from "@/lib/session";
 
 import styles from "../_components/auth.module.css";
@@ -73,7 +74,8 @@ function VerifyEmailForm() {
     try {
       const tokens = await verifyEmail(email.trim(), digits);
       setSession(tokens);
-      router.replace(target);
+      // A freshly verified account starts onboarding unless it was heading somewhere specific.
+      router.replace(postVerifyDestination(params.get("next")));
     } catch (error) {
       setCode("");
       // A wrong or expired code belongs on the code field; anything else (offline, throttled) is a notice.

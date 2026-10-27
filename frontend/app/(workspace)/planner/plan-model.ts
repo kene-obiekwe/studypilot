@@ -72,11 +72,7 @@ export function validatePlanInput(rows: ReadonlyArray<PlannerRow>, totalHours: n
   return problems;
 }
 
-/** The result row as the API returns it. The adjustment fields are not in the shared PlanResponse type. */
-export type PlanAllocation = PlanResponse["allocations"][number] & {
-  adjustment_source?: "model" | "rule" | "none";
-  adherence_estimate?: number | null;
-};
+type PlanAllocation = PlanResponse["allocations"][number];
 
 export function adjustmentText(allocation: Pick<PlanAllocation, "adjustment_source">): string {
   switch (allocation.adjustment_source) {

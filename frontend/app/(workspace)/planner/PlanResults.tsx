@@ -1,12 +1,13 @@
 import type { CSSProperties } from "react";
 
 import { Badge, ProgressBar } from "@/components/ui";
+import type { PlanResponse } from "@/lib/api";
 
-import { adjustmentText, estimateText, hoursChanged, hoursText, isAdjusted, type PlanAllocation } from "./plan-model";
+import { adjustmentText, estimateText, hoursChanged, hoursText, isAdjusted } from "./plan-model";
 import styles from "./planner.module.css";
 
 type PlanResultsProps = {
-  allocations: ReadonlyArray<PlanAllocation>;
+  allocations: PlanResponse["allocations"];
   /** The colour variables for a course name, or undefined for a neutral dot. */
   colorStyle?: (courseName: string) => CSSProperties | undefined;
 };

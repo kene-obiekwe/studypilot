@@ -13,6 +13,7 @@ import {
   type Course,
   type CourseRecommendations,
 } from "@/lib/api";
+import { ONBOARDING_PATH } from "@/lib/onboarding";
 import { onSessionsChanged } from "@/lib/timer-refresh";
 import { useCourseColors } from "@/lib/use-course-colors";
 import { courseHoursThisWeek, formatHours, hasPlanThisWeek, meterText, weekStrip } from "@/lib/week";
@@ -148,8 +149,8 @@ function Home({ promise, onRetry }: { promise: Promise<HomeData>; onRetry: () =>
         title="Add your first course"
         description="Your week, forecasts and strategies are built per course."
         action={
-          <Link href="/courses" className={styles.primaryLink}>
-            Add a course
+          <Link href={ONBOARDING_PATH} className={styles.primaryLink}>
+            Set up StudyPilot
           </Link>
         }
       />
