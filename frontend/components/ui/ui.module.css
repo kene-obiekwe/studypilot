@@ -27,6 +27,14 @@
   line-height: var(--sp-leading-tight);
 }
 
+/* Links and disclosure summaries get the token ring unless their own rule says otherwise
+   (:where keeps this at the lowest specificity). */
+.root :where(a[href], summary):focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 2px;
+  border-radius: var(--sp-radius-sm);
+}
+
 .num {
   font-variant-numeric: tabular-nums;
 }
@@ -140,9 +148,10 @@
   background: var(--sp-sunken);
 }
 
+/* Borderless, so the text carries the whole affordance: full ink, not the secondary text colour. */
 .ghost {
   background: transparent;
-  color: var(--sp-ink-soft);
+  color: var(--sp-ink);
 }
 
 .ghost:hover:not(:disabled) {

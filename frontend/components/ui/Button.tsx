@@ -9,14 +9,18 @@ export type ButtonSize = "sm" | "md";
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
   size?: ButtonSize;
-  /** Shows a spinner, sets aria-busy and blocks clicks; the label stays for screen readers. */
+  /**
+   * Shows a spinner, sets aria-busy and ignores clicks (and form submits); the label stays for screen readers.
+   * It is not `disabled`: a disabled button drops keyboard focus, which would leave the user at the top of the
+   * page the moment they activate it.
+   */
   loading?: boolean;
   /** An icon before the label (decorative; give the button a text label). */
   icon?: ReactNode;
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = "secondary", size = "md", loading = false, icon, className, children, disabled, type = "button", ...props },
+  { variant = "secondary", size = "md", loading = false, icon, className, children, disabled, type = "button", onClick, ...props },
   ref,
 ) {
   return (
@@ -24,8 +28,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       {...props}
       ref={ref}
       type={type}
-      disabled={disabled || loading}
+      disabled={disabled}
       aria-busy={loading || undefined}
+      aria-disabled={loading || undefined}
+      onClick={loading ? (event) => event.preventDefault() : onClick}
       className={cx(styles.control, styles.button, styles[variant], styles[size], className)}
     >
       {loading ? (

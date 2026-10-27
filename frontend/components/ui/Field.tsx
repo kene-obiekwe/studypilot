@@ -66,7 +66,9 @@ function useFieldControl(props: { id?: string; "aria-describedby"?: string; "ari
   const field = useContext(FieldContext);
   if (!field) return {};
   return {
-    id: props.id ?? field.id,
+    // The label points at the Field's id, so a control inside a Field always takes it; an id
+    // passed to the control would leave it without a label.
+    id: field.id,
     "aria-describedby": [field.describedBy, props["aria-describedby"]].filter(Boolean).join(" ") || undefined,
     "aria-invalid": field.invalid || undefined,
     required: props.required ?? (field.required || undefined),

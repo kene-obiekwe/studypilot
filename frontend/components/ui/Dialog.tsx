@@ -42,20 +42,21 @@ export function Dialog({ open, onClose, title, description, children, footer, cl
     }
   }, [open]);
 
-  // Return focus when the dialog closes for any reason, including unmounting while open.
+  // Return focus when the dialog closes for any reason, including unmounting while open. If what
+  // opened it is gone (a Start button that became Stop), the page's main area gets the focus.
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    const onDialogClose = () => {
-      returnFocus.current?.focus();
+    const restoreFocus = () => {
+      const target = returnFocus.current;
       returnFocus.current = null;
+      if (target?.isConnected) target.focus();
+      else document.getElementById("main-content")?.focus({ preventScroll: true });
     };
-    dialog.addEventListener("close", onDialogClose);
+    dialog.addEventListener("close", restoreFocus);
     return () => {
-      dialog.removeEventListener("close", onDialogClose);
-      if (dialog.open) {
-        returnFocus.current?.focus();
-      }
+      dialog.removeEventListener("close", restoreFocus);
+      if (dialog.open) restoreFocus();
     };
   }, []);
 

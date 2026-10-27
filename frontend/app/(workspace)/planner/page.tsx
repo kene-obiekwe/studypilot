@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { startTransition, Suspense, use, useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
+import { startTransition, Suspense, use, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { CalendarRange, Plus, X } from "lucide-react";
 
 import { PageAction } from "@/components/app-shell";
@@ -86,7 +86,6 @@ function PlannerForm({ initialCourses }: { initialCourses: Course[] }) {
   const [resultVersion, setResultVersion] = useState(0);
   const nextKey = useRef(0);
   const focusKey = useRef<string | null>(null);
-  const hoursId = useId();
   const formRef = useRef<HTMLFormElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
 
@@ -191,7 +190,6 @@ function PlannerForm({ initialCourses }: { initialCourses: Course[] }) {
             required
           >
             <Input
-              id={hoursId}
               name="total_available_hours"
               type="number"
               inputMode="decimal"

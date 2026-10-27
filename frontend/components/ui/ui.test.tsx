@@ -29,11 +29,13 @@ function attr(markup: string, name: string): string | null {
 }
 
 describe("Button", () => {
-  it("defaults to type=button and marks loading as busy and disabled", () => {
+  it("defaults to type=button and marks loading as busy, without disabling it", () => {
     expect(html(<Button>Save</Button>)).toContain('type="button"');
     const loading = html(<Button loading>Save</Button>);
     expect(loading).toContain('aria-busy="true"');
-    expect(loading).toContain("disabled");
+    expect(loading).toContain('aria-disabled="true"');
+    // A disabled button would drop keyboard focus, so loading must not set the attribute.
+    expect(loading).not.toMatch(/\sdisabled(=|\s|>)/);
     expect(loading).toContain("Save");
   });
 
