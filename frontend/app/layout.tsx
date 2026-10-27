@@ -14,7 +14,8 @@ const sans = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "StudyPilot",
+  // Each route sets its own title; the template adds the product name.
+  title: { default: "StudyPilot", template: "%s · StudyPilot" },
   description:
     "Split your weekly study hours across your courses, get study techniques for each one, and adjust your plan from the sessions you log.",
 };

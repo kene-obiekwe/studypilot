@@ -9,7 +9,7 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
 
 export const metadata: Metadata = {
   ...(siteUrl ? { metadataBase: new URL(siteUrl) } : {}),
-  title: "StudyPilot: a study plan that adapts to how you study",
+  title: { absolute: "StudyPilot: a study plan that adapts to how you study" },
   description: SUBCOPY,
   openGraph: {
     type: "website",

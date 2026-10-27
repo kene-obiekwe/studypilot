@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Compass } from "lucide-react";
@@ -24,6 +24,17 @@ import styles from "./shell.module.css";
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const title = pageTitle(pathname);
+
+  // Moving to another section lands focus on the new page's content instead of leaving it on the
+  // nav link; the sub-tabs inside /progress keep their own focus.
+  const mainRef = useRef<HTMLElement>(null);
+  const section = pathname?.split("/")[1] ?? "";
+  const shownSection = useRef(section);
+  useEffect(() => {
+    if (shownSection.current === section) return;
+    shownSection.current = section;
+    mainRef.current?.focus({ preventScroll: true });
+  }, [section]);
 
   return (
     <ShellDataProvider>
@@ -72,7 +83,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </div>
                 </div>
               </header>
-              <main id="main-content" tabIndex={-1} className={styles.main}>
+              <main ref={mainRef} id="main-content" tabIndex={-1} className={styles.main}>
                 <div className={styles.mainInner}>{children}</div>
               </main>
             </div>

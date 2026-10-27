@@ -1,14 +1,9 @@
 import Link from "next/link";
-import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import { Card, UiRoot } from "@/components/ui";
 
 import styles from "./_components/auth.module.css";
-
-export const metadata: Metadata = {
-  title: "StudyPilot",
-};
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (

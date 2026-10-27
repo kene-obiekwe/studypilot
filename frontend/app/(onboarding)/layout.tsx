@@ -8,7 +8,7 @@ import { UiRoot } from "@/components/ui";
 import styles from "./onboarding.module.css";
 
 export const metadata: Metadata = {
-  title: "Set up StudyPilot",
+  title: "Set up",
 };
 
 /** A focused frame for first-time setup: the wordmark, no navigation. Signed-in visitors only. */
