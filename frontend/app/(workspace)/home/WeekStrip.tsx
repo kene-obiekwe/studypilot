@@ -64,32 +64,35 @@ export function WeekStrip({ days, colorFor }: { days: StripDay[]; colorFor: (cou
         </ul>
       )}
 
-      <table className={styles.srOnly}>
-        <caption>Minutes logged each day this week</caption>
-        <thead>
-          <tr>
-            <th scope="col">Day</th>
-            <th scope="col">Total</th>
-            <th scope="col">By course</th>
-          </tr>
-        </thead>
-        <tbody>
-          {days.map((day) => (
-            <tr key={day.date}>
-              <th scope="row">
-                {day.label}
-                {day.isToday ? " (today)" : ""}
-              </th>
-              <td>{formatMinutes(day.minutes)}</td>
-              <td>
-                {day.segments.length === 0
-                  ? "Nothing logged"
-                  : day.segments.map((segment) => `${segment.courseName} ${formatMinutes(segment.minutes)}`).join(", ")}
-              </td>
+      {/* A table ignores width/height, so the screen-reader-only clipping goes on a wrapper. */}
+      <div className={styles.srOnly}>
+        <table>
+          <caption>Minutes logged each day this week</caption>
+          <thead>
+            <tr>
+              <th scope="col">Day</th>
+              <th scope="col">Total</th>
+              <th scope="col">By course</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {days.map((day) => (
+              <tr key={day.date}>
+                <th scope="row">
+                  {day.label}
+                  {day.isToday ? " (today)" : ""}
+                </th>
+                <td>{formatMinutes(day.minutes)}</td>
+                <td>
+                  {day.segments.length === 0
+                    ? "Nothing logged"
+                    : day.segments.map((segment) => `${segment.courseName} ${formatMinutes(segment.minutes)}`).join(", ")}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </Card>
   );
 }

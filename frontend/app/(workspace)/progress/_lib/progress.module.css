@@ -336,6 +336,17 @@ th[aria-sort="descending"] .sortIcon {
   flex: 1;
 }
 
+/* Focused by script when "Show more" runs out; a ring only for keyboard use. */
+.moreStatus:focus {
+  outline: none;
+}
+
+.moreStatus:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 2px;
+  border-radius: var(--sp-radius-sm);
+}
+
 .more {
   display: flex;
   align-items: center;

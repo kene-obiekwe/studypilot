@@ -20,6 +20,7 @@ import {
   type SortState,
 } from "./history-model";
 import styles from "./progress.module.css";
+import { useShowMore } from "./use-show-more";
 
 export const SESSIONS_PAGE_SIZE = 20;
 
@@ -46,7 +47,7 @@ function SortIcon({ state, columnKey }: { state: SortState; columnKey: SortKey }
  */
 export function SessionsTable({ sessions, colorStyle, pageSize = SESSIONS_PAGE_SIZE }: SessionsTableProps) {
   const [sort, setSort] = useState<SortState>(DEFAULT_SORT);
-  const [visible, setVisible] = useState(pageSize);
+  const { visible, done, showMore, statusRef } = useShowMore(sessions.length, pageSize);
   const sortSelectId = useId();
 
   const sorted = useMemo(() => sortSessions(sessions, sort), [sessions, sort]);
@@ -116,12 +117,10 @@ export function SessionsTable({ sessions, colorStyle, pageSize = SESSIONS_PAGE_S
       </div>
 
       <div className={styles.more}>
-        <p className={styles.muted} role="status">
+        <p ref={statusRef} tabIndex={-1} className={`${styles.muted} ${styles.moreStatus}`} role="status">
           Showing {shown.length} of {sorted.length} sessions
         </p>
-        {shown.length < sorted.length && (
-          <Button onClick={() => setVisible((count) => count + pageSize)}>Show more</Button>
-        )}
+        {!done && <Button onClick={showMore}>Show more</Button>}
       </div>
     </div>
   );

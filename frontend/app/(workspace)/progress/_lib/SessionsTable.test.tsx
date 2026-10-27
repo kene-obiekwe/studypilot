@@ -99,6 +99,21 @@ describe("SessionsTable", () => {
     expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Show more")).toBe(false);
   });
 
+  it("keeps focus on Show more while pages remain, then moves it to the status line when the button goes", async () => {
+    const many = Array.from({ length: 25 }, (_, index) => item(index + 1, `Course ${index + 1}`, 0.5, 1 + (index % 28)));
+    const { container } = await render(<SessionsTable sessions={many} pageSize={10} />);
+    const showMore = () => [...container.querySelectorAll("button")].find((button) => button.textContent === "Show more") as HTMLButtonElement;
+
+    showMore().focus();
+    await click(showMore());
+    expect(document.activeElement).toBe(showMore());
+
+    await click(showMore());
+    expect(showMore()).toBeUndefined();
+    expect(document.activeElement).toBe(container.querySelector('[role="status"]'));
+    expect(document.activeElement?.textContent).toBe("Showing 25 of 25 sessions");
+  });
+
   it("applies the course colour to its dot when given", async () => {
     const { container } = await render(
       <SessionsTable sessions={[SESSIONS[0]]} colorStyle={(name) => (name === "CSC 401" ? ({ "--course-dot": "red" } as React.CSSProperties) : undefined)} />,

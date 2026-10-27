@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import type { CSSProperties } from "react";
 
 import { Button, Disclosure } from "@/components/ui";
 import type { PlanHistoryItem } from "@/lib/api";
 
 import { shortDate } from "./history-model";
 import styles from "./progress.module.css";
+import { useShowMore } from "./use-show-more";
 
 export const PLANS_PAGE_SIZE = 8;
 
@@ -24,7 +25,7 @@ type PlansListProps = {
 
 /** Past plans as compact rows, newest first. Each opens to its per-course hours. */
 export function PlansList({ plans, colorStyle, pageSize = PLANS_PAGE_SIZE }: PlansListProps) {
-  const [visible, setVisible] = useState(pageSize);
+  const { visible, done, showMore, statusRef } = useShowMore(plans.length, pageSize);
   const shown = plans.slice(0, visible);
 
   return (
@@ -60,12 +61,12 @@ export function PlansList({ plans, colorStyle, pageSize = PLANS_PAGE_SIZE }: Pla
           );
         })}
       </ul>
-      {shown.length < plans.length && (
+      {plans.length > pageSize && (
         <div className={styles.more}>
-          <p className={styles.muted} role="status">
+          <p ref={statusRef} tabIndex={-1} className={`${styles.muted} ${styles.moreStatus}`} role="status">
             Showing {shown.length} of {plans.length} plans
           </p>
-          <Button onClick={() => setVisible((count) => count + pageSize)}>Show more</Button>
+          {!done && <Button onClick={showMore}>Show more</Button>}
         </div>
       )}
     </div>
