@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
+import { startTransition, Suspense, use, useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
 import { CalendarRange, Plus, X } from "lucide-react";
 
 import { PageAction } from "@/components/app-shell";
@@ -29,10 +29,53 @@ const FORM_ID = "plan-form";
 
 const DIFFICULTY_LABELS = ["1 · Easy", "2", "3 · Medium", "4", "5 · Hard"];
 
+type Loaded = { courses: Course[] } | { error: string };
+
+/** Never rejects; a failure renders as a Notice with a retry. */
+function loadCourses(): Promise<Loaded> {
+  return listCourses().then(
+    (courses) => ({ courses }),
+    (failure: Error) => ({ error: failure.message }),
+  );
+}
+
 export default function PlannerPage() {
-  const [courses, setCourses] = useState<Course[] | null>(null);
-  const [loadError, setLoadError] = useState("");
-  const [rows, setRows] = useState<PlannerRow[]>([]);
+  // Fetched once per page view (a lazy initialiser read with use(), not an effect).
+  const [promise, setPromise] = useState(loadCourses);
+  return (
+    <div className={styles.page}>
+      <Suspense
+        fallback={
+          <div className={styles.section} aria-busy="true" aria-label="Loading your courses">
+            <Skeleton height={44} />
+            <Skeleton height={160} />
+          </div>
+        }
+      >
+        <Planner promise={promise} onRetry={() => startTransition(() => setPromise(loadCourses()))} />
+      </Suspense>
+    </div>
+  );
+}
+
+function Planner({ promise, onRetry }: { promise: Promise<Loaded>; onRetry: () => void }) {
+  const loaded = use(promise);
+  if ("error" in loaded) {
+    return (
+      <Notice tone="danger" title="Could not load your courses">
+        {loaded.error}{" "}
+        <Button size="sm" variant="ghost" onClick={onRetry}>
+          Try again
+        </Button>
+      </Notice>
+    );
+  }
+  return <PlannerForm initialCourses={loaded.courses} />;
+}
+
+function PlannerForm({ initialCourses }: { initialCourses: Course[] }) {
+  const [courses, setCourses] = useState(initialCourses);
+  const [rows, setRows] = useState<PlannerRow[]>(() => rowsFromCourses(initialCourses));
   const [hours, setHours] = useState(String(DEFAULT_HOURS));
   const [problems, setProblems] = useState<PlanProblems>({});
   const [busy, setBusy] = useState(false);
@@ -47,27 +90,12 @@ export default function PlannerPage() {
   const formRef = useRef<HTMLFormElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
 
-  const { colorFor } = useCourseColors(courses ?? []);
-  const idsByName = useMemo(() => new Map((courses ?? []).map((course) => [courseKey(course.name), course.id])), [courses]);
+  const { colorFor } = useCourseColors(courses);
+  const idsByName = useMemo(() => new Map(courses.map((course) => [courseKey(course.name), course.id])), [courses]);
   const colorStyle = (name: string) => {
     const id = idsByName.get(courseKey(name));
     return id === undefined ? undefined : colorFor(id).style;
   };
-
-  const load = async () => {
-    try {
-      const saved = await listCourses();
-      setCourses(saved);
-      setRows(rowsFromCourses(saved));
-      setLoadError("");
-    } catch (failure) {
-      setLoadError((failure as Error).message);
-    }
-  };
-
-  useEffect(() => {
-    void load();
-  }, []);
 
   // After adding a row, move focus to its name field.
   useEffect(() => {
@@ -128,32 +156,16 @@ export default function PlannerPage() {
   };
 
   const allocations = result?.allocations ?? [];
-  const noCourses = courses !== null && courses.length === 0;
+  const noCourses = courses.length === 0;
 
   return (
-    <div className={styles.page}>
-      {!noCourses && courses !== null && (
+    <>
+      {!noCourses && (
         <PageAction>
           <Button type="submit" form={FORM_ID} variant="primary" icon={<CalendarRange size={16} />} loading={busy}>
             Generate plan
           </Button>
         </PageAction>
-      )}
-
-      {loadError && (
-        <Notice tone="danger" title="Could not load your courses">
-          {loadError}{" "}
-          <Button size="sm" variant="ghost" onClick={() => void load()}>
-            Try again
-          </Button>
-        </Notice>
-      )}
-
-      {courses === null && !loadError && (
-        <div className={styles.section} aria-busy="true" aria-label="Loading your courses">
-          <Skeleton height={44} />
-          <Skeleton height={160} />
-        </div>
       )}
 
       {noCourses && (
@@ -169,7 +181,7 @@ export default function PlannerPage() {
         />
       )}
 
-      {courses !== null && courses.length > 0 && (
+      {!noCourses && (
         <form id={FORM_ID} ref={formRef} className={styles.section} onSubmit={(event) => void onSubmit(event)} noValidate>
           <Field
             label="Hours you can study this week"
@@ -250,12 +262,12 @@ export default function PlannerPage() {
               <Button icon={<Plus size={16} />} onClick={addRow}>
                 Add a course
               </Button>
-              {rows.length < (courses?.length ?? 0) && (
+              {rows.length < courses.length && (
                 <Button
                   variant="ghost"
                   onClick={() => {
                     const present = new Set(rows.map((row) => courseKey(row.name)));
-                    setRows((current) => [...current, ...rowsFromCourses((courses ?? []).filter((course) => !present.has(courseKey(course.name))))]);
+                    setRows((current) => [...current, ...rowsFromCourses(courses.filter((course) => !present.has(courseKey(course.name))))]);
                   }}
                 >
                   Add back my saved courses
@@ -304,6 +316,6 @@ export default function PlannerPage() {
           </div>
         </section>
       )}
-    </div>
+    </>
   );
 }

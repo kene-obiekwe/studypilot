@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 import { Button, Notice, Skeleton } from "@/components/ui";
@@ -26,7 +26,7 @@ import { StepIndicator } from "./StepIndicator";
 
 type Loaded = { me: Me | null; courses: Course[]; plans: PlanHistoryItem[]; sessions: SessionHistoryItem[] };
 
-type State = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; data: Loaded };
+type LoadResult = { data: Loaded } | { error: string };
 
 const COPY: Record<OnboardingStep, { title: string; lede: string }> = {
   1: {
@@ -43,58 +43,56 @@ const COPY: Record<OnboardingStep, { title: string; lede: string }> = {
   },
 };
 
-/** Courses are required; the rest degrade on their own (no plan history just means starting at the plan step). */
-async function loadOnboarding(): Promise<Loaded> {
-  const [me, courses, plans, sessions] = await Promise.allSettled([getMe(), listCourses(), getPlanHistory(), getSessionHistory()]);
-  if (courses.status === "rejected") throw courses.reason;
-  return {
-    me: me.status === "fulfilled" ? me.value : null,
-    courses: courses.value,
-    plans: plans.status === "fulfilled" ? plans.value.items : [],
-    sessions: sessions.status === "fulfilled" ? sessions.value.items : [],
-  };
+/**
+ * Never rejects. Courses are required; the rest degrade on their own (no plan history just means
+ * starting at the plan step).
+ */
+function loadOnboarding(): Promise<LoadResult> {
+  return Promise.allSettled([getMe(), listCourses(), getPlanHistory(), getSessionHistory()]).then(
+    ([me, courses, plans, sessions]) => {
+      if (courses.status === "rejected") return { error: (courses.reason as Error).message };
+      return {
+        data: {
+          me: me.status === "fulfilled" ? me.value : null,
+          courses: courses.value,
+          plans: plans.status === "fulfilled" ? plans.value.items : [],
+          sessions: sessions.status === "fulfilled" ? sessions.value.items : [],
+        },
+      };
+    },
+  );
 }
 
 export default function OnboardingPage() {
-  const [state, setState] = useState<State>({ status: "loading" });
+  // Fetched once per page view (a lazy initialiser read with use(), not an effect).
+  const [promise, setPromise] = useState(loadOnboarding);
+  return (
+    <Suspense
+      fallback={
+        <div className={styles.loading} aria-busy="true" aria-label="Loading your setup">
+          <Skeleton width={220} height={24} />
+          <Skeleton height={160} radius="lg" />
+        </div>
+      }
+    >
+      <Onboarding promise={promise} onRetry={() => setPromise(loadOnboarding())} />
+    </Suspense>
+  );
+}
 
-  const load = useCallback(async () => {
-    try {
-      setState({ status: "ready", data: await loadOnboarding() });
-    } catch (failure) {
-      setState({ status: "error", message: (failure as Error).message });
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  if (state.status === "ready") {
-    return <Flow data={state.data} />;
-  }
-  if (state.status === "error") {
+function Onboarding({ promise, onRetry }: { promise: Promise<LoadResult>; onRetry: () => void }) {
+  const result = use(promise);
+  if ("error" in result) {
     return (
       <Notice tone="danger" title="Could not load your setup">
-        <p>{state.message}</p>
-        <Button
-          size="sm"
-          onClick={() => {
-            setState({ status: "loading" });
-            void load();
-          }}
-        >
+        <p>{result.error}</p>
+        <Button size="sm" onClick={onRetry}>
           Try again
         </Button>
       </Notice>
     );
   }
-  return (
-    <div className={styles.loading} aria-busy="true" aria-label="Loading your setup">
-      <Skeleton width={220} height={24} />
-      <Skeleton height={160} radius="lg" />
-    </div>
-  );
+  return <Flow data={result.data} />;
 }
 
 function Flow({ data }: { data: Loaded }) {

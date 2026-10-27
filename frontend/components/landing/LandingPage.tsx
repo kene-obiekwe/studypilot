@@ -28,7 +28,7 @@ const FEATURES = [
   },
   {
     icon: TrendingUp,
-    title: "Progress you can see, forecasts you can trust",
+    title: "Progress you can see, a forecast you can check",
     text: "A study timer, a history of every session, and a next-week forecast that’s been tested against simple baselines.",
   },
 ];

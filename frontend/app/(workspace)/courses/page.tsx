@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useState } from "react";
+import { startTransition, Suspense, use, useId, useState, type ReactNode } from "react";
 import { BookOpen, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { PageAction } from "@/components/app-shell";
@@ -22,26 +22,27 @@ import styles from "./courses.module.css";
 
 type DialogState = { mode: "add" } | { mode: "edit"; course: Course } | null;
 
+const NO_COURSES: Course[] = [];
+
+type Loaded = { courses: Course[] } | { error: string };
+
+/** Never rejects; a failure renders as a Notice with a retry. */
+function loadCourses(): Promise<Loaded> {
+  return listCourses().then(
+    (courses) => ({ courses }),
+    (failure: Error) => ({ error: failure.message }),
+  );
+}
+
 export default function CoursesPage() {
-  const [courses, setCourses] = useState<Course[] | null>(null);
-  const [loadError, setLoadError] = useState("");
+  // Fetched once per page view (a lazy initialiser read with use(), not an effect). After a change
+  // it is fetched again inside a transition, so the list stays on screen until the new one arrives.
+  const [promise, setPromise] = useState(loadCourses);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [deleting, setDeleting] = useState<Course | null>(null);
   const [status, setStatus] = useState("");
-  const { colorFor } = useCourseColors(courses ?? []);
 
-  const load = useCallback(async () => {
-    try {
-      setCourses(await listCourses());
-      setLoadError("");
-    } catch (error) {
-      setLoadError((error as Error).message);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const reload = () => startTransition(() => setPromise(loadCourses()));
 
   const save = async (input: CourseInput) => {
     if (dialog?.mode === "edit") {
@@ -52,100 +53,144 @@ export default function CoursesPage() {
       setStatus(`Added ${input.name}.`);
     }
     setDialog(null);
-    await load();
+    reload();
   };
 
   const remove = async (course: Course) => {
     await deleteCourse(course.id);
     setDeleting(null);
     setStatus(`Deleted ${course.name}.`);
-    await load();
+    reload();
   };
 
-  const now = new Date();
-  const empty = courses !== null && courses.length === 0;
+  const addAction = (
+    <PageAction>
+      <Button variant="primary" icon={<Plus size={16} />} onClick={() => setDialog({ mode: "add" })}>
+        Add course
+      </Button>
+    </PageAction>
+  );
 
   return (
     <div className={styles.page}>
-      {!empty && (
-        <PageAction>
-          <Button variant="primary" icon={<Plus size={16} />} onClick={() => setDialog({ mode: "add" })}>
-            Add course
-          </Button>
-        </PageAction>
-      )}
-
       {status && <Notice tone="success">{status}</Notice>}
-      {loadError && (
-        <Notice tone="danger" title="Could not load your courses">
-          {loadError}{" "}
-          <Button size="sm" variant="ghost" onClick={() => void load()}>
-            Try again
-          </Button>
-        </Notice>
-      )}
 
-      {courses === null && !loadError && (
-        <div className={styles.skeletonList} aria-busy="true" aria-label="Loading courses">
-          <Skeleton height={72} />
-          <Skeleton height={72} />
-          <Skeleton height={72} />
-        </div>
-      )}
-
-      {empty && (
-        <EmptyState
-          icon={<BookOpen size={28} />}
-          title="Add your first course"
-          description="Plans, strategies and forecasts are built per course."
-          action={
-            <Button variant="primary" icon={<Plus size={16} />} onClick={() => setDialog({ mode: "add" })}>
-              Add course
-            </Button>
-          }
+      <Suspense
+        fallback={
+          <>
+            {addAction}
+            <div className={styles.skeletonList} aria-busy="true" aria-label="Loading courses">
+              <Skeleton height={72} />
+              <Skeleton height={72} />
+              <Skeleton height={72} />
+            </div>
+          </>
+        }
+      >
+        <CourseList
+          promise={promise}
+          addAction={addAction}
+          onReload={reload}
+          onAdd={() => setDialog({ mode: "add" })}
+          onEdit={(course) => setDialog({ mode: "edit", course })}
+          onDelete={setDeleting}
         />
-      )}
-
-      {courses !== null && courses.length > 0 && (
-        <ul className={styles.list}>
-          {courses.map((course) => {
-            const exam = examLabel(course.exam_date, now);
-            const traits = describeTraits(course);
-            const hasTraits = traits !== "No traits set yet";
-            return (
-              <li key={course.id} className={styles.row} style={colorFor(course.id).style}>
-                <span className={styles.dot} aria-hidden="true" />
-                <div className={styles.body}>
-                  <div className={styles.titleLine}>
-                    <h2 className={styles.name}>{course.name}</h2>
-                    <p className={styles.meta}>
-                      Difficulty {course.difficulty} of 5 · {weeklyHoursLabel(course.weekly_target_hours)}
-                    </p>
-                  </div>
-                  <p className={hasTraits ? styles.traits : `${styles.traits} ${styles.traitsEmpty}`}>{traits}</p>
-                  {exam && (
-                    <div className={styles.badges}>
-                      <Badge tone="exam">{exam}</Badge>
-                    </div>
-                  )}
-                </div>
-                <div className={styles.actions}>
-                  <Button size="sm" icon={<Pencil size={14} />} aria-label={`Edit ${course.name}`} onClick={() => setDialog({ mode: "edit", course })}>
-                    Edit
-                  </Button>
-                  <Button size="sm" variant="ghost" icon={<Trash2 size={14} />} aria-label={`Delete ${course.name}`} onClick={() => setDeleting(course)}>
-                    Delete
-                  </Button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      </Suspense>
 
       {dialog && <CourseDialog state={dialog} onSave={save} onClose={() => setDialog(null)} />}
       {deleting && <DeleteDialog course={deleting} onConfirm={remove} onClose={() => setDeleting(null)} />}
     </div>
+  );
+}
+
+function CourseList({
+  promise,
+  addAction,
+  onReload,
+  onAdd,
+  onEdit,
+  onDelete,
+}: {
+  promise: Promise<Loaded>;
+  addAction: ReactNode;
+  onReload: () => void;
+  onAdd: () => void;
+  onEdit: (course: Course) => void;
+  onDelete: (course: Course) => void;
+}) {
+  const loaded = use(promise);
+  const courses = "courses" in loaded ? loaded.courses : NO_COURSES;
+  const { colorFor } = useCourseColors(courses);
+
+  if ("error" in loaded) {
+    return (
+      <>
+        {addAction}
+        <Notice tone="danger" title="Could not load your courses">
+          {loaded.error}{" "}
+          <Button size="sm" variant="ghost" onClick={onReload}>
+            Try again
+          </Button>
+        </Notice>
+      </>
+    );
+  }
+
+  const now = new Date();
+
+  if (courses.length === 0) {
+    return (
+      <EmptyState
+        icon={<BookOpen size={28} />}
+        title="Add your first course"
+        description="Plans, strategies and forecasts are built per course."
+        action={
+          <Button variant="primary" icon={<Plus size={16} />} onClick={onAdd}>
+            Add course
+          </Button>
+        }
+      />
+    );
+  }
+
+  return (
+    <>
+      {addAction}
+      <ul className={styles.list}>
+        {courses.map((course) => {
+          const exam = examLabel(course.exam_date, now);
+          const traits = describeTraits(course);
+          const hasTraits = traits !== "No traits set yet";
+          return (
+            <li key={course.id} className={styles.row} style={colorFor(course.id).style}>
+              <span className={styles.dot} aria-hidden="true" />
+              <div className={styles.body}>
+                <div className={styles.titleLine}>
+                  <h2 className={styles.name}>{course.name}</h2>
+                  <p className={styles.meta}>
+                    Difficulty {course.difficulty} of 5 · {weeklyHoursLabel(course.weekly_target_hours)}
+                  </p>
+                </div>
+                <p className={hasTraits ? styles.traits : `${styles.traits} ${styles.traitsEmpty}`}>{traits}</p>
+                {exam && (
+                  <div className={styles.badges}>
+                    <Badge tone="exam">{exam}</Badge>
+                  </div>
+                )}
+              </div>
+              <div className={styles.actions}>
+                <Button size="sm" icon={<Pencil size={14} />} aria-label={`Edit ${course.name}`} onClick={() => onEdit(course)}>
+                  Edit
+                </Button>
+                <Button size="sm" variant="ghost" icon={<Trash2 size={14} />} aria-label={`Delete ${course.name}`} onClick={() => onDelete(course)}>
+                  Delete
+                </Button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </>
   );
 }
 

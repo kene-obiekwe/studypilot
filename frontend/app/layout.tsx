@@ -14,8 +14,9 @@ const sans = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "StudyPilot AI",
-  description: "AI-powered personalised study planning and learning recommendation system",
+  title: "StudyPilot",
+  description:
+    "Split your weekly study hours across your courses, get study techniques for each one, and adjust your plan from the sessions you log.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

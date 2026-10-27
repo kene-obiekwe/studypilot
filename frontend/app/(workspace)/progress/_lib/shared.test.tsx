@@ -20,8 +20,12 @@ import { notifySessionsChanged } from "@/lib/timer-refresh";
 import { ProgressProvider, useProgress } from "./shared";
 
 function Probe() {
-  const { sessions } = useProgress();
-  return <p>{sessions.length} sessions</p>;
+  const { sessions, isLoading, error } = useProgress();
+  return (
+    <p>
+      {sessions.length} sessions{isLoading ? ", loading" : ""}{error ? `, error: ${error}` : ""}
+    </p>
+  );
 }
 
 beforeEach(() => {
@@ -61,6 +65,41 @@ describe("ProgressProvider", () => {
 
     expect(api.getSessionHistory).toHaveBeenCalledTimes(2);
     expect(view.container.textContent).toBe("1 sessions");
+  });
+
+  it("reports loading until the first load settles, then not", async () => {
+    let finish: (value: { items: [] }) => void = () => undefined;
+    api.getSessionHistory.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    const view = await render(
+      <ProgressProvider>
+        <Probe />
+      </ProgressProvider>,
+    );
+    expect(view.container.textContent).toBe("0 sessions, loading");
+    await act(async () => {
+      finish({ items: [] });
+    });
+    expect(view.container.textContent).toBe("0 sessions");
+  });
+
+  it("shows the error and keeps the old data when a refresh fails, and clears it on the next success", async () => {
+    const view = await render(
+      <ProgressProvider>
+        <Probe />
+      </ProgressProvider>,
+    );
+    await flush();
+    api.getSessionHistory.mockRejectedValueOnce(new Error("Server is down"));
+    await act(async () => {
+      notifySessionsChanged();
+    });
+    await flush();
+    expect(view.container.textContent).toBe("0 sessions, error: Server is down");
+    await act(async () => {
+      notifySessionsChanged();
+    });
+    await flush();
+    expect(view.container.textContent).toBe("0 sessions");
   });
 
   it("stops listening once unmounted", async () => {

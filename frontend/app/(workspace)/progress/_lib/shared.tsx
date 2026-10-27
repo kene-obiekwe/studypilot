@@ -7,6 +7,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  useSyncExternalStore,
 } from "react";
 
 import {
@@ -63,44 +64,68 @@ const EMPTY_ANALYTICS: ProgressContextValue["analytics"] = {
   difficultyMix: { low: 0, medium: 0, high: 0 },
 };
 
+type Snapshot = { plans: PlanHistoryItem[]; sessions: SessionHistoryItem[]; trainingRows: TrainingDataItem[] };
+
+const EMPTY_SNAPSHOT: Snapshot = { plans: [], sessions: [], trainingRows: [] };
+
+function fetchSnapshot(): Promise<Snapshot> {
+  return Promise.all([getPlanHistory(), getSessionHistory(), getTrainingData()]).then(([p, s, t]) => ({
+    plans: p.items,
+    sessions: s.items,
+    trainingRows: t.rows,
+  }));
+}
+
+// Re-check when another tab signs in or out (localStorage "storage" events).
+function subscribeSession(onChange: () => void): () => void {
+  window.addEventListener("storage", onChange);
+  return () => window.removeEventListener("storage", onChange);
+}
+
 export function ProgressProvider({ children }: { children: React.ReactNode }) {
-  const [signedIn, setSignedIn] = useState(false);
-  const [plans, setPlans] = useState<PlanHistoryItem[]>([]);
-  const [sessions, setSessions] = useState<SessionHistoryItem[]>([]);
-  const [trainingRows, setTrainingRows] = useState<TrainingDataItem[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  // False on the server and during hydration, then the real answer.
+  const signedIn = useSyncExternalStore(subscribeSession, hasSession, () => false);
+  const [{ plans, sessions, trainingRows }, setSnapshot] = useState(EMPTY_SNAPSHOT);
+  const [loaded, setLoaded] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    setSignedIn(hasSession());
-  }, []);
+  // Never rejects. State is only set in the callbacks, once the requests have settled.
+  const load = useCallback(
+    () =>
+      fetchSnapshot().then(
+        (next) => {
+          setSnapshot(next);
+          setError("");
+          setLoaded(true);
+        },
+        (failure: Error) => {
+          setError(failure.message);
+          setLoaded(true);
+        },
+      ),
+    [],
+  );
 
   const refresh = useCallback(async () => {
     if (!signedIn) return;
-    setIsLoading(true);
+    setRefreshing(true);
     setError("");
     try {
-      const [p, s, t] = await Promise.all([
-        getPlanHistory(),
-        getSessionHistory(),
-        getTrainingData(),
-      ]);
-      setPlans(p.items);
-      setSessions(s.items);
-      setTrainingRows(t.rows);
-    } catch (e) {
-      setError((e as Error).message);
+      await load();
     } finally {
-      setIsLoading(false);
+      setRefreshing(false);
     }
-  }, [signedIn]);
+  }, [signedIn, load]);
 
   useEffect(() => {
-    if (signedIn) void refresh();
-  }, [signedIn, refresh]);
+    if (signedIn) void load();
+  }, [signedIn, load]);
 
   // A session saved by the timer (here or in another tab) changes everything these views show.
   useEffect(() => (signedIn ? onSessionsChanged(() => void refresh()) : undefined), [signedIn, refresh]);
+
+  const isLoading = signedIn && (!loaded || refreshing);
 
   const analytics = useMemo(() => {
     if (sessions.length === 0) {
