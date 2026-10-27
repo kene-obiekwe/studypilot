@@ -1,88 +1,38 @@
-import Link from "next/link";
-import {
-  BarChart3,
-  Bot,
-  Brain,
-  CalendarClock,
-  CheckCircle2,
-  KeyRound,
-  ShieldCheck,
-  Sparkles,
-  UserPlus,
-} from "lucide-react";
+import type { Metadata } from "next";
 
-const featureCards = [
-  {
-    title: "Plan smart study weeks",
-    text: "Allocate time by difficulty and generate focus blocks that fit your week.",
-    icon: CalendarClock,
-  },
-  {
-    title: "Adapt with AI strategies",
-    text: "Receive tailored learning strategies based on your focus and completion signals.",
-    icon: Bot,
-  },
-  {
-    title: "Forecast adherence",
-    text: "See predicted adherence before each session so you can calibrate intensity.",
-    icon: Brain,
-  },
-  {
-    title: "Track every session",
-    text: "Log outcomes, see analytics across courses, and improve consistency over time.",
-    icon: BarChart3,
-  },
-];
+import { HEADLINE, LandingPage, SUBCOPY } from "@/components/landing/LandingPage";
+import { HERO_POSTER } from "@/components/landing/media";
 
-const trustBadges = [
-  { label: "Rule + ML hybrid", icon: ShieldCheck },
-  { label: "Privacy-aware data", icon: CheckCircle2 },
-  { label: "Mobile-first", icon: Sparkles },
-];
+// Open Graph images need an absolute URL. Set NEXT_PUBLIC_SITE_URL once the site has a domain;
+// until then Next falls back to the local origin.
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+
+export const metadata: Metadata = {
+  ...(siteUrl ? { metadataBase: new URL(siteUrl) } : {}),
+  title: "StudyPilot: a study plan that adapts to how you study",
+  description: SUBCOPY,
+  openGraph: {
+    type: "website",
+    siteName: "StudyPilot",
+    title: HEADLINE,
+    description: SUBCOPY,
+    images: [
+      {
+        url: HERO_POSTER,
+        width: 1280,
+        height: 720,
+        alt: "A student at a laptop with cards for a study timetable, learning strategies and progress tracking.",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: HEADLINE,
+    description: SUBCOPY,
+    images: [HERO_POSTER],
+  },
+};
 
 export default function RootPage() {
-  return (
-    <main className="home-shell">
-      <section className="hero home-hero animate-in">
-        <span className="kicker">
-          <Sparkles size={12} /> StudyPilot AI
-        </span>
-        <h1>AI-Powered Personalised Study Planning &amp; Learning Recommendation</h1>
-        <p>
-          Generate structured study plans, receive adaptive learning strategies, and track adherence with
-          data-driven insights — designed for undergraduates and built mobile-first.
-        </p>
-        <div className="hero-actions">
-          <Link className="button-link" href="/auth">
-            <KeyRound size={16} /> Login
-          </Link>
-          <Link className="button-link secondary" href="/auth">
-            <UserPlus size={16} /> Create account
-          </Link>
-        </div>
-        <div className="pill-row" style={{ marginTop: 18 }}>
-          {trustBadges.map(({ label, icon: Icon }) => (
-            <span key={label} className="pill accent">
-              <Icon size={12} /> {label}
-            </span>
-          ))}
-        </div>
-      </section>
-
-      <section className="grid four stagger">
-        {featureCards.map((card) => {
-          const Icon = card.icon;
-          return (
-            <article className="card" key={card.title}>
-              <span className="card-icon">
-                <Icon size={18} />
-              </span>
-              <h3>{card.title}</h3>
-              <p>{card.text}</p>
-            </article>
-          );
-        })}
-      </section>
-    </main>
-  );
+  return <LandingPage />;
 }
