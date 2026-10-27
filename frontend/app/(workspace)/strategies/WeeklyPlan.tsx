@@ -14,12 +14,26 @@ type PlanState =
   | { status: "ready"; plan: CoursePlan; open: boolean }
   | { status: "error"; message: string };
 
-/** "Write my weekly plan": fetched only when asked for, then shown (or hidden) under the course. */
-export function WeeklyPlanButton({ state, onWrite, onToggle }: { state: PlanState; onWrite: () => void; onToggle: () => void }) {
+/**
+ * "Write my weekly plan": fetched only when asked for, then shown (or hidden) under the course.
+ * sectionOpen is false while the course is collapsed, when the plan isn't visible either.
+ */
+export function WeeklyPlanButton({
+  state,
+  onWrite,
+  onToggle,
+  sectionOpen = true,
+}: {
+  state: PlanState;
+  onWrite: () => void;
+  onToggle: () => void;
+  sectionOpen?: boolean;
+}) {
   if (state.status === "ready") {
+    const visible = state.open && sectionOpen;
     return (
-      <Button size="sm" variant="secondary" icon={<NotebookPen size={14} />} aria-expanded={state.open} onClick={onToggle}>
-        {state.open ? "Hide weekly plan" : "Show weekly plan"}
+      <Button size="sm" variant="secondary" icon={<NotebookPen size={14} />} aria-expanded={visible} onClick={onToggle}>
+        {visible ? "Hide weekly plan" : "Show weekly plan"}
       </Button>
     );
   }

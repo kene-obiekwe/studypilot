@@ -14,7 +14,11 @@ import { applyOptimistic, rollback, settle, shouldSend } from "@/lib/strategy-fe
 
 import styles from "./strategies.module.css";
 
-/** One strategy in a course's checklist, with optimistic "tried" and helpful / not helpful feedback. */
+/**
+ * One strategy in a course's checklist, with optimistic "tried" and helpful / not helpful feedback.
+ * The row stays compact: title, the "From your data" badge when the data chose it, and the
+ * controls. What to do, why, the steps and the source sit behind one "Why and how" disclosure.
+ */
 export function StrategyItem({ rec }: { rec: CourseRecommendation }) {
   const [feedback, setFeedback] = useState<StrategyFeedbackState>(rec.feedback);
   const [error, setError] = useState("");
@@ -37,31 +41,28 @@ export function StrategyItem({ rec }: { rec: CourseRecommendation }) {
   return (
     <li className={styles.item} aria-labelledby={titleId}>
       <div className={styles.itemHead}>
-        <div>
-          <h3 id={titleId} className={styles.itemTitle}>
-            {rec.title}
-          </h3>
-          <p className={styles.what}>{rec.what}</p>
-        </div>
-        <Badge tone={rec.basis === "history" ? "accent" : "neutral"}>
-          {rec.basis === "history" ? "From your data" : "From course settings"}
-        </Badge>
+        <h3 id={titleId} className={styles.itemTitle}>
+          {rec.title}
+        </h3>
+        {/* Only data-backed picks are marked; the rest come from the course settings or library. */}
+        {rec.basis === "history" && <Badge tone="accent">From your data</Badge>}
       </div>
 
-      <p className={styles.why}>{rec.why}</p>
-
-      <Disclosure summary="How">
-        <ol className={styles.steps}>
-          {rec.how.map((step) => (
-            <li key={step}>{step}</li>
-          ))}
-        </ol>
+      <Disclosure summary="Why and how" className={styles.details}>
+        <div className={styles.detailsBody}>
+          <p className={styles.what}>{rec.what}</p>
+          <p className={styles.why}>{rec.why}</p>
+          <ol className={styles.steps} aria-label="How">
+            {rec.how.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+          <p className={styles.source}>
+            Source: {rec.source.short}
+            {rec.source.note && <> · {rec.source.note}</>}
+          </p>
+        </div>
       </Disclosure>
-
-      <p className={styles.source}>
-        Source: {rec.source.short}
-        {rec.source.note && <> · {rec.source.note}</>}
-      </p>
 
       <div className={styles.controls}>
         <TriedControl
@@ -84,7 +85,11 @@ export function StrategyItem({ rec }: { rec: CourseRecommendation }) {
         </div>
       </div>
 
-      {error && <Notice tone="danger">{error}</Notice>}
+      {error && (
+        <div className={styles.error}>
+          <Notice tone="danger">{error}</Notice>
+        </div>
+      )}
     </li>
   );
 }

@@ -2,7 +2,7 @@
 
 import { Suspense, use, useMemo, useState } from "react";
 import Link from "next/link";
-import { Lightbulb, Settings2 } from "lucide-react";
+import { ChevronDown, Lightbulb, Settings2 } from "lucide-react";
 
 import { PageAction } from "@/components/app-shell";
 import { Button, EmptyState, Field, Notice, SegmentedControl, Select, Skeleton } from "@/components/ui";
@@ -10,6 +10,7 @@ import { getCourseRecommendations, type CourseRecommendations } from "@/lib/api"
 import type { CourseColor } from "@/lib/course-colors";
 import { useCourseColors } from "@/lib/use-course-colors";
 
+import { setCourseCollapsed, useCollapsedCourses } from "./collapsed-courses";
 import { StrategyItem } from "./StrategyItem";
 import { WeeklyPlanButton, WeeklyPlanPanel, useWeeklyPlan } from "./WeeklyPlan";
 import styles from "./strategies.module.css";
@@ -136,28 +137,62 @@ function CourseSection({
 }) {
   const { course, evidence, recommendations } = entry;
   const plan = useWeeklyPlan(course.id);
+  const collapsed = useCollapsedCourses().has(course.id);
   const headingId = `course-${course.id}-heading`;
+  const panelId = `course-${course.id}-strategies`;
+  const count = `${recommendations.length} ${recommendations.length === 1 ? "strategy" : "strategies"}`;
+
+  // Asking for the weekly plan opens a collapsed course, so the plan appears where it's expected.
+  const expand = () => setCourseCollapsed(course.id, false);
 
   return (
     <section className={styles.course} aria-labelledby={headingId} style={color.style}>
       <div className={styles.courseHead}>
-        <div>
+        <div className={styles.courseHeading}>
           <h2 id={headingId} className={styles.courseTitle}>
-            <span className={styles.dot} aria-hidden="true" />
-            {course.name}
+            <button
+              type="button"
+              className={styles.courseToggle}
+              aria-expanded={!collapsed}
+              aria-controls={panelId}
+              onClick={() => setCourseCollapsed(course.id, !collapsed)}
+            >
+              <ChevronDown size={18} className={styles.courseChevron} aria-hidden="true" />
+              <span className={styles.dot} aria-hidden="true" />
+              {course.name}
+            </button>
           </h2>
-          <p className={styles.evidence}>{evidence.summary}</p>
+          <p className={styles.evidence}>
+            {count} · {evidence.summary}
+          </p>
         </div>
         {aiPlanAvailable && (
-          <WeeklyPlanButton state={plan.state} onWrite={() => void plan.write()} onToggle={plan.toggle} />
+          <WeeklyPlanButton
+            state={plan.state}
+            onWrite={() => {
+              expand();
+              void plan.write();
+            }}
+            onToggle={() => {
+              if (!collapsed) {
+                plan.toggle();
+                return;
+              }
+              expand();
+              if (plan.state.status === "ready" && !plan.state.open) plan.toggle();
+            }}
+            sectionOpen={!collapsed}
+          />
         )}
       </div>
-      <WeeklyPlanPanel state={plan.state} courseName={course.name} />
-      <ul className={styles.list} aria-label={`Strategies for ${course.name}`}>
-        {recommendations.map((rec) => (
-          <StrategyItem key={rec.shown_id} rec={rec} />
-        ))}
-      </ul>
+      <div id={panelId} className={styles.coursePanel} hidden={collapsed}>
+        <WeeklyPlanPanel state={plan.state} courseName={course.name} />
+        <ul className={styles.list} aria-label={`Strategies for ${course.name}`}>
+          {recommendations.map((rec) => (
+            <StrategyItem key={rec.shown_id} rec={rec} />
+          ))}
+        </ul>
+      </div>
     </section>
   );
 }
