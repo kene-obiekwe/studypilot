@@ -31,6 +31,7 @@ import {
 import type { ContrastResult, ThemeName, ThemeTokens } from "@/lib/contrast";
 import { COURSE_HUES, courseColor } from "@/lib/course-colors";
 
+import { LogoOptions } from "./LogoOptions";
 import styles from "./styleguide.module.css";
 
 type Props = {
@@ -65,6 +66,7 @@ export function StyleguideClient({ tokens, contrast }: Props) {
           <ThemeToggle />
         </div>
       </header>
+      <LogoOptions />
       <div className={styles.columns}>
         {(["light", "dark"] as const).map((theme) => (
           <UiRoot key={theme} data-theme={theme} className={styles.panel}>

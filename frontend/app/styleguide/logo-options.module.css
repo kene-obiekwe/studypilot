@@ -1,0 +1,259 @@
+.wrap {
+  display: grid;
+  gap: var(--sp-space-6);
+  max-width: 1600px;
+  margin: 0 auto var(--sp-space-8);
+}
+
+.intro h2 {
+  margin: 0;
+  font-size: var(--sp-text-xl);
+}
+
+.intro p {
+  margin: var(--sp-space-1) 0 0;
+  max-width: 72ch;
+  color: var(--sp-ink-soft);
+}
+
+.option {
+  min-width: 0;
+  display: grid;
+  gap: var(--sp-space-4);
+}
+
+.optionHead {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-space-4);
+}
+
+.optionHead h3 {
+  margin: 0;
+  font-size: var(--sp-text-lg);
+}
+
+.optionHead p {
+  margin: 2px 0 0;
+  max-width: 80ch;
+  color: var(--sp-ink-soft);
+}
+
+.themes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 620px), 1fr));
+  gap: var(--sp-space-5);
+}
+
+.panel {
+  min-width: 0;
+  border: 1px solid var(--sp-line);
+  border-radius: var(--sp-radius-lg);
+  padding: var(--sp-space-6);
+  display: grid;
+  gap: var(--sp-space-6);
+  align-content: start;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: var(--sp-text-md);
+}
+
+.block {
+  display: grid;
+  gap: var(--sp-space-3);
+}
+
+.label {
+  font-size: var(--sp-text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--sp-muted);
+}
+
+.ladder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-space-5);
+}
+
+.step {
+  margin: 0;
+  display: grid;
+  justify-items: center;
+  gap: var(--sp-space-2);
+  color: var(--sp-ink);
+}
+
+.step figcaption {
+  font-size: var(--sp-text-xs);
+  color: var(--sp-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.reversed {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-space-4);
+  padding: var(--sp-space-3) var(--sp-space-4);
+  border-radius: var(--sp-radius-md);
+  background: #2b67d1;
+  color: #fff;
+}
+
+.lockups {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-space-6);
+}
+
+.contexts {
+  display: grid;
+  gap: var(--sp-space-4);
+}
+
+.contextRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--sp-space-4);
+}
+
+/* Browser tab strip mock: neutral chrome greys, light and dark. */
+.tabStrip {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 8px 8px 0;
+  border-radius: var(--sp-radius-md) var(--sp-radius-md) 0 0;
+  overflow: hidden;
+  background: #dee1e6;
+  color: #3c4043;
+}
+
+.panel[data-theme="dark"] .tabStrip {
+  background: #1f2023;
+  color: #e3e3e3;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 220px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px 8px 0 0;
+  font-size: 12px;
+}
+
+.tabActive {
+  background: #ffffff;
+}
+
+.panel[data-theme="dark"] .tabActive {
+  background: #35363a;
+}
+
+.tabTitle {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tabOther {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #9aa0a6;
+}
+
+/* Mirrors the app sidebar's brand row (padding and size). */
+.sidebar {
+  width: min(100%, 240px);
+  padding: var(--sp-space-4) var(--sp-space-2);
+  border: 1px solid var(--sp-line);
+  border-radius: var(--sp-radius-md);
+  background: var(--sp-surface);
+}
+
+.sidebarBrand {
+  padding: var(--sp-space-2) var(--sp-space-4) var(--sp-space-6);
+}
+
+.sidebarNav {
+  display: grid;
+  gap: 2px;
+}
+
+.auth {
+  flex: 1;
+  min-width: min(100%, 260px);
+  max-width: 340px;
+  display: grid;
+  gap: var(--sp-space-6);
+  padding: var(--sp-space-5);
+  border-radius: var(--sp-radius-md);
+  background: var(--sp-canvas);
+  border: 1px solid var(--sp-line);
+}
+
+.authCard {
+  display: grid;
+  gap: var(--sp-space-4);
+}
+
+.authTitle {
+  font-size: var(--sp-text-xl);
+}
+
+.landing {
+  border: 1px solid var(--sp-line);
+  border-radius: var(--sp-radius-md);
+  background: var(--sp-canvas);
+  overflow: hidden;
+}
+
+.landingBar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--sp-space-3);
+  min-height: 60px;
+  padding: var(--sp-space-3) var(--sp-space-5);
+  border-bottom: 1px solid var(--sp-line);
+}
+
+.landingEnd {
+  display: flex;
+  gap: var(--sp-space-2);
+}
+
+.landingHero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-space-6);
+  padding: var(--sp-space-8) var(--sp-space-5);
+}
+
+.landingHeadline {
+  display: block;
+  max-width: 18ch;
+  font-size: var(--sp-text-3xl);
+  line-height: var(--sp-leading-tight);
+  letter-spacing: -0.02em;
+}
+
+.landingSub {
+  display: block;
+  margin-top: var(--sp-space-2);
+  color: var(--sp-ink-soft);
+  font-size: var(--sp-text-sm);
+}
