@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from statistics import mean, median
 from typing import Callable
 
@@ -81,6 +81,7 @@ class ForecastInfo:
 class PlanInfo:
     allocated_hours: float
     logged_hours: float  # this week, up to today
+    entered_on: date | None = None  # day the course joined the plan; None paces from Monday
 
 
 @dataclass(frozen=True)
@@ -313,20 +314,27 @@ def exam_imminent(data: CourseData) -> Diagnostic | None:
 def under_studied(data: CourseData) -> Diagnostic | None:
     if data.plan is None:
         return None
-    elapsed = data.today.weekday() + 1  # Monday = 1
-    expected = data.plan.allocated_hours * elapsed / 7
+    plan = data.plan
+    if plan.logged_hours >= plan.allocated_hours:
+        return None
+    monday = data.today - timedelta(days=data.today.weekday())
+    entered_on = plan.entered_on or monday
+    window = 7 - entered_on.weekday()  # days from entry to Sunday
+    elapsed = (data.today - entered_on).days + 1  # the entry day is day 1
+    expected = plan.allocated_hours * elapsed / window
     if elapsed < MIN_DAYS_INTO_WEEK or expected < MIN_EXPECTED_HOURS:
         return None
-    if data.plan.logged_hours >= UNDER_FRACTION * expected:
+    if plan.logged_hours >= UNDER_FRACTION * expected:
         return None
     return Diagnostic(
         "under_studied",
-        f"This week's plan gives {data.course.name} {_hours(data.plan.allocated_hours)} h. By "
-        f"{WEEKDAY_NAMES[data.today.weekday()]} you've logged {_hours(data.plan.logged_hours)} h, against "
+        f"This week's plan gives {data.course.name} {_hours(plan.allocated_hours)} h"
+        f"{', from ' + WEEKDAY_NAMES[entered_on.weekday()] if entered_on != monday else ''}. By "
+        f"{WEEKDAY_NAMES[data.today.weekday()]} you've logged {_hours(plan.logged_hours)} h, against "
         f"about {_hours(expected)} h to be on track.",
         {
-            "allocated_hours": round(data.plan.allocated_hours, 2),
-            "logged_hours": round(data.plan.logged_hours, 2),
+            "allocated_hours": round(plan.allocated_hours, 2),
+            "logged_hours": round(plan.logged_hours, 2),
             "expected_hours": round(expected, 2),
             "days_into_week": elapsed,
         },

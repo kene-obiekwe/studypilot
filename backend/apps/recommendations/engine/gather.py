@@ -45,14 +45,32 @@ def course_traits(course: Course) -> CourseTraits:
 def _plan_info(user, course_name: str, today: date, logs: list[StudySessionLog]) -> PlanInfo | None:
     monday = week_start(today)
     key = course_name.casefold()
-    for plan in StudyPlan.objects.filter(user=user, week_start=monday).order_by("-created_at", "-id"):
-        for allocation in (plan.plan_json or {}).get("allocations", []):
-            if str(allocation.get("course", "")).casefold() == key:
-                logged_minutes = sum(
-                    log.actual_minutes for log in logs if local_today(log.created_at) >= monday
-                )
-                return PlanInfo(float(allocation.get("allocated_hours") or 0.0), logged_minutes / 60)
+    plan = StudyPlan.objects.filter(user=user, week_start=monday, is_current=True).first()
+    if plan is None:
+        return None
+    plan_json = plan.plan_json or {}
+    # v2 plans list courses with planned_hours and entered_on; legacy plans only have allocations
+    # and are paced from Monday.
+    for entry in plan_json.get("courses", []):
+        if str(entry.get("name", "")).casefold() == key:
+            allocated = float(entry.get("planned_hours") or 0.0)
+            entered_on = min(max(_entry_date(entry.get("entered_on"), monday), monday), today)
+            return PlanInfo(allocated, _logged_hours(logs, monday), entered_on)
+    for allocation in plan_json.get("allocations", []):
+        if str(allocation.get("course", "")).casefold() == key:
+            return PlanInfo(float(allocation.get("allocated_hours") or 0.0), _logged_hours(logs, monday), monday)
     return None
+
+
+def _entry_date(value, fallback: date) -> date:
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError:
+        return fallback
+
+
+def _logged_hours(logs: list[StudySessionLog], since: date) -> float:
+    return sum(log.actual_minutes for log in logs if local_today(log.created_at) >= since) / 60
 
 
 def gather_course_data(user, course: Course, now: datetime | None = None) -> CourseData:

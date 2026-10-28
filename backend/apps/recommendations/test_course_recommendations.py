@@ -261,6 +261,32 @@ class GathererTests(APITestCase):
         plan = gather_course_data(self.user, self.course).plan
         self.assertEqual(plan.allocated_hours, 4)
         self.assertEqual(plan.logged_hours, 0.5)
+        self.assertEqual(plan.entered_on, week_start(today))  # legacy plans pace from Monday
+
+    def test_reads_the_current_v2_revision_with_its_entry_day(self, _):
+        now = datetime(2026, 10, 24, 12, 0, tzinfo=dt_timezone.utc)  # Saturday
+        monday = week_start(local_today(now))
+        old = {"version": 2, "courses": [{"name": "CSC 401", "planned_hours": 9, "entered_on": monday.isoformat()}]}
+        new = {
+            "version": 2,
+            "courses": [{"name": "csc 401", "planned_hours": 6, "entered_on": (monday + timedelta(days=2)).isoformat()}],
+        }
+        StudyPlan.objects.create(
+            user=self.user, week_start=monday, plan_json=old, revision=1, is_current=False, superseded_at=now
+        )
+        StudyPlan.objects.create(user=self.user, week_start=monday, plan_json=new, revision=2, is_current=True)
+        plan = gather_course_data(self.user, self.course, now).plan
+        self.assertEqual(plan.allocated_hours, 6)
+        self.assertEqual(plan.entered_on, monday + timedelta(days=2))
+
+    def test_ignores_superseded_revisions(self, _):
+        now = datetime(2026, 10, 24, 12, 0, tzinfo=dt_timezone.utc)
+        monday = week_start(local_today(now))
+        StudyPlan.objects.create(
+            user=self.user, week_start=monday, revision=1, is_current=False, superseded_at=now,
+            plan_json={"allocations": [{"course": "CSC 401", "allocated_hours": 9}]},
+        )
+        self.assertIsNone(gather_course_data(self.user, self.course, now).plan)
 
 
 # A fixed Saturday, so the week-dependent patterns (under_studied) don't vary with the run date.
