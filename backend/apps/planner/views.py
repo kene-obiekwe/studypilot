@@ -1,10 +1,9 @@
-from datetime import timedelta
+from datetime import date
 
 from django.db import transaction
-from django.db.models import Avg, FloatField, Value
-from django.db.models.functions import Greatest, Least, Lower
-from django.utils import timezone
+from django.db.models.functions import Lower
 from rest_framework import generics
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -15,113 +14,188 @@ from .serializers import (
     PlanResponseSerializer,
     StudyPlanHistorySerializer,
     TraitSuggestionRequestSerializer,
-)
-from .services import (
-    ADJUSTMENT_SOURCE_NONE,
-    annotate_adjustment_sources,
-    apply_adherence_adjustments,
-    generate_plan,
-    resolve_adjustment,
+    WeeklyPlanPreviewSerializer,
+    WeeklyPlanRequestSerializer,
+    WeeklyPlanSerializer,
 )
 from .traits import suggest_traits
-from apps.tracking.inference import STATUS_OK, forecast_course
+from .weekly import (
+    PlanConflict,
+    PlanInputError,
+    build_revision,
+    current_plan,
+    days_left,
+    drop_course_from_plans,
+    monday_of,
+    rename_course_in_plans,
+    revision_counts,
+    save_revision,
+    server_today,
+    validate_week_start,
+)
 from apps.tracking.models import StudySessionLog
 
-ZERO = Value(0.0, output_field=FloatField())
-ONE = Value(1.0, output_field=FloatField())
+CONFLICT_DETAIL = {
+    "plan_exists": "You already have a plan for this week. Update it instead.",
+    "plan_changed": "This week's plan changed since you opened it. Review the new plan first.",
+}
+
+
+def _conflict(error: PlanConflict) -> Response:
+    return Response(
+        {
+            "code": error.code,
+            "detail": CONFLICT_DETAIL[error.code],
+            "current_revision": error.current.revision if error.current is not None else None,
+        },
+        status=409,
+    )
+
+
+def _parse_week_start(raw: str) -> date:
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        raise ValidationError({"week_start": ["Use YYYY-MM-DD."]})
+
+
+def _check_plannable(week_start: date, today: date) -> None:
+    problem = validate_week_start(week_start, today)
+    if problem:
+        raise ValidationError({"week_start": [problem]})
+
+
+def _serialize(user, plans: list[StudyPlan]) -> list:
+    counts = revision_counts(user, [plan.week_start for plan in plans])
+    return WeeklyPlanSerializer(plans, many=True, context={"revision_counts": counts}).data
 
 
 class GeneratePlanView(APIView):
+    """First-version planning, kept while the frontend moves to /plans/: a weekly total for this week.
+
+    It saves this week's next plan revision with the catch-up split (more = total - hours already
+    counted, never below 0) and answers in the first-version shape, {allocations}: one per course
+    with its planned hours. The week is the server's (UTC) week.
+    """
+
     def post(self, request):
-        request_serializer = PlanRequestSerializer(data=request.data)
-        request_serializer.is_valid(raise_exception=True)
-
-        data = request_serializer.validated_data
-        courses = [dict(course) for course in data["courses"]]
-
-        # An existing course keeps its stored name everywhere: allocations, plan history and lookups.
-        stored: dict[str, Course] = {}
-        for existing in Course.objects.filter(user=request.user).order_by("id"):
-            stored.setdefault(existing.name.casefold(), existing)
-        for course in courses:
-            match = stored.get(course["name"].casefold())
-            if match is not None:
-                course["name"] = match.name
-
-        allocations = generate_plan(data["total_available_hours"], courses)
-
-        course_names = [course["name"] for course in courses]
-        now = timezone.now()
-        rule_means = {}
-        for name in course_names:
-            mean = StudySessionLog.objects.filter(
-                user=request.user,
-                course_name__iexact=name,
-                created_at__gte=now - timedelta(days=30),
-            ).aggregate(
-                # Logs written before adherence was capped at log time can exceed 1.
-                avg_adherence=Avg(Least(Greatest("adherence_score", ZERO), ONE))
-            )["avg_adherence"]
-            if mean is not None:
-                rule_means[name] = mean
-
-        adjustments: dict[str, dict] = {}
-        for name in course_names:
-            forecast = forecast_course(request.user, name, now=now)
-            forecast_value = forecast.predicted_adherence if forecast.status == STATUS_OK else None
-            adjustments[name] = resolve_adjustment(forecast_value, rule_means.get(name))
-
-        adherence_factors = {
-            name: adjustment["factor"]
-            for name, adjustment in adjustments.items()
-            if adjustment["source"] != ADJUSTMENT_SOURCE_NONE
-        }
-        if adherence_factors:
-            allocations = apply_adherence_adjustments(
-                allocations,
-                data["total_available_hours"],
-                adherence_factors,
+        serializer = PlanRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            plan, _ = save_revision(
+                request.user,
+                monday_of(server_today()),
+                [dict(course) for course in data["courses"]],
+                base_revision=None,
+                total_hours=data["total_available_hours"],
+                check_base=False,
             )
-        allocations = annotate_adjustment_sources(allocations, adjustments)
+        except PlanConflict as error:
+            return _conflict(error)
+        except PlanInputError as error:
+            raise ValidationError({"total_available_hours": [error.message]})
 
-        response_serializer = PlanResponseSerializer(data={"allocations": allocations})
+        response_serializer = PlanResponseSerializer(data={"allocations": plan.plan_json["allocations"]})
         response_serializer.is_valid(raise_exception=True)
-
-        allocation_map = {item["course"]: float(item["allocated_hours"]) for item in allocations}
-        for course in courses:
-            fields = {
-                "difficulty": course["difficulty"],
-                "weekly_target_hours": allocation_map[course["name"]],
-            }
-            existing = stored.get(course["name"].casefold())
-            if existing is None:
-                Course.objects.create(user=request.user, name=course["name"], **fields)
-            else:
-                for field, value in fields.items():
-                    setattr(existing, field, value)
-                existing.save(update_fields=list(fields))
-
-        today = timezone.localdate()
-        week_start = today - timedelta(days=today.weekday())
-        StudyPlan.objects.create(
-            user=request.user,
-            week_start=week_start,
-            plan_json={
-                "total_available_hours": float(data["total_available_hours"]),
-                "courses": courses,
-                "allocations": allocations,
-                "adherence_adjustments": adherence_factors,
-            },
-        )
-
         return Response(response_serializer.data)
 
 
 class StudyPlanHistoryView(APIView):
+    """First-version history: the current plan of each of the latest 20 weeks, newest week first."""
+
     def get(self, request):
-        plans = StudyPlan.objects.filter(user=request.user).order_by("-created_at")[:20]
+        plans = StudyPlan.objects.filter(user=request.user, is_current=True).order_by("-week_start", "-created_at")[:20]
         serializer = StudyPlanHistorySerializer(plans, many=True)
         return Response({"items": serializer.data})
+
+
+class WeeklyPlanListView(APIView):
+    """The current plan of each week, newest week first, with how many revisions each week has."""
+
+    def get(self, request):
+        try:
+            limit = min(max(int(request.query_params.get("limit", 20)), 1), 100)
+        except ValueError:
+            raise ValidationError({"limit": ["A valid integer is required."]})
+        plans = list(StudyPlan.objects.filter(user=request.user, is_current=True).order_by("-week_start")[:limit])
+        return Response({"items": _serialize(request.user, plans)})
+
+
+class WeeklyPlanPreviewView(APIView):
+    """The split a save would make, with nothing saved. Same checks (and 409s) as saving."""
+
+    def post(self, request):
+        serializer = WeeklyPlanPreviewSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        week = data["week_start"]
+        _check_plannable(week, server_today())
+        current = current_plan(request.user, week)
+        base = data["base_revision"]
+        if base is None and current is not None:
+            return _conflict(PlanConflict("plan_exists", current))
+        if base is not None and (current is None or current.revision != base):
+            return _conflict(PlanConflict("plan_changed", current))
+        try:
+            revision = build_revision(
+                request.user,
+                week,
+                [dict(course) for course in data["courses"]],
+                total_hours=data.get("total_hours"),
+                more_hours=data.get("more_hours"),
+                previous=current,
+            )
+        except PlanInputError as error:
+            raise ValidationError({error.field: [error.message]})
+        return Response(
+            {
+                "week_start": week.isoformat(),
+                "base_revision": current.revision if current is not None else None,
+                "days_left": revision.days_left,
+                "clamped": revision.plan_json["clamped"],
+                "plan_json": revision.plan_json,
+            }
+        )
+
+
+class WeeklyPlanDetailView(APIView):
+    """GET a week's current plan (?revisions=1 adds the superseded ones); PUT saves its next revision."""
+
+    def get(self, request, week_start: str):
+        week = _parse_week_start(week_start)
+        current = current_plan(request.user, week)
+        if current is None:
+            raise NotFound("No plan for this week.")
+        body = _serialize(request.user, [current])[0]
+        body["days_left"] = days_left(week, server_today())
+        if request.query_params.get("revisions") in ("1", "true"):
+            older = StudyPlan.objects.filter(user=request.user, week_start=week, is_current=False).order_by("revision")
+            body["revisions"] = _serialize(request.user, list(older))
+        return Response(body)
+
+    def put(self, request, week_start: str):
+        week = _parse_week_start(week_start)
+        _check_plannable(week, server_today())
+        serializer = WeeklyPlanRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            plan, revision = save_revision(
+                request.user,
+                week,
+                [dict(course) for course in data["courses"]],
+                base_revision=data["base_revision"],
+                total_hours=data.get("total_hours"),
+                more_hours=data.get("more_hours"),
+            )
+        except PlanConflict as error:
+            return _conflict(error)
+        except PlanInputError as error:
+            raise ValidationError({error.field: [error.message]})
+        body = _serialize(request.user, [plan])[0]
+        body["days_left"] = revision.days_left
+        return Response(body)
 
 
 class CourseListCreateView(generics.ListCreateAPIView):
@@ -140,10 +214,12 @@ class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
     """One of the signed-in user's courses; another user's course id is a 404.
 
     PATCH renames update the user's session logs that carry the old name (ignoring case) in the same
-    transaction, so history stays attached to the course.
+    transaction, so history stays attached to the course, and rename the course in this week's and
+    next week's current plans.
 
-    DELETE removes the course only. Session logs and plan history are kept, still carrying the old
-    course name.
+    DELETE removes the course and revises this week's and next week's plans without it (the other
+    courses keep their hours). Session logs and earlier plan revisions are kept, still carrying the
+    old course name.
     """
 
     serializer_class = CourseSerializer
@@ -160,6 +236,12 @@ class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
                 StudySessionLog.objects.filter(user=course.user, course_name__iexact=old_name).update(
                     course_name=course.name
                 )
+                rename_course_in_plans(course, old_name)
+
+    def perform_destroy(self, instance):
+        with transaction.atomic():
+            drop_course_from_plans(instance)
+            instance.delete()
 
 
 class SuggestTraitsView(APIView):

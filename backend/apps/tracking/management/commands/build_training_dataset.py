@@ -192,7 +192,9 @@ class Command(BaseCommand):
 
 
         plans_by_user: dict[int, list[StudyPlan]] = defaultdict(list)
-        for plan in StudyPlan.objects.order_by("user_id", "created_at").only("user_id", "created_at", "plan_json"):
+        # Current revisions only: one plan per week, the one the user ended up with.
+        current_plans = StudyPlan.objects.filter(is_current=True).order_by("user_id", "created_at")
+        for plan in current_plans.only("user_id", "created_at", "plan_json"):
             plans_by_user[plan.user_id].append(plan)
 
         user_state: dict[int, dict[str, Any]] = defaultdict(

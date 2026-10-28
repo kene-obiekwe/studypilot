@@ -41,7 +41,27 @@ class Course(models.Model):
 
 
 class StudyPlan(models.Model):
+    """One revision of a user's plan for a week (Monday-Sunday).
+
+    Each week has at most one current revision; updating the plan supersedes it with the next
+    revision, so earlier revisions stay as history. Session logs never reference a plan: they
+    belong to a course by name.
+    """
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="study_plans")
     week_start = models.DateField()
     plan_json = models.JSONField(default=dict)
+    revision = models.PositiveIntegerField(default=1)
+    is_current = models.BooleanField(default=True)
+    superseded_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "week_start"],
+                condition=models.Q(is_current=True),
+                name="one_current_plan_per_week",
+            ),
+        ]

@@ -125,11 +125,15 @@ class PlannerApiTests(APITestCase):
         self.assertNotIn("marker", response.data["items"][0]["plan_json"])
         self.assertEqual(response.data["items"][0]["plan_json"]["allocations"][0]["course"], "A")
 
-    def test_history_is_newest_first(self):
-        now = timezone.now()
-        for age_days, marker in [(3, "oldest"), (1, "newest"), (2, "middle")]:
-            plan = StudyPlan.objects.create(user=self.user, week_start=timezone.localdate(), plan_json={"marker": marker})
-            StudyPlan.objects.filter(pk=plan.pk).update(created_at=now - timedelta(days=age_days))
+    def test_history_is_one_plan_per_week_newest_week_first(self):
+        monday = timezone.localdate() - timedelta(days=timezone.localdate().weekday())
+        for weeks_ago, marker in [(2, "oldest"), (0, "newest"), (1, "middle")]:
+            StudyPlan.objects.create(
+                user=self.user, week_start=monday - timedelta(weeks=weeks_ago), plan_json={"marker": marker}
+            )
+        StudyPlan.objects.create(
+            user=self.user, week_start=monday, plan_json={"marker": "superseded"}, revision=0, is_current=False
+        )
         response = self.client.get(self.history_url)
         self.assertEqual([item["plan_json"]["marker"] for item in response.data["items"]], ["newest", "middle", "oldest"])
 
@@ -215,7 +219,8 @@ class PlannerInputValidationTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual([a["course"] for a in response.data["allocations"]], ["CSC 401"])
         self.assertEqual(Course.objects.get().name, "CSC 401")
-        self.assertEqual(StudyPlan.objects.get().plan_json["courses"], [{"name": "CSC 401", "difficulty": 3}])
+        stored = StudyPlan.objects.get().plan_json["courses"]
+        self.assertEqual([(c["name"], c["difficulty"]) for c in stored], [("CSC 401", 3)])
 
     def test_invalid_difficulty_rejected(self):
         for difficulty in (0, 6, -1, "abc", 3.5, None, [], {}, True):

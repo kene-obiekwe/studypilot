@@ -71,6 +71,56 @@ def apply_adherence_adjustments(
     return adjusted
 
 
+def _to_cents(hours: float) -> int:
+    return int(round(float(hours) * 100))
+
+
+def catch_up_split(more_hours: float, courses: List[Dict]) -> List[Dict]:
+    """Share `more_hours` across the plan's courses, catching up on what is already logged.
+
+    Each course is {"name", "difficulty", "factor", "logged"} (logged = hours already logged this
+    week). Its weight is difficulty x factor, the same weighting generate_plan and
+    apply_adherence_adjustments give together. The fair full-week target is its share of
+    (more + all logged hours); the course gets what it still lacks, max(0, target - logged), scaled
+    so the shares add up to `more_hours`. A course at or past its share gets 0; with more = 0 every
+    course gets 0.
+
+    Remaining hours are whole hundredths that sum to `more_hours` (rounded to 2 dp) exactly: each is
+    rounded down and the leftover hundredths go to the largest fractions (largest-remainder), so
+    none is ever negative. Returns, per course in input order: target_hours, remaining_hours and
+    planned_hours (= logged + remaining).
+    """
+    more_cents = max(0, _to_cents(more_hours))
+    weights = [float(course["difficulty"]) * float(course.get("factor", 1.0)) for course in courses]
+    total_weight = sum(weights)
+    logged = [max(0.0, float(course.get("logged", 0.0))) for course in courses]
+    base = more_cents / 100 + sum(logged)
+
+    targets = [(weight / total_weight) * base if total_weight > 0 else 0.0 for weight in weights]
+    raw = [max(0.0, target - done) for target, done in zip(targets, logged)]
+    raw_total = sum(raw)
+
+    exact = [(share / raw_total) * more_cents if raw_total > 0 else 0.0 for share in raw]
+    cents = [int(value) for value in exact]
+    leftover = more_cents - sum(cents) if raw_total > 0 else 0
+    by_fraction = sorted(range(len(exact)), key=lambda index: (-(exact[index] - cents[index]), index))
+    for index in by_fraction[:leftover]:
+        cents[index] += 1
+
+    results: List[Dict] = []
+    for course, target, done, share in zip(courses, targets, logged, cents):
+        remaining = share / 100
+        results.append(
+            {
+                "name": course["name"],
+                "target_hours": round(target, 2),
+                "remaining_hours": remaining,
+                "planned_hours": round(done + remaining, 2),
+            }
+        )
+    return results
+
+
 def annotate_adjustment_sources(allocations: List[Dict], adjustments: Dict[str, Dict]) -> List[Dict]:
     annotated: List[Dict] = []
     for item in allocations:

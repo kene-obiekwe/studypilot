@@ -13,20 +13,55 @@ class CourseInputSerializer(serializers.Serializer):
     difficulty = serializers.IntegerField(min_value=1, max_value=5)
 
 
+def validate_unique_courses(courses):
+    seen: dict[str, str] = {}
+    for course in courses:
+        key = course["name"].strip().casefold()
+        if key in seen:
+            raise serializers.ValidationError(
+                f'Duplicate course name: "{course["name"]}" (already listed as "{seen[key]}").'
+            )
+        seen[key] = course["name"]
+    return courses
+
+
 class PlanRequestSerializer(serializers.Serializer):
+    """The first-version /generate/ request: a weekly total for this week's plan."""
+
     total_available_hours = FiniteFloatField(min_value=1, max_value=MAX_WEEKLY_HOURS)
     courses = CourseInputSerializer(many=True, allow_empty=False, min_length=1, max_length=MAX_COURSES)
 
     def validate_courses(self, courses):
-        seen: dict[str, str] = {}
-        for course in courses:
-            key = course["name"].casefold()
-            if key in seen:
-                raise serializers.ValidationError(
-                    f'Duplicate course name: "{course["name"]}" (already listed as "{seen[key]}").'
-                )
-            seen[key] = course["name"]
-        return courses
+        return validate_unique_courses(courses)
+
+
+class WeeklyPlanRequestSerializer(serializers.Serializer):
+    """A week's first plan (total_hours) or an update (more_hours), for preview or save.
+
+    base_revision is the revision the client is updating: null (or absent) for a first plan.
+    """
+
+    courses = CourseInputSerializer(many=True, allow_empty=False, min_length=1, max_length=MAX_COURSES)
+    total_hours = FiniteFloatField(min_value=1, max_value=MAX_WEEKLY_HOURS, required=False)
+    more_hours = FiniteFloatField(min_value=0, max_value=MAX_WEEKLY_HOURS, required=False)
+    base_revision = serializers.IntegerField(min_value=1, allow_null=True, required=False, default=None)
+
+    def validate_courses(self, courses):
+        return validate_unique_courses(courses)
+
+    def validate(self, attrs):
+        has_total, has_more = "total_hours" in attrs, "more_hours" in attrs
+        if has_total == has_more:
+            raise serializers.ValidationError("Give total_hours for a first plan or more_hours for an update, not both.")
+        if has_total and attrs.get("base_revision") is not None:
+            raise serializers.ValidationError({"total_hours": ["Use more_hours to update this week's plan."]})
+        if has_more and attrs.get("base_revision") is None:
+            raise serializers.ValidationError({"more_hours": ["A first plan takes total_hours."]})
+        return attrs
+
+
+class WeeklyPlanPreviewSerializer(WeeklyPlanRequestSerializer):
+    week_start = serializers.DateField()
 
 
 class CourseSerializer(serializers.ModelSerializer):
@@ -80,11 +115,29 @@ class PlanResponseSerializer(serializers.Serializer):
 
 
 class StudyPlanHistorySerializer(serializers.Serializer):
+    """The first-version /history/ item."""
+
     id = serializers.IntegerField()
     week_start = serializers.DateField()
     plan_json = serializers.JSONField()
     created_at = serializers.DateTimeField()
 
+
+class WeeklyPlanSerializer(serializers.Serializer):
+    """One revision of a week's plan. revision_count comes from the context (by week_start)."""
+
+    id = serializers.IntegerField()
+    week_start = serializers.DateField()
+    revision = serializers.IntegerField()
+    revision_count = serializers.SerializerMethodField()
+    is_current = serializers.BooleanField()
+    superseded_at = serializers.DateTimeField(allow_null=True)
+    created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()
+    plan_json = serializers.JSONField()
+
+    def get_revision_count(self, plan) -> int:
+        return self.context.get("revision_counts", {}).get(plan.week_start, plan.revision)
 
 
 class TraitSuggestionRequestSerializer(serializers.Serializer):

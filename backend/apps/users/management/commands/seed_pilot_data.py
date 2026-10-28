@@ -45,7 +45,8 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.planner.models import Course, StudyPlan
-from apps.planner.services import generate_plan
+from apps.planner.services import ADJUSTMENT_SOURCE_NONE, catch_up_split
+from apps.planner.weekly import BREAK_MINUTES, FOCUS_BLOCK_MINUTES, MODE_FIRST, compose_plan_json
 from apps.recommendations.models import ShownStrategy
 from apps.tracking.inference import STATUS_OK, forecast_course
 from apps.tracking.models import StudySessionLog
@@ -275,21 +276,39 @@ class Command(BaseCommand):
         return result
 
     def _seed_plan(self, user: User, profile: PilotProfile, courses: list[Course], now) -> StudyPlan:
-        course_payload = [{"name": c.name, "difficulty": c.difficulty} for c in courses]
         # Sized to the hours the profile actually plans, so "under-studied vs this week's plan"
         # reflects the profile (low adherers fall behind) rather than an oversized plan.
         total_hours = profile.sessions_per_week * SEEDED_SESSION_HOURS
-        allocations = generate_plan(total_hours, course_payload)
         week_start = (now - timedelta(days=now.weekday())).date()
+        # The plan a pilot made on Monday, before logging anything: one current revision.
+        split = catch_up_split(
+            total_hours, [{"name": c.name, "difficulty": c.difficulty, "factor": 1.0, "logged": 0.0} for c in courses]
+        )
+        entries = [
+            {
+                "course_id": course.id,
+                "name": course.name,
+                "difficulty": course.difficulty,
+                "factor": 1.0,
+                "adjustment_source": ADJUSTMENT_SOURCE_NONE,
+                "adherence_estimate": None,
+                "entered_on": week_start.isoformat(),
+                "logged_at_revision": 0.0,
+                "remaining_at_revision": share["remaining_hours"],
+                "planned_hours": share["planned_hours"],
+                "focus_block_minutes": FOCUS_BLOCK_MINUTES,
+                "break_minutes": BREAK_MINUTES,
+            }
+            for course, share in zip(courses, split)
+        ]
         plan = StudyPlan.objects.create(
             user=user,
             week_start=week_start,
-            plan_json={
-                "total_available_hours": total_hours,
-                "courses": course_payload,
-                "allocations": allocations,
-                "adherence_adjustments": {},
-            },
+            revision=1,
+            is_current=True,
+            plan_json=compose_plan_json(
+                mode=MODE_FIRST, made_on=week_start, entries=entries, removed=[], more_hours=total_hours, clamped=False
+            ),
         )
         # Backdate the plan to the start of the seed window so the planner history
         # shows it among older entries rather than always as "today".
