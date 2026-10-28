@@ -1,93 +1,114 @@
 "use client";
 
 import Link from "next/link";
-import { startTransition, Suspense, use, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { CalendarRange, Plus, X } from "lucide-react";
+import { startTransition, Suspense, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CalendarRange } from "lucide-react";
 
-import { PageAction } from "@/components/app-shell";
-import { Button, Disclosure, EmptyState, Field, IconButton, Input, Notice, Select, Skeleton } from "@/components/ui";
-import { generatePlan, listCourses, type Course, type PlanResponse } from "@/lib/api";
-import { courseKey } from "@/lib/courses";
-import { useCourseColors } from "@/lib/use-course-colors";
-
-import { PlanResults } from "./PlanResults";
+import { Button, EmptyState, Notice, Skeleton } from "@/components/ui";
 import {
-  buildPayload,
-  hoursText,
-  MAX_HOURS,
-  MIN_HOURS,
-  newRow,
-  rowsFromCourses,
-  validatePlanInput,
-  type PlanProblems,
-  type PlannerRow,
+  getPlan,
+  getSessionHistory,
+  listCourses,
+  listPlans,
+  type Course,
+  type SessionHistoryItem,
+  type WeeklyPlan,
+  type WeeklyPlanDetail,
+} from "@/lib/api";
+import { courseKey } from "@/lib/courses";
+import { notifySessionsChanged } from "@/lib/timer-refresh";
+import { useCourseColors } from "@/lib/use-course-colors";
+import { currentPlanForWeek, daysLeft, weekStartKey } from "@/lib/week";
+
+import { NextWeekCard, ThisWeekCard } from "./PlanCards";
+import { PlanEditor } from "./PlanEditor";
+import {
+  canPlanAhead,
+  dayLabel,
+  defaultTarget,
+  deletedCourses,
+  deletedCoursesText,
+  draftFromPlan,
+  draftSummary,
+  isSaturday,
+  isSunday,
+  targetWeekStart,
+  weekCard,
+  type PlanDraft,
+  type WeekTarget,
 } from "./plan-model";
 import styles from "./planner.module.css";
 
-const DEFAULT_HOURS = 12;
-const FORM_ID = "plan-form";
+type PlannerData = {
+  /** When the data was loaded: "today" for the whole view. */
+  now: Date;
+  courses: Course[];
+  plans: WeeklyPlan[];
+  sessions: SessionHistoryItem[];
+  /** This week's current plan with its earlier revisions, or null. */
+  thisWeek: WeeklyPlanDetail | null;
+};
 
-const DIFFICULTY_LABELS = ["1 · Easy", "2", "3 · Medium", "4", "5 · Hard"];
-
-type Loaded = { courses: Course[] } | { error: string };
+type Loaded = PlannerData | { error: string };
 
 /** Never rejects; a failure renders as a Notice with a retry. */
-function loadCourses(): Promise<Loaded> {
-  return listCourses().then(
-    (courses) => ({ courses }),
+function loadPlanner(): Promise<Loaded> {
+  const now = new Date();
+  return Promise.all([listCourses(), listPlans(), getSessionHistory(), getPlan(weekStartKey(now), { revisions: true })]).then(
+    ([courses, plans, history, thisWeek]) => ({ now, courses, plans, sessions: history.items, thisWeek }),
     (failure: Error) => ({ error: failure.message }),
   );
 }
 
 export default function PlannerPage() {
-  // Fetched once per page view (a lazy initialiser read with use(), not an effect).
-  const [promise, setPromise] = useState(loadCourses);
+  // Fetched once per page view (a lazy initialiser read with use(), not an effect); a reload swaps
+  // the promise inside a transition, so the page keeps showing the old numbers until the new ones arrive.
+  const [promise, setPromise] = useState(loadPlanner);
+  const reload = useCallback(() => startTransition(() => setPromise(loadPlanner())), []);
   return (
     <div className={styles.page}>
       <Suspense
         fallback={
-          <div className={styles.section} aria-busy="true" aria-label="Loading your courses">
-            <Skeleton height={44} />
+          <div className={styles.section} aria-busy="true" aria-label="Loading your plan">
             <Skeleton height={160} />
+            <Skeleton height={220} />
           </div>
         }
       >
-        <Planner promise={promise} onRetry={() => startTransition(() => setPromise(loadCourses()))} />
+        <Planner promise={promise} onReload={reload} />
       </Suspense>
     </div>
   );
 }
 
-function Planner({ promise, onRetry }: { promise: Promise<Loaded>; onRetry: () => void }) {
+function Planner({ promise, onReload }: { promise: Promise<Loaded>; onReload: () => void }) {
   const loaded = use(promise);
   if ("error" in loaded) {
     return (
-      <Notice tone="danger" title="Could not load your courses">
+      <Notice tone="danger" title="Could not load your plan">
         {loaded.error}{" "}
-        <Button size="sm" variant="ghost" onClick={onRetry}>
+        <Button size="sm" variant="ghost" onClick={onReload}>
           Try again
         </Button>
       </Notice>
     );
   }
-  return <PlannerForm initialCourses={loaded.courses} />;
+  return <PlannerView data={loaded} onReload={onReload} />;
 }
 
-function PlannerForm({ initialCourses }: { initialCourses: Course[] }) {
-  const [courses, setCourses] = useState(initialCourses);
-  const [rows, setRows] = useState<PlannerRow[]>(() => rowsFromCourses(initialCourses));
-  const [hours, setHours] = useState(String(DEFAULT_HOURS));
-  const [problems, setProblems] = useState<PlanProblems>({});
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [result, setResult] = useState<PlanResponse | null>(null);
-  const [resultHours, setResultHours] = useState(0);
-  const [attempt, setAttempt] = useState(0);
-  const [resultVersion, setResultVersion] = useState(0);
-  const nextKey = useRef(0);
-  const focusKey = useRef<string | null>(null);
-  const formRef = useRef<HTMLFormElement>(null);
-  const resultRef = useRef<HTMLDivElement>(null);
+function PlannerView({ data, onReload }: { data: PlannerData; onReload: () => void }) {
+  const { now, courses, plans, sessions } = data;
+  const [chosenTarget, setChosenTarget] = useState<WeekTarget>(() => defaultTarget(now));
+  const [editing, setEditing] = useState(false);
+  // Bumped whenever the form starts afresh (another week, a draft, opened again), to remount it.
+  const [session, setSession] = useState(0);
+  const [draft, setDraft] = useState<PlanDraft | null>(null);
+  const [saved, setSaved] = useState<{ text: string; version: number } | null>(null);
+  const savedRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (saved) savedRef.current?.focus();
+  }, [saved]);
 
   const { colorFor } = useCourseColors(courses);
   const idsByName = useMemo(() => new Map(courses.map((course) => [courseKey(course.name), course.id])), [courses]);
@@ -96,223 +117,145 @@ function PlannerForm({ initialCourses }: { initialCourses: Course[] }) {
     return id === undefined ? undefined : colorFor(id).style;
   };
 
-  // After adding a row, move focus to its name field.
-  useEffect(() => {
-    const target = focusKey.current;
-    if (target) {
-      focusKey.current = null;
-      formRef.current?.querySelector<HTMLElement>(`[data-row="${target}"] input`)?.focus();
-    }
-  });
+  // A week planned ahead only on Saturday and Sunday; a reload on Monday falls back to this week.
+  const target: WeekTarget = canPlanAhead(now) ? chosenTarget : "this";
+  const thisKey = weekStartKey(now);
+  const nextKey = weekStartKey(now, 1);
+  const thisPlan = data.thisWeek ?? currentPlanForWeek(plans, thisKey) ?? null;
+  const nextPlan = currentPlanForWeek(plans, nextKey) ?? null;
+  const targetPlan = target === "next" ? nextPlan : thisPlan;
+  const formOpen = editing || targetPlan === null;
+  const sunday = isSunday(now);
 
-  // After a failed check, move focus to the first problem; after a new plan, to the result.
-  useEffect(() => {
-    if (attempt > 0) {
-      formRef.current?.querySelector<HTMLElement>("[aria-invalid='true'], [data-problem]")?.focus();
-    }
-  }, [attempt]);
+  // "Start from last week's plan": for next week, this week's plan is the one before it.
+  const previousPlan = target === "next" ? thisPlan : (currentPlanForWeek(plans, weekStartKey(now, -1)) ?? null);
+  const draftOffer = targetPlan === null && draft === null && previousPlan ? draftFromPlan(previousPlan, courses) : null;
 
-  useEffect(() => {
-    if (resultVersion > 0) {
-      resultRef.current?.focus();
-    }
-  }, [resultVersion]);
+  const deleted = data.thisWeek ? deletedCourses(data.thisWeek) : null;
 
-  const updateRow = (key: string, patch: Partial<PlannerRow>) =>
-    setRows((current) => current.map((row) => (row.key === key ? { ...row, ...patch } : row)));
-
-  const addRow = () => {
-    const key = `new-${++nextKey.current}`;
-    focusKey.current = key;
-    setRows((current) => [...current, newRow(key)]);
+  const open = (week: WeekTarget) => {
+    setChosenTarget(week);
+    setEditing(true);
+    setDraft(null);
+    setSaved(null);
+    setSession((count) => count + 1);
   };
 
-  const onSubmit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (busy) return;
-    const total = Number(hours);
-    const found = validatePlanInput(rows, total);
-    setProblems(found);
-    setError("");
-    if (found.hours || found.courses) {
-      setAttempt((count) => count + 1);
-      return;
-    }
-    setBusy(true);
-    try {
-      const response = await generatePlan(buildPayload(rows, total));
-      setResult(response);
-      setResultHours(total);
-      // New names became saved courses, so reload them for colours and to keep the rows in step.
-      const saved = await listCourses();
-      setCourses(saved);
-      setResultVersion((count) => count + 1);
-    } catch (failure) {
-      setError((failure as Error).message);
-    } finally {
-      setBusy(false);
-    }
+  const close = () => {
+    setEditing(false);
+    setDraft(null);
+    if (!isSunday(now)) setChosenTarget("this");
+    setSession((count) => count + 1);
   };
 
-  const allocations = result?.allocations ?? [];
-  const noCourses = courses.length === 0;
+  const onSaved = (plan: WeeklyPlanDetail) => {
+    const week = plan.week_start === nextKey ? "Next week's" : "This week's";
+    setSaved((current) => ({ text: `${week} plan is saved.`, version: (current?.version ?? 0) + 1 }));
+    setEditing(false);
+    setDraft(null);
+    // The sidebar meter and home read the plan too.
+    notifySessionsChanged();
+    onReload();
+  };
+
+  if (courses.length === 0 && thisPlan === null) {
+    return (
+      <EmptyState
+        icon={<CalendarRange size={28} />}
+        title="Add your courses first"
+        description="A plan splits your weekly hours across the courses you study."
+        action={
+          <Link href="/courses" className={styles.linkButton}>
+            Go to courses
+          </Link>
+        }
+      />
+    );
+  }
 
   return (
     <>
-      {!noCourses && (
-        <PageAction>
-          <Button type="submit" form={FORM_ID} variant="primary" icon={<CalendarRange size={16} />} loading={busy}>
-            Generate plan
-          </Button>
-        </PageAction>
+      {saved && (
+        <div ref={savedRef} tabIndex={-1} className={styles.focusWrap}>
+          <Notice tone="success">{saved.text}</Notice>
+        </div>
       )}
 
-      {noCourses && (
-        <EmptyState
-          icon={<CalendarRange size={28} />}
-          title="Add your courses first"
-          description="A plan splits your weekly hours across the courses you study."
-          action={
-            <Link href="/courses" className={styles.linkButton}>
-              Go to courses
-            </Link>
-          }
+      {deleted && <Notice tone="warning">{deletedCoursesText(deleted)}</Notice>}
+
+      {thisPlan && (
+        <ThisWeekCard
+          card={weekCard(thisPlan, sessions, now)}
+          days={daysLeft(now)}
+          colorStyle={colorStyle}
+          onUpdate={formOpen && target === "this" ? undefined : () => open("this")}
         />
       )}
 
-      {!noCourses && (
-        <form id={FORM_ID} ref={formRef} className={styles.section} onSubmit={(event) => void onSubmit(event)} noValidate>
-          <Field
-            label="Hours you can study this week"
-            hint={`From ${MIN_HOURS} to ${MAX_HOURS}.`}
-            error={problems.hours}
-            className={styles.hoursField}
-            required
-          >
-            <Input
-              name="total_available_hours"
-              type="number"
-              inputMode="decimal"
-              min={MIN_HOURS}
-              max={MAX_HOURS}
-              step={0.5}
-              value={hours}
-              onChange={(event) => setHours(event.target.value)}
-            />
-          </Field>
-
-          <div className={styles.section}>
-            <div className={styles.sectionHead}>
-              <h2 className={styles.sectionTitle}>Courses in this plan</h2>
-              <p className={styles.muted}>Removing a course here only leaves it out of this plan.</p>
-            </div>
-
-            {rows.length > 0 && (
-              <ul className={styles.rows}>
-                {rows.map((row) => {
-                  const label = row.name.trim() || "new course";
-                  return (
-                    <li key={row.key} className={styles.row} data-row={row.key}>
-                      <span className={styles.dot} style={row.name ? colorStyle(row.name) : undefined} aria-hidden="true" />
-                      {row.courseId !== null ? (
-                        <p className={styles.name}>{row.name}</p>
-                      ) : (
-                        <Input
-                          aria-label="Course name"
-                          value={row.name}
-                          maxLength={120}
-                          placeholder="Course name"
-                          autoComplete="off"
-                          onChange={(event) => updateRow(row.key, { name: event.target.value })}
-                        />
-                      )}
-                      <Select
-                        className={styles.difficulty}
-                        aria-label={`Difficulty of ${label}`}
-                        value={String(row.difficulty)}
-                        onChange={(event) => updateRow(row.key, { difficulty: Number(event.target.value) })}
-                      >
-                        {DIFFICULTY_LABELS.map((text, index) => (
-                          <option key={text} value={index + 1}>
-                            {text}
-                          </option>
-                        ))}
-                      </Select>
-                      <IconButton
-                        aria-label={`Remove ${label} from this plan`}
-                        icon={<X size={16} />}
-                        size="sm"
-                        onClick={() => setRows((current) => current.filter((item) => item.key !== row.key))}
-                      />
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-
-            {problems.courses && (
-              <p className={styles.error} role="alert" tabIndex={-1} data-problem="">
-                {problems.courses}
-              </p>
-            )}
-
-            <div className={styles.addRow}>
-              <Button icon={<Plus size={16} />} onClick={addRow}>
-                Add a course
-              </Button>
-              {rows.length < courses.length && (
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    const present = new Set(rows.map((row) => courseKey(row.name)));
-                    setRows((current) => [...current, ...rowsFromCourses(courses.filter((course) => !present.has(courseKey(course.name))))]);
-                  }}
-                >
-                  Add back my saved courses
-                </Button>
-              )}
-              <p className={styles.muted}>A new name becomes a saved course when you generate the plan.</p>
-            </div>
-          </div>
-
-          {error && (
-            <Notice tone="danger" title="Could not generate the plan">
-              {error}
-            </Notice>
-          )}
-
-          <Disclosure summary="How is this worked out?">
-            <div className={styles.explain}>
-              <p>Your hours are first split by difficulty: a course rated 5 gets more than one rated 2.</p>
-              <p>
-                Then each course is nudged by how you have been doing. If a forecast is available, it sets the
-                nudge; otherwise the planner uses your adherence over the last 30 days. Under 50% adherence cuts
-                a course&apos;s hours to 0.8 times, under 70% to 0.9 times, under 85% leaves them as they are, and
-                85% or more raises them to 1.1 times.
-              </p>
-              <p>Finally the hours are scaled so the total is exactly what you entered. Only the split changes.</p>
-            </div>
-          </Disclosure>
-        </form>
+      {nextPlan && (
+        <NextWeekCard plan={nextPlan} colorStyle={colorStyle} onEdit={formOpen && target === "next" ? undefined : () => open("next")} />
       )}
 
-      {result && (
-        <section className={styles.section} aria-labelledby="plan-result-title">
-          <div className={styles.sectionHead}>
-            <h2 id="plan-result-title" className={styles.sectionTitle}>
-              Your plan
-            </h2>
-            <p className={styles.muted}>
-              {hoursText(resultHours)} across {allocations.length} {allocations.length === 1 ? "course" : "courses"}
-            </p>
-          </div>
-          <div ref={resultRef} tabIndex={-1} className={styles.section}>
-            <Notice tone="success">
-              Plan saved. See it any time in <Link href="/progress/history">Progress history</Link>.
-            </Notice>
-            <PlanResults allocations={allocations} colorStyle={colorStyle} />
-          </div>
-        </section>
+      {isSaturday(now) && !nextPlan && target === "this" && (
+        <p className={styles.aheadLink}>
+          <Button variant="ghost" size="sm" onClick={() => open("next")}>
+            Plan next week
+          </Button>
+          <span className={styles.muted}>Starts {dayLabel(nextKey)}.</span>
+        </p>
+      )}
+
+      {formOpen && (
+        <div className={styles.section}>
+          {sunday && (
+            <fieldset className={styles.weekChoice}>
+              <legend className={styles.subTitle}>Which week?</legend>
+              {(["this", "next"] as const).map((week) => (
+                <label key={week} className={styles.radio}>
+                  <input
+                    type="radio"
+                    name="week"
+                    value={week}
+                    checked={target === week}
+                    onChange={() => open(week)}
+                  />
+                  {week === "this" ? "This week (ends today)" : `Next week (starts ${dayLabel(nextKey)})`}
+                </label>
+              ))}
+            </fieldset>
+          )}
+
+          {draftOffer && (
+            <div className={styles.addRow}>
+              <Button
+                onClick={() => {
+                  setDraft(draftOffer);
+                  setSession((count) => count + 1);
+                }}
+              >
+                Start from {target === "next" ? "this" : "last"} week&apos;s plan ({draftSummary(draftOffer)})
+              </Button>
+            </div>
+          )}
+
+          <PlanEditor
+            key={`${target}:${session}`}
+            target={target}
+            weekStart={targetWeekStart(now, target)}
+            plan={targetPlan}
+            courses={courses}
+            sessions={sessions}
+            now={now}
+            draft={draft}
+            colorStyle={colorStyle}
+            onSaved={onSaved}
+            onRefresh={() => {
+              notifySessionsChanged();
+              onReload();
+            }}
+            onCancel={targetPlan !== null || (target === "next" && !sunday) ? close : undefined}
+          />
+        </div>
       )}
     </>
   );
