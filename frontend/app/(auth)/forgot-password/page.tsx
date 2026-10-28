@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useRef, useState, type FormEvent } from "react";
 
-import { Button, Field, Input, Notice } from "@/components/ui";
+import { Button, Field, Input, Notice, PasswordInput } from "@/components/ui";
 import { ApiError, confirmPasswordReset, requestPasswordReset } from "@/lib/api";
 import { authLink, CODE_LENGTH, safeNextPath } from "@/lib/auth-flow";
 
@@ -41,6 +41,8 @@ function ForgotPasswordFlow() {
   const [code, setCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  // One switch for both password fields, so what is typed in each can be checked together.
+  const [showPasswords, setShowPasswords] = useState(false);
   const [busy, setBusy] = useState(false);
   const [resending, setResending] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; code?: string; newPassword?: string; confirm?: string }>({});
@@ -101,6 +103,7 @@ function ForgotPasswordFlow() {
     setBusy(true);
     try {
       await confirmPasswordReset({ email: email.trim(), code, new_password: newPassword });
+      setShowPasswords(false);
       setStep("done");
     } catch (error) {
       if (error instanceof ApiError && error.status === 400) {
@@ -184,22 +187,24 @@ function ForgotPasswordFlow() {
           <CodeInput value={code} onChange={setCode} onComplete={() => passwordRef.current?.focus()} disabled={busy} />
         </Field>
         <Field label="New password" hint={PASSWORD_HINT} error={errors.newPassword} required>
-          <Input
+          <PasswordInput
             ref={passwordRef}
             name="new-password"
-            type="password"
             value={newPassword}
             onChange={(event) => setNewPassword(event.target.value)}
+            revealed={showPasswords}
+            onRevealedChange={setShowPasswords}
             autoComplete="new-password"
             minLength={8}
           />
         </Field>
         <Field label="Confirm new password" error={errors.confirm} required>
-          <Input
+          <PasswordInput
             name="confirm-password"
-            type="password"
             value={confirm}
             onChange={(event) => setConfirm(event.target.value)}
+            revealed={showPasswords}
+            onRevealedChange={setShowPasswords}
             autoComplete="new-password"
           />
         </Field>

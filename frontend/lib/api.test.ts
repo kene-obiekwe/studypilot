@@ -88,8 +88,8 @@ describe("error mapping", () => {
   });
 
   it("uses detail and non_field_errors text as-is", () => {
-    expect(toApiError(401, { detail: "No active account found with the given credentials" }).message).toBe(
-      "No active account found with the given credentials",
+    expect(toApiError(401, { detail: "No account found with those details." }).message).toBe(
+      "No account found with those details.",
     );
     expect(toApiError(400, { non_field_errors: ["Passwords do not match."] }).message).toBe("Passwords do not match.");
   });
@@ -124,7 +124,7 @@ describe("error mapping", () => {
 
   it("maps responses and network failures through request()", async () => {
     serve(() => json(429, { detail: "Request was throttled. Expected available in 12 seconds." }, { "Retry-After": "12" }));
-    await expect(loginUser({ username: "a", password: "b" })).rejects.toMatchObject({
+    await expect(loginUser({ identifier: "a", password: "b" })).rejects.toMatchObject({
       status: 429,
       message: "Too many attempts. Please wait 12 seconds and try again.",
     });
@@ -212,11 +212,11 @@ describe("session refresh", () => {
 
   it("never refreshes for login or register, and sends them no bearer token", async () => {
     setSession({ access: "stale", refresh: "r1" });
-    serve(() => json(401, { detail: "No active account found with the given credentials" }));
+    serve(() => json(401, { detail: "No account found with those details." }));
 
-    await expect(loginUser({ username: "a", password: "wrong" })).rejects.toMatchObject({
+    await expect(loginUser({ identifier: "a", password: "wrong" })).rejects.toMatchObject({
       status: 401,
-      message: "No active account found with the given credentials",
+      message: "No account found with those details.",
     });
     await expect(startRegistration({ username: "a", email: "a@b.c", password: "x" })).rejects.toMatchObject({
       status: 401,

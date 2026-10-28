@@ -6,6 +6,7 @@ export { Dialog, type DialogProps } from "./Dialog";
 export { Disclosure, type DisclosureProps } from "./Disclosure";
 export { EmptyState, type EmptyStateProps } from "./EmptyState";
 export { Field, Input, Select, Textarea, type FieldProps } from "./Field";
+export { PasswordInput, type PasswordInputProps } from "./PasswordInput";
 export { NavItem, type NavItemProps } from "./NavItem";
 export { Notice, type NoticeProps, type NoticeTone } from "./Notice";
 export { ProgressBar, type ProgressBarProps } from "./ProgressBar";

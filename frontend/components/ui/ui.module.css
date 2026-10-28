@@ -253,6 +253,22 @@
   color: var(--sp-muted);
 }
 
+/* PasswordInput: the show/hide button sits inside the field's right edge. */
+.passwordField {
+  position: relative;
+}
+
+.passwordField > .passwordInput {
+  padding-right: 44px;
+}
+
+/* top, not a transform: the button hover rule resets transform. 4px centres a 32px button in a 40px field. */
+.passwordToggle {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}
+
 .input:hover:not(:disabled) {
   border-color: var(--sp-ink-soft);
 }

@@ -6,4 +6,6 @@ Your StudyPilot password reset code is:
 
 It expires in {{ expiry_minutes }} minutes.
 
+Your username is {{ username }}. You can also sign in with this email address.
+
 If you didn't ask for this, you can ignore this email. Your password has not been changed.

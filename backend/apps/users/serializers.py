@@ -3,14 +3,15 @@ from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.validators import UnicodeUsernameValidator
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
-from rest_framework.exceptions import APIException
+from rest_framework.exceptions import APIException, AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from .models import EmailVerification
-from .verification import CODE_LENGTH, find_user_by_email, is_verified
+from .verification import CODE_LENGTH, find_user_by_email, is_verified, users_with_email
 
 EMAIL_NOT_VERIFIED_CODE = "email_not_verified"
 EMAIL_NOT_VERIFIED_MESSAGE = "Verify your email first."
+LOGIN_FAILED_MESSAGE = "No account found with those details."
 
 
 def password_errors(password: str, user: User) -> list[str]:
@@ -86,14 +87,39 @@ class EmailNotVerified(APIException):
 
 
 class VerifiedTokenObtainPairSerializer(TokenObtainPairSerializer):
-    """Issues tokens only to accounts that have verified their email.
+    """Signs in with a username or an email address, and only for accounts that verified their email.
 
-    Wrong credentials still fail with SimpleJWT's generic 401. The distinct response is only
-    returned once the username and password are right.
+    The one identifier arrives as `identifier` (or as `username`, the original name). When it contains
+    "@" it is looked up by email, ignoring case; if that finds no account it is tried as a username,
+    since usernames may contain "@". Two accounts sharing an address is never guessed between: that
+    fails like any other wrong login. Every failure, whichever part was wrong, is the same 401, and the
+    distinct "verify your email" answer is only given once the identifier and password are right.
     """
 
+    default_error_messages = {"no_active_account": LOGIN_FAILED_MESSAGE}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields[self.username_field].required = False
+        self.fields["identifier"] = serializers.CharField(required=False, write_only=True)
+
+    def _fail(self, password: str):
+        # Hash anyway, so a rejected identifier takes as long as a wrong password.
+        User().set_password(password)
+        raise AuthenticationFailed(self.error_messages["no_active_account"], "no_active_account")
+
     def validate(self, attrs):
-        data = super().validate(attrs)
+        identifier = (attrs.get("identifier") or attrs.get(self.username_field) or "").strip()
+        password = attrs.get("password", "")
+        if not identifier:
+            raise serializers.ValidationError({"identifier": ["Enter your username or email."]})
+        if "@" in identifier:
+            matches = users_with_email(identifier, 2)
+            if len(matches) > 1:
+                self._fail(password)
+            if matches:
+                identifier = matches[0].username
+        data = super().validate({self.username_field: identifier, "password": password})
         if not is_verified(self.user):
             raise EmailNotVerified({"detail": EMAIL_NOT_VERIFIED_MESSAGE, "code": EMAIL_NOT_VERIFIED_CODE})
         return data

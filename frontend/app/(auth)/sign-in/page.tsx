@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useRef, useState, type FormEvent } from "react";
 
-import { Button, Field, Input, Notice } from "@/components/ui";
+import { Button, Field, Input, Notice, PasswordInput } from "@/components/ui";
 import { isEmailNotVerified, loginUser } from "@/lib/api";
 import { authLink, safeNextPath } from "@/lib/auth-flow";
 import { setSession } from "@/lib/session";
@@ -35,8 +35,9 @@ function SignInForm() {
   useSignedInRedirect(target);
 
   const formRef = useRef<HTMLFormElement>(null);
-  const [username, setUsername] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [problem, setProblem] = useState<Problem>(null);
   const [attempt, setAttempt] = useState(0);
@@ -50,8 +51,9 @@ function SignInForm() {
     setProblem(null);
     setSubmitting(true);
     try {
-      const tokens = await loginUser({ username: username.trim(), password });
+      const tokens = await loginUser({ identifier: identifier.trim(), password });
       setSession(tokens);
+      setShowPassword(false);
       router.replace(target);
     } catch (error) {
       setProblem(isEmailNotVerified(error) ? { kind: "unverified" } : { kind: "error", text: (error as Error).message });
@@ -81,11 +83,11 @@ function SignInForm() {
           </FormMessage>
         )}
 
-        <Field label="Username" required>
+        <Field label="Username or email" required>
           <Input
             name="username"
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
+            value={identifier}
+            onChange={(event) => setIdentifier(event.target.value)}
             autoComplete="username"
             autoCapitalize="none"
             spellCheck={false}
@@ -93,11 +95,12 @@ function SignInForm() {
         </Field>
         <div>
           <Field label="Password" required>
-            <Input
+            <PasswordInput
               name="password"
-              type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
+              revealed={showPassword}
+              onRevealedChange={setShowPassword}
               autoComplete="current-password"
             />
           </Field>

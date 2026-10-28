@@ -120,7 +120,7 @@ describe("unverified sign-in", () => {
 
   it("is recognised by isEmailNotVerified and carries the message", async () => {
     serve(400, BODY);
-    const error = await loginUser({ username: "ada", password: "Quartz-Meadow-4471" }).catch((e: unknown) => e);
+    const error = await loginUser({ identifier: "ada", password: "Quartz-Meadow-4471" }).catch((e: unknown) => e);
     expect(isEmailNotVerified(error)).toBe(true);
     expect((error as ApiError).code).toBe(EMAIL_NOT_VERIFIED_CODE);
     expect((error as ApiError).status).toBe(400);
@@ -135,8 +135,8 @@ describe("unverified sign-in", () => {
   });
 
   it("is not triggered by an ordinary failed sign-in", async () => {
-    serve(401, { detail: "No active account found with the given credentials" });
-    const error = await loginUser({ username: "ada", password: "nope" }).catch((e: unknown) => e);
+    serve(401, { detail: "No account found with those details." });
+    const error = await loginUser({ identifier: "ada", password: "nope" }).catch((e: unknown) => e);
     expect(isEmailNotVerified(error)).toBe(false);
     expect((error as ApiError).code).toBe("");
   });

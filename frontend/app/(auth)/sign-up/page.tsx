@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useRef, useState, type FormEvent } from "react";
 
-import { Button, Field, Input } from "@/components/ui";
+import { Button, Field, Input, PasswordInput } from "@/components/ui";
 import { ApiError, startRegistration } from "@/lib/api";
 import { authLink, safeNextPath } from "@/lib/auth-flow";
 
@@ -37,6 +37,7 @@ function SignUpForm() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldName, string>>>({});
   const [message, setMessage] = useState("");
@@ -53,6 +54,7 @@ function SignUpForm() {
     setSubmitting(true);
     try {
       const result = await startRegistration({ username: username.trim(), email: email.trim(), password });
+      setShowPassword(false);
       router.push(authLink("/verify-email", { email: result.email, sent: true, next: carriedNext }));
     } catch (error) {
       const errors: Partial<Record<FieldName, string>> = {};
@@ -104,11 +106,12 @@ function SignUpForm() {
           />
         </Field>
         <Field label="Password" hint={PASSWORD_HINT} error={fieldErrors.password} required>
-          <Input
+          <PasswordInput
             name="password"
-            type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
+            revealed={showPassword}
+            onRevealedChange={setShowPassword}
             autoComplete="new-password"
             minLength={8}
           />

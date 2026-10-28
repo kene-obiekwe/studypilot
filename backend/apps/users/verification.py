@@ -38,8 +38,16 @@ def mark_verified(user: User) -> None:
     EmailVerification.objects.update_or_create(user=user, defaults={"email_verified_at": timezone.now()})
 
 
+def users_with_email(email: str, limit: int | None = None) -> list[User]:
+    """Accounts whose address matches `email` ignoring case, lowest id first. Email is not unique in the
+    database, so callers that must not guess between accounts ask for two and check the count."""
+    matches = User.objects.filter(email__iexact=email.strip()).select_related("email_verification").order_by("id")
+    return list(matches[:limit] if limit else matches)
+
+
 def find_user_by_email(email: str) -> User | None:
-    return User.objects.filter(email__iexact=email.strip()).select_related("email_verification").order_by("id").first()
+    matches = users_with_email(email, 1)
+    return matches[0] if matches else None
 
 
 def issue_code(user: User, purpose: str) -> str | None:

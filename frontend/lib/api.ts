@@ -13,7 +13,7 @@ export const SESSION_EXPIRED_MESSAGE = "Your session expired. Sign in again.";
 type RequestMethod = "GET" | "POST" | "PATCH" | "DELETE";
 type FieldErrors = Record<string, string[]>;
 
-/** The `code` of the sign-in error returned when the username and password are right but the email is unverified. */
+/** The `code` of the sign-in error returned when the username or email and the password are right but the email is unverified. */
 export const EMAIL_NOT_VERIFIED_CODE = "email_not_verified";
 
 /**
@@ -263,7 +263,8 @@ export type RegisterPayload = { username: string; email: string; password: strin
 /** Registering creates an unverified account and emails a 6-digit code; no tokens are issued yet. */
 export type RegisterVerificationResponse = { status: "verification_required"; email: string };
 
-export type LoginPayload = { username: string; password: string };
+/** `identifier` is a username or an email address; the server also still accepts it as `username`. */
+export type LoginPayload = { identifier: string; password: string };
 export type LoginResponse = { access: string; refresh: string };
 
 export type PlanPayload = {
