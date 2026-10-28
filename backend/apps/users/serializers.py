@@ -11,7 +11,7 @@ from .verification import CODE_LENGTH, find_user_by_email, is_verified, users_wi
 
 EMAIL_NOT_VERIFIED_CODE = "email_not_verified"
 EMAIL_NOT_VERIFIED_MESSAGE = "Verify your email first."
-LOGIN_FAILED_MESSAGE = "No account found with those details."
+LOGIN_FAILED_MESSAGE = "Incorrect username, email or password."
 
 
 def password_errors(password: str, user: User) -> list[str]:

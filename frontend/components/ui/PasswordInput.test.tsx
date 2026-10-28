@@ -32,16 +32,15 @@ function Labelled(props: Partial<React.ComponentProps<typeof PasswordInput>> = {
 }
 
 describe("PasswordInput", () => {
-  it("starts hidden, with a labelled, unpressed toggle that is not a submit button", async () => {
+  it("starts hidden, with a labelled toggle that is not a submit button", async () => {
     const { container } = await render(<Labelled />);
     expect(field(container).type).toBe("password");
     const button = toggle(container);
     expect(button.getAttribute("aria-label")).toBe("Show password");
-    expect(button.getAttribute("aria-pressed")).toBe("false");
     expect(button.type).toBe("button");
   });
 
-  it("shows and hides the password, updating its label and pressed state", async () => {
+  it("shows and hides the password, switching its label", async () => {
     const { container } = await render(<Labelled />);
     await typeInto(field(container), "hunter2-hunter2");
 
@@ -49,12 +48,24 @@ describe("PasswordInput", () => {
     expect(field(container).type).toBe("text");
     expect(field(container).value).toBe("hunter2-hunter2");
     expect(toggle(container).getAttribute("aria-label")).toBe("Hide password");
-    expect(toggle(container).getAttribute("aria-pressed")).toBe("true");
 
     await click(toggle(container));
     expect(field(container).type).toBe("password");
     expect(toggle(container).getAttribute("aria-label")).toBe("Show password");
-    expect(toggle(container).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("has no aria-pressed: the label carries the state", async () => {
+    const { container } = await render(<Labelled />);
+    expect(toggle(container).hasAttribute("aria-pressed")).toBe(false);
+    await click(toggle(container));
+    expect(toggle(container).hasAttribute("aria-pressed")).toBe(false);
+  });
+
+  it("names the button after its label prop", async () => {
+    const { container } = await render(<Labelled label="confirmation" />);
+    expect(toggle(container).getAttribute("aria-label")).toBe("Show confirmation");
+    await click(toggle(container));
+    expect(toggle(container).getAttribute("aria-label")).toBe("Hide confirmation");
   });
 
   it("keeps the autocomplete hint and the other attributes, hidden or shown", async () => {

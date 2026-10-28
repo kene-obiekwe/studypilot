@@ -88,8 +88,8 @@ describe("error mapping", () => {
   });
 
   it("uses detail and non_field_errors text as-is", () => {
-    expect(toApiError(401, { detail: "No account found with those details." }).message).toBe(
-      "No account found with those details.",
+    expect(toApiError(401, { detail: "Incorrect username, email or password." }).message).toBe(
+      "Incorrect username, email or password.",
     );
     expect(toApiError(400, { non_field_errors: ["Passwords do not match."] }).message).toBe("Passwords do not match.");
   });
@@ -212,11 +212,11 @@ describe("session refresh", () => {
 
   it("never refreshes for login or register, and sends them no bearer token", async () => {
     setSession({ access: "stale", refresh: "r1" });
-    serve(() => json(401, { detail: "No account found with those details." }));
+    serve(() => json(401, { detail: "Incorrect username, email or password." }));
 
     await expect(loginUser({ identifier: "a", password: "wrong" })).rejects.toMatchObject({
       status: 401,
-      message: "No account found with those details.",
+      message: "Incorrect username, email or password.",
     });
     await expect(startRegistration({ username: "a", email: "a@b.c", password: "x" })).rejects.toMatchObject({
       status: 401,

@@ -90,11 +90,10 @@ class GenericFailureTests(EmailFlowTestCase):
             self.assertEqual(response.data["detail"], LOGIN_FAILED_MESSAGE, label)
         self.assertEqual(len({str(response.data) for response in responses.values()}), 1)
 
-    def test_the_words_do_not_say_which_part_was_wrong(self):
-        text = self.failures()["wrong password, email"].data["detail"].lower()
-        for word in ("password", "username", "email", "incorrect", "invalid"):
-            self.assertNotIn(word, text)
-        self.assertEqual(LOGIN_FAILED_MESSAGE, "No account found with those details.")
+    def test_the_words_name_every_possibility_and_none_in_particular(self):
+        self.assertEqual(LOGIN_FAILED_MESSAGE, "Incorrect username, email or password.")
+        bodies = [response.data for response in self.failures().values()]
+        self.assertTrue(all(body == {"detail": LOGIN_FAILED_MESSAGE} for body in bodies))
 
 
 class DuplicateEmailTests(EmailFlowTestCase):

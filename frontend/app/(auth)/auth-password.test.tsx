@@ -43,7 +43,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 const toggles = (container: HTMLElement) =>
-  [...container.querySelectorAll("button")].filter((button) => /^(Show|Hide) password$/.test(button.getAttribute("aria-label") ?? ""));
+  [...container.querySelectorAll("button")].filter((button) => /^(Show|Hide) (new password|confirmation|password)$/.test(button.getAttribute("aria-label") ?? ""));
 const input = (container: HTMLElement, label: string) => byLabel(container, label) as HTMLInputElement;
 
 describe("sign in", () => {
@@ -95,7 +95,7 @@ describe("sign in", () => {
   });
 
   it("keeps the password revealed when the sign-in fails", async () => {
-    api.loginUser.mockRejectedValue(new Error("No account found with those details."));
+    api.loginUser.mockRejectedValue(new Error("Incorrect username, email or password."));
     const { container } = await render(<SignInPage />);
     await flush();
     await typeInto(input(container, "Username or email"), "ada");
@@ -103,7 +103,7 @@ describe("sign in", () => {
     await click(toggles(container)[0]);
     await submit(container.querySelector("form") as HTMLFormElement);
     await flush();
-    expect(container.textContent).toContain("No account found with those details.");
+    expect(container.textContent).toContain("Incorrect username, email or password.");
     expect(input(container, "Password").type).toBe("text");
   });
 });
@@ -139,14 +139,20 @@ describe("forgot password", () => {
     return view;
   }
 
-  it("has a toggle on the new password and the confirmation, which reveal together", async () => {
+  it("has a toggle on the new password and on the confirmation, named apart and revealing separately", async () => {
     const { container } = await toNewPasswordStep();
-    expect(toggles(container)).toHaveLength(2);
+    const names = () => toggles(container).map((button) => button.getAttribute("aria-label"));
+    expect(names()).toEqual(["Show new password", "Show confirmation"]);
     const fields = [input(container, "New password"), input(container, "Confirm new password")];
     expect(fields.map((field) => field.getAttribute("autocomplete"))).toEqual(["new-password", "new-password"]);
     expect(fields.map((field) => field.type)).toEqual(["password", "password"]);
+
     await click(toggles(container)[1]);
+    expect(fields.map((field) => field.type)).toEqual(["password", "text"]);
+    expect(names()).toEqual(["Show new password", "Hide confirmation"]);
+
+    await click(toggles(container)[0]);
     expect(fields.map((field) => field.type)).toEqual(["text", "text"]);
-    expect(toggles(container).map((button) => button.getAttribute("aria-pressed"))).toEqual(["true", "true"]);
+    expect(names()).toEqual(["Hide new password", "Hide confirmation"]);
   });
 });

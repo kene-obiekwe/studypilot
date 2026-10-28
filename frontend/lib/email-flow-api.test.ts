@@ -135,7 +135,7 @@ describe("unverified sign-in", () => {
   });
 
   it("is not triggered by an ordinary failed sign-in", async () => {
-    serve(401, { detail: "No account found with those details." });
+    serve(401, { detail: "Incorrect username, email or password." });
     const error = await loginUser({ identifier: "ada", password: "nope" }).catch((e: unknown) => e);
     expect(isEmailNotVerified(error)).toBe(false);
     expect((error as ApiError).code).toBe("");

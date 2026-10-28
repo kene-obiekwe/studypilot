@@ -41,8 +41,8 @@ function ForgotPasswordFlow() {
   const [code, setCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  // One switch for both password fields, so what is typed in each can be checked together.
-  const [showPasswords, setShowPasswords] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [resending, setResending] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; code?: string; newPassword?: string; confirm?: string }>({});
@@ -103,7 +103,8 @@ function ForgotPasswordFlow() {
     setBusy(true);
     try {
       await confirmPasswordReset({ email: email.trim(), code, new_password: newPassword });
-      setShowPasswords(false);
+      setShowNewPassword(false);
+      setShowConfirm(false);
       setStep("done");
     } catch (error) {
       if (error instanceof ApiError && error.status === 400) {
@@ -192,8 +193,9 @@ function ForgotPasswordFlow() {
             name="new-password"
             value={newPassword}
             onChange={(event) => setNewPassword(event.target.value)}
-            revealed={showPasswords}
-            onRevealedChange={setShowPasswords}
+            label="new password"
+            revealed={showNewPassword}
+            onRevealedChange={setShowNewPassword}
             autoComplete="new-password"
             minLength={8}
           />
@@ -203,8 +205,9 @@ function ForgotPasswordFlow() {
             name="confirm-password"
             value={confirm}
             onChange={(event) => setConfirm(event.target.value)}
-            revealed={showPasswords}
-            onRevealedChange={setShowPasswords}
+            label="confirmation"
+            revealed={showConfirm}
+            onRevealedChange={setShowConfirm}
             autoComplete="new-password"
           />
         </Field>
