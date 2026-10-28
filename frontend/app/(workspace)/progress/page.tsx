@@ -2,14 +2,16 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo } from "react";
+import { Suspense, use, useMemo, useState } from "react";
 import { ClipboardCheck } from "lucide-react";
 
 import { PageAction } from "@/components/app-shell";
 import { Button, EmptyState, Notice, ProgressBar, Skeleton, Stat } from "@/components/ui";
+import { listPlans, type WeeklyPlan } from "@/lib/api";
 
 import { hoursFromMinutes, summariseCourses } from "./_lib/course-summary";
 import { percentText, shortDate } from "./_lib/history-model";
+import { PlanWeekRow } from "./_lib/PlansList";
 import styles from "./_lib/progress.module.css";
 import { useProgress } from "./_lib/shared";
 import { useSavedCourses } from "./_lib/useSavedCourses";
@@ -20,14 +22,24 @@ function pct(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+type LatestPlan = { plan: WeeklyPlan | null } | { error: string };
+
+/** Never rejects: the newest week's plan, or why it couldn't be loaded. */
+function loadLatestPlan(): Promise<LatestPlan> {
+  return listPlans(1).then(
+    (plans) => ({ plan: plans[0] ?? null }),
+    (failure: Error) => ({ error: failure.message }),
+  );
+}
+
 export default function ProgressOverviewPage() {
   const router = useRouter();
-  const { sessions, plans, analytics, isLoading, error, refresh } = useProgress();
+  const { sessions, analytics, isLoading, error, refresh } = useProgress();
+  const [latestPromise, setLatestPromise] = useState(loadLatestPlan);
   const { colorStyle } = useSavedCourses();
   const summaries = useMemo(() => summariseCourses(sessions), [sessions]);
 
   const recent = sessions.slice(0, RECENT_SESSIONS);
-  const latestPlan = plans[0];
   const loading = isLoading && sessions.length === 0;
 
   return (
@@ -157,40 +169,44 @@ export default function ProgressOverviewPage() {
       <section className={styles.section} aria-labelledby="latest-plan">
         <div className={styles.sectionHead}>
           <h2 id="latest-plan" className={styles.sectionTitle}>
-            Latest plan
+            Weekly plan
           </h2>
           <Link href="/planner" className={styles.link}>
             Open the planner
           </Link>
         </div>
-        {latestPlan ? (
-          <ul className={styles.list}>
-            <li className={styles.planRow}>
-              <div className={styles.planHead}>
-                <p className={styles.rowTitle}>{shortDate(latestPlan.created_at)}</p>
-                <p className={styles.rowMeta}>
-                  {latestPlan.plan_json.total_available_hours ?? "-"} h planned · {(latestPlan.plan_json.courses ?? []).length} courses
-                </p>
-              </div>
-              {latestPlan.plan_json.allocations && latestPlan.plan_json.allocations.length > 0 && (
-                <ul className={styles.allocations}>
-                  {latestPlan.plan_json.allocations.slice(0, 5).map((alloc, index) => (
-                    <li key={`${alloc.course}-${index}`} className={styles.allocation} style={alloc.course ? colorStyle(alloc.course) : undefined}>
-                      <span className={styles.courseCell}>
-                        <span className={styles.dot} aria-hidden="true" />
-                        {alloc.course}
-                      </span>
-                      <span>{alloc.allocated_hours} h</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </li>
-          </ul>
-        ) : (
-          <p className={styles.muted}>No plans yet. Generate one in the planner.</p>
-        )}
+        <Suspense fallback={<Skeleton height={64} radius="lg" />}>
+          <LatestPlanRow promise={latestPromise} colorStyle={colorStyle} onRetry={() => setLatestPromise(loadLatestPlan())} />
+        </Suspense>
       </section>
     </div>
+  );
+}
+
+function LatestPlanRow({
+  promise,
+  colorStyle,
+  onRetry,
+}: {
+  promise: Promise<LatestPlan>;
+  colorStyle: ReturnType<typeof useSavedCourses>["colorStyle"];
+  onRetry: () => void;
+}) {
+  const result = use(promise);
+  if ("error" in result) {
+    return (
+      <p className={styles.muted}>
+        Your plans are unavailable right now.{" "}
+        <Button size="sm" variant="ghost" onClick={onRetry}>
+          Try again
+        </Button>
+      </p>
+    );
+  }
+  if (!result.plan) return <p className={styles.muted}>No plans yet. Make one in the planner.</p>;
+  return (
+    <ul className={styles.list}>
+      <PlanWeekRow plan={result.plan} colorStyle={colorStyle} />
+    </ul>
   );
 }

@@ -21,6 +21,7 @@ import { courseHoursThisWeek, formatHours, hasPlanThisWeek, meterText, weekStrip
 import { CourseCard } from "./CourseCard";
 import { TopStrategies } from "./TopStrategies";
 import { WeekStrip } from "./WeekStrip";
+import { completedWeekHours } from "./week-complete";
 import styles from "./home.module.css";
 
 type HomeData =
@@ -161,6 +162,7 @@ function Home({ promise, onRetry }: { promise: Promise<HomeData>; onRetry: () =>
   const recsByCourse = new Map((data.recommendations ?? []).map((entry) => [entry.course.id, entry]));
   const planKnown = plans !== null;
   const hasPlan = planKnown && hasPlanThisWeek(plans, now);
+  const completed = plans !== null && sessions !== null ? completedWeekHours(plans, sessions, now) : null;
 
   return (
     <>
@@ -168,14 +170,20 @@ function Home({ promise, onRetry }: { promise: Promise<HomeData>; onRetry: () =>
         <EmptyState
           className={styles.planPrompt}
           icon={<CalendarPlus size={24} />}
-          title="Create this week's plan"
-          description="Split your available hours across your courses to set this week's targets."
+          title="No plan for this week yet."
+          description="Split your available hours across your courses."
           action={
             <Link href="/planner" className={styles.primaryLink}>
-              Open the planner
+              Plan this week
             </Link>
           }
         />
+      )}
+
+      {completed !== null && (
+        <Notice tone="success" title="Week complete" className={styles.weekComplete}>
+          You&rsquo;ve done the {formatHours(completed)} h you planned. Anything more is a bonus.
+        </Notice>
       )}
 
       <section aria-labelledby="courses-heading" className={styles.section}>

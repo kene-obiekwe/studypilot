@@ -64,6 +64,28 @@
   min-width: 0;
 }
 
+/* A course whose planned hours are done: a success tint, so it reads as finished at a glance. */
+.cardDone {
+  background: var(--sp-success-soft);
+  border-color: var(--sp-success);
+  border-top-color: var(--course-dot, var(--sp-success));
+}
+
+.hours {
+  display: grid;
+  justify-items: start;
+  gap: var(--sp-space-2);
+}
+
+.hours > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.weekComplete {
+  max-width: 640px;
+}
+
 .cardHead {
   display: grid;
   gap: var(--sp-space-2);

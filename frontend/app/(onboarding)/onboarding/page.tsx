@@ -6,17 +6,17 @@ import Link from "next/link";
 import { Button, Notice, Skeleton } from "@/components/ui";
 import {
   getMe,
-  getPlanHistory,
   getSessionHistory,
   listCourses,
+  listPlans,
   type Course,
   type Me,
-  type PlanHistoryItem,
   type SessionHistoryItem,
+  type WeeklyPlan,
 } from "@/lib/api";
 import { markOnboardingDone, resolveStep, type OnboardingStep } from "@/lib/onboarding";
 import { useCourseColors } from "@/lib/use-course-colors";
-import { hasPlanThisWeek } from "@/lib/week";
+import { hasPlanNextWeek, hasPlanThisWeek } from "@/lib/week";
 
 import styles from "../onboarding.module.css";
 import { CoursesStep } from "./CoursesStep";
@@ -24,7 +24,7 @@ import { PlanStep } from "./PlanStep";
 import { SessionStep } from "./SessionStep";
 import { StepIndicator } from "./StepIndicator";
 
-type Loaded = { me: Me | null; courses: Course[]; plans: PlanHistoryItem[]; sessions: SessionHistoryItem[] };
+type Loaded = { me: Me | null; courses: Course[]; plans: WeeklyPlan[]; sessions: SessionHistoryItem[] };
 
 type LoadResult = { data: Loaded } | { error: string };
 
@@ -48,14 +48,14 @@ const COPY: Record<OnboardingStep, { title: string; lede: string }> = {
  * starting at the plan step).
  */
 function loadOnboarding(): Promise<LoadResult> {
-  return Promise.allSettled([getMe(), listCourses(), getPlanHistory(), getSessionHistory()]).then(
+  return Promise.allSettled([getMe(), listCourses(), listPlans(), getSessionHistory()]).then(
     ([me, courses, plans, sessions]) => {
       if (courses.status === "rejected") return { error: (courses.reason as Error).message };
       return {
         data: {
           me: me.status === "fulfilled" ? me.value : null,
           courses: courses.value,
-          plans: plans.status === "fulfilled" ? plans.value.items : [],
+          plans: plans.status === "fulfilled" ? plans.value : [],
           sessions: sessions.status === "fulfilled" ? sessions.value.items : [],
         },
       };
@@ -99,7 +99,11 @@ function Flow({ data }: { data: Loaded }) {
   const [courses, setCourses] = useState(data.courses);
   const [plans, setPlans] = useState(data.plans);
   const [step, setStep] = useState<OnboardingStep>(() =>
-    resolveStep({ courseCount: data.courses.length, hasPlanThisWeek: hasPlanThisWeek(data.plans, new Date()) }),
+    resolveStep({
+      courseCount: data.courses.length,
+      hasPlanThisWeek: hasPlanThisWeek(data.plans, new Date()),
+      hasPlanNextWeek: hasPlanNextWeek(data.plans, new Date()),
+    }),
   );
   const { colorFor } = useCourseColors(courses);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -114,10 +118,7 @@ function Flow({ data }: { data: Loaded }) {
 
   const refreshPlans = () => {
     // Step 3 reads this week's plan to suggest a session length; a failure just keeps the old list.
-    getPlanHistory().then(
-      (history) => setPlans(history.items),
-      () => undefined,
-    );
+    listPlans().then(setPlans, () => undefined);
   };
 
   const { title, lede } = COPY[step];
@@ -147,7 +148,7 @@ function Flow({ data }: { data: Loaded }) {
           onContinue={() => setStep(2)}
         />
       )}
-      {step === 2 && <PlanStep courses={courses} colorFor={colorFor} onGenerated={refreshPlans} onContinue={() => setStep(3)} />}
+      {step === 2 && <PlanStep courses={courses} colorFor={colorFor} onSaved={refreshPlans} onContinue={() => setStep(3)} />}
       {step === 3 && courses.length > 0 && (
         <SessionStep me={data.me} courses={courses} plans={plans} sessions={data.sessions} />
       )}

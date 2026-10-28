@@ -7,7 +7,7 @@ import { Play } from "lucide-react";
 
 import { CompletionScale, DEFAULT_COMPLETION, DEFAULT_FOCUS, FocusScale } from "@/components/timer";
 import { Button, Field, Input, Notice, Select } from "@/components/ui";
-import type { Course, Me, PlanHistoryItem, SessionHistoryItem } from "@/lib/api";
+import type { Course, Me, SessionHistoryItem } from "@/lib/api";
 import { markOnboardingDone } from "@/lib/onboarding";
 import {
   clampPlanned,
@@ -19,13 +19,14 @@ import {
 } from "@/lib/timer";
 import { logStudySession } from "@/lib/timer-refresh";
 import { startTimer, useStoredTimer } from "@/lib/timer-store";
+import type { PlanLike } from "@/lib/week";
 
 import styles from "../onboarding.module.css";
 
 type Props = {
   me: Me | null;
   courses: Course[];
-  plans: PlanHistoryItem[];
+  plans: readonly PlanLike[];
   sessions: SessionHistoryItem[];
 };
 

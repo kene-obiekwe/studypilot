@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronRight, Play, Square } from "lucide-react";
+import { Check, ChevronRight, Play, Square } from "lucide-react";
 
 import { ElapsedTime } from "@/components/timer";
 import { Badge, Button, ProgressBar } from "@/components/ui";
@@ -9,7 +9,7 @@ import type { Course, CourseEvidence, CourseRecommendation } from "@/lib/api";
 import type { CourseColor } from "@/lib/course-colors";
 import { examLabel } from "@/lib/exam";
 import type { TimerState } from "@/lib/timer";
-import { formatHours } from "@/lib/week";
+import { formatHours, type CourseWeekHours } from "@/lib/week";
 
 import styles from "./home.module.css";
 
@@ -27,7 +27,7 @@ export function CourseCard({
   course: Course;
   color: CourseColor;
   /** null when the session history couldn't be loaded. */
-  hours: { logged: number; planned: number | null } | null;
+  hours: CourseWeekHours | null;
   forecast: CourseEvidence["forecast"] | null;
   topRecommendation: CourseRecommendation | null;
   /** The running timer, whichever course it is for. */
@@ -42,7 +42,11 @@ export function CourseCard({
 
   return (
     // The course colour variables feed the dot and the progress fill.
-    <li className={styles.card} style={color.style} aria-labelledby={headingId}>
+    <li
+      className={`${styles.card} ${hours?.status === "done" && hours.planned ? styles.cardDone : ""}`}
+      style={color.style}
+      aria-labelledby={headingId}
+    >
       <div className={styles.cardHead}>
         <h3 id={headingId} className={styles.cardTitle}>
           <span className={styles.dot} aria-hidden="true" />
@@ -54,20 +58,7 @@ export function CourseCard({
         </div>
       </div>
 
-      {hours === null ? (
-        <p className={styles.muted}>Hours are unavailable right now.</p>
-      ) : hours.planned !== null && hours.planned > 0 ? (
-        <ProgressBar
-          label="This week"
-          value={hours.logged}
-          max={hours.planned}
-          valueText={`${formatHours(hours.logged)} of ${formatHours(hours.planned)} h`}
-        />
-      ) : (
-        <p className={styles.muted}>
-          {formatHours(hours.logged)} h logged this week · not in this week&rsquo;s plan
-        </p>
-      )}
+      <WeekHours hours={hours} />
 
       {topRecommendation && (
         <Link href="/strategies" className={styles.topRec}>
@@ -105,4 +96,56 @@ function ForecastBadge({ forecast }: { forecast: CourseEvidence["forecast"] }) {
     );
   }
   return <Badge tone="neutral">Not enough history yet</Badge>;
+}
+
+/** The course's line for this week: progress, "Done for this week", or why there is none. */
+function WeekHours({ hours }: { hours: CourseWeekHours | null }) {
+  if (hours === null) return <p className={styles.muted}>Hours are unavailable right now.</p>;
+  const { logged, planned, remaining, status } = hours;
+
+  // A plan that gives the course no hours is not "done": there was nothing to do.
+  if (status === "done" && !planned) {
+    return (
+      <p className={styles.muted}>
+        No hours planned this week{logged > 0 ? ` · ${formatHours(logged)} h logged` : ""}
+      </p>
+    );
+  }
+  if (status === "done" && planned) {
+    return (
+      <div className={styles.hours}>
+        <Badge tone="success" icon={<Check size={12} aria-hidden="true" />}>
+          Done for this week
+        </Badge>
+        <p className={styles.muted}>
+          {formatHours(logged)} of {formatHours(planned)} h
+        </p>
+      </div>
+    );
+  }
+  if (status === "in_plan" && planned) {
+    return (
+      <div className={styles.hours}>
+        <ProgressBar
+          label="This week"
+          value={logged}
+          max={planned}
+          valueText={`${formatHours(logged)} of ${formatHours(planned)} h`}
+        />
+        <p className={styles.muted}>{formatHours(remaining ?? 0)} h left</p>
+      </div>
+    );
+  }
+  if (status === "removed") {
+    return (
+      <p className={styles.muted}>
+        No longer in this week&rsquo;s plan · {formatHours(logged)} h logged, not counted
+      </p>
+    );
+  }
+  return (
+    <p className={styles.muted}>
+      {formatHours(logged)} h logged this week · not in this week&rsquo;s plan
+    </p>
+  );
 }

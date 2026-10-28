@@ -2,16 +2,9 @@
 
 import { createContext, startTransition, use, useEffect, useState, type ReactNode } from "react";
 
-import {
-  getMe,
-  getPlanHistory,
-  getSessionHistory,
-  type Me,
-  type PlanHistoryItem,
-  type SessionHistoryItem,
-} from "@/lib/api";
+import { getMe, getSessionHistory, listPlans, type Me, type SessionHistoryItem, type WeeklyPlan } from "@/lib/api";
 import { onSessionsChanged } from "@/lib/timer-refresh";
-import { summariseWeek, type WeekSummary } from "@/lib/week";
+import { loggedHoursThisWeek, summariseWeek, type PlanLike, type WeekSummary } from "@/lib/week";
 
 export type ShellData = {
   /** null when the request failed; the shell falls back to generic labels. */
@@ -19,21 +12,32 @@ export type ShellData = {
   /** null when the plan or session history couldn't be loaded. */
   week: WeekSummary | null;
   /** The raw histories behind `week`, shared with the home page; null when that request failed. */
-  plans: PlanHistoryItem[] | null;
+  plans: WeeklyPlan[] | null;
   sessions: SessionHistoryItem[] | null;
+  /** Hours logged this week on courses that don't count toward the plan (0 with no plan). */
+  excludedHours: number;
 };
+
+/** Logged this week but left out of the meter: the courses taken out of, or never in, this week's plan. */
+export function excludedHoursThisWeek(plans: readonly PlanLike[], sessions: readonly SessionHistoryItem[], now: Date): number {
+  const everything = loggedHoursThisWeek(sessions, now);
+  const counted = loggedHoursThisWeek(sessions, now, plans);
+  return Math.max(0, everything - counted);
+}
 
 /** Never rejects: each part degrades on its own. */
 export function loadShellData(now: () => Date = () => new Date()): Promise<ShellData> {
-  return Promise.allSettled([getMe(), getPlanHistory(), getSessionHistory()]).then(([me, plans, sessions]) => ({
-    me: me.status === "fulfilled" ? me.value : null,
-    plans: plans.status === "fulfilled" ? plans.value.items : null,
-    sessions: sessions.status === "fulfilled" ? sessions.value.items : null,
-    week:
-      plans.status === "fulfilled" && sessions.status === "fulfilled"
-        ? summariseWeek(plans.value.items, sessions.value.items, now())
-        : null,
-  }));
+  return Promise.allSettled([getMe(), listPlans(), getSessionHistory()]).then(([me, plans, sessions]) => {
+    const at = now();
+    const both = plans.status === "fulfilled" && sessions.status === "fulfilled";
+    return {
+      me: me.status === "fulfilled" ? me.value : null,
+      plans: plans.status === "fulfilled" ? plans.value : null,
+      sessions: sessions.status === "fulfilled" ? sessions.value.items : null,
+      week: both ? summariseWeek(plans.value, sessions.value.items, at) : null,
+      excludedHours: both ? excludedHoursThisWeek(plans.value, sessions.value.items, at) : 0,
+    };
+  });
 }
 
 const ShellDataContext = createContext<Promise<ShellData> | null>(null);

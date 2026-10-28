@@ -2,7 +2,7 @@
 import { act, Suspense } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getMe, getPlanHistory, getSessionHistory, type SessionHistoryItem } from "@/lib/api";
+import { getMe, getSessionHistory, listPlans, type SessionHistoryItem } from "@/lib/api";
 import { notifySessionsChanged } from "@/lib/timer-refresh";
 import { render } from "@/test/dom";
 
@@ -11,7 +11,7 @@ import { ShellDataProvider, useShellData } from "./ShellData";
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   getMe: vi.fn(),
-  getPlanHistory: vi.fn(),
+  listPlans: vi.fn(),
   getSessionHistory: vi.fn(),
 }));
 
@@ -46,7 +46,7 @@ afterEach(() => {
 describe("shell data refresh", () => {
   it("fetches once, then again when a session is logged, keeping the old numbers meanwhile", async () => {
     vi.mocked(getMe).mockResolvedValue({ id: 1, username: "u", email: "u@example.com" });
-    vi.mocked(getPlanHistory).mockResolvedValue({ items: [] });
+    vi.mocked(listPlans).mockResolvedValue([]);
     vi.mocked(getSessionHistory).mockResolvedValueOnce({ items: [session(60)] });
 
     const { container, unmount } = await render(
