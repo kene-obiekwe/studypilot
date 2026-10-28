@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CalendarDays, ExternalLink, Lightbulb, TrendingUp } from "lucide-react";
 
+import { Lockup } from "@/components/brand";
 import { ThemeToggle, UiRoot } from "@/components/ui";
 
 import { AuthActions } from "./AuthActions";
@@ -60,7 +61,7 @@ const RESEARCH = [
 function Wordmark() {
   return (
     <Link href="/" className={styles.wordmark}>
-      StudyPilot
+      <Lockup fontSize={17} />
     </Link>
   );
 }

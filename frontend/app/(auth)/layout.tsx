@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { Lockup } from "@/components/brand";
 import { Card, UiRoot } from "@/components/ui";
 
 import styles from "./_components/auth.module.css";
@@ -10,7 +11,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
     <UiRoot className={styles.page}>
       <header className={styles.header}>
         <Link href="/" className={styles.wordmark}>
-          StudyPilot
+          <Lockup fontSize={17} />
         </Link>
       </header>
       <main className={styles.main}>

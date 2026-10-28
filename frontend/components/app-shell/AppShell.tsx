@@ -3,8 +3,8 @@
 import { Suspense, useEffect, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Compass } from "lucide-react";
 
+import { Lockup } from "@/components/brand";
 import { TimerPill, TimerProvider } from "@/components/timer";
 import { NavItem, ThemeToggle, UiRoot } from "@/components/ui";
 import { isActive, NAV_ITEMS, pageTitle } from "@/lib/nav";
@@ -47,10 +47,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
             <aside className={styles.sidebar}>
               <Link href="/home" className={styles.brand}>
-                <span className={styles.brandMark} aria-hidden="true">
-                  <Compass size={16} />
-                </span>
-                StudyPilot
+                <Lockup fontSize={17} />
               </Link>
               <nav aria-label="Main">
                 <ul className={styles.navList}>

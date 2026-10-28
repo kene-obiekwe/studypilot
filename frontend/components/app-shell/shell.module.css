@@ -53,16 +53,6 @@
   letter-spacing: -0.01em;
 }
 
-.brandMark {
-  display: inline-grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--sp-radius-md);
-  background: var(--sp-accent);
-  color: var(--sp-on-accent);
-}
-
 .navList {
   display: grid;
   gap: 2px;
