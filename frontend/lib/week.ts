@@ -32,18 +32,81 @@ export function localDateKey(date: Date): string {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
-/** Hours in the latest plan for this local week; 0 when there is none. */
-export function plannedHoursThisWeek(plans: PlanHistoryItem[], now: Date): number {
-  const latest = latestPlanThisWeek(plans, now);
-  if (!latest) return 0;
-  return (latest.plan_json.allocations ?? []).reduce((sum, allocation) => {
-    const hours = Number(allocation.allocated_hours);
-    return Number.isFinite(hours) && hours > 0 ? sum + hours : sum;
-  }, 0);
+/** A plan from /planner/plans/ (WeeklyPlan) or the history alias (PlanHistoryItem, version 1 or 2). */
+export type PlanLike = PlanHistoryItem & { revision?: number; is_current?: boolean };
+
+/** One course of a plan, read the same way from a version-1 or a version-2 plan. */
+export type PlanEntry = {
+  name: string;
+  plannedHours: number;
+  /** YYYY-MM-DD the course entered the plan; a version-1 plan has no such date, so its week start. */
+  enteredOn: string;
+  focusBlockMinutes: number | null;
+};
+
+const finitePositive = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value > 0;
+const finiteNonNegative = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
+
+/**
+ * The plan's courses. Version 2 reads `courses` (planned_hours, entered_on); a version-1 plan reads
+ * `allocations` (allocated_hours is the planned hours, and every course entered on the week start).
+ */
+export function planEntries(plan: PlanLike | undefined): PlanEntry[] {
+  if (!plan) return [];
+  const { courses, allocations } = plan.plan_json;
+  const planned = (courses ?? []).filter((course) => typeof course.name === "string" && finiteNonNegative(course.planned_hours));
+  if (planned.length > 0) {
+    return planned.map((course) => ({
+      name: course.name!,
+      plannedHours: course.planned_hours!,
+      enteredOn: course.entered_on ?? plan.week_start,
+      focusBlockMinutes: finitePositive(course.focus_block_minutes) ? course.focus_block_minutes : null,
+    }));
+  }
+  return (allocations ?? [])
+    .filter((allocation) => typeof allocation.course === "string" && allocation.course && finitePositive(allocation.allocated_hours))
+    .map((allocation) => ({
+      name: allocation.course!,
+      plannedHours: allocation.allocated_hours!,
+      enteredOn: plan.week_start,
+      focusBlockMinutes: finitePositive(allocation.focus_block_minutes) ? allocation.focus_block_minutes : null,
+    }));
 }
 
-/** Actual minutes logged from local Monday 00:00 up to now, in hours. */
-export function loggedHoursThisWeek(sessions: SessionHistoryItem[], now: Date): number {
+/** Monday of the local week `weeks` after (or before) the one containing `now`, as YYYY-MM-DD. */
+export function weekStartKey(now: Date, weeks = 0): string {
+  const monday = startOfLocalWeek(now);
+  return localDateKey(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 7 * weeks));
+}
+
+/** The plan to use for the week starting `weekStart` (YYYY-MM-DD): its current revision, else its newest. */
+export function currentPlanForWeek<T extends PlanLike>(plans: readonly T[], weekStart: string): T | undefined {
+  return plans
+    .filter((plan) => plan.week_start === weekStart)
+    .sort(
+      (a, b) =>
+        Number(b.is_current ?? false) - Number(a.is_current ?? false) ||
+        (b.revision ?? 0) - (a.revision ?? 0) ||
+        Date.parse(b.created_at) - Date.parse(a.created_at) ||
+        b.id - a.id,
+    )[0];
+}
+
+/** The current plan for this local week, if any. */
+export function currentPlanThisWeek<T extends PlanLike>(plans: readonly T[], now: Date): T | undefined {
+  return currentPlanForWeek(plans, weekStartKey(now));
+}
+
+/** The week's total: a version-2 plan's total_hours, else (version 1) the sum of its allocations. 0 with no plan. */
+export function plannedHoursThisWeek(plans: readonly PlanLike[], now: Date): number {
+  const plan = currentPlanThisWeek(plans, now);
+  if (!plan) return 0;
+  const total = plan.plan_json.total_hours;
+  if (finiteNonNegative(total)) return total;
+  return planEntries(plan).reduce((sum, entry) => sum + entry.plannedHours, 0);
+}
+
+function sumHours(sessions: readonly SessionHistoryItem[], now: Date): number {
   const from = startOfLocalWeek(now).getTime();
   const to = now.getTime();
   const minutes = sessions.reduce((sum, session) => {
@@ -54,12 +117,42 @@ export function loggedHoursThisWeek(sessions: SessionHistoryItem[], now: Date): 
   return minutes / 60;
 }
 
-export function summariseWeek(plans: PlanHistoryItem[], sessions: SessionHistoryItem[], now: Date): WeekSummary {
+/**
+ * Hours logged from local Monday 00:00 up to now. With a plan for this week in `plans`, only the
+ * courses in that plan count (logs on removed or never-planned courses stay in history but are not
+ * counted); with no plan, everything counts.
+ */
+export function loggedHoursThisWeek(sessions: readonly SessionHistoryItem[], now: Date, plans: readonly PlanLike[] = []): number {
+  const entries = planEntries(currentPlanThisWeek(plans, now));
+  if (entries.length === 0) return sumHours(sessions, now);
+  const names = new Set(entries.map((entry) => entry.name.trim().toLowerCase()));
+  return sumHours(
+    sessions.filter((session) => names.has((session.course_name ?? "").trim().toLowerCase())),
+    now,
+  );
+}
+
+export function summariseWeek(plans: readonly PlanLike[], sessions: readonly SessionHistoryItem[], now: Date): WeekSummary {
   return {
     weekStart: localDateKey(startOfLocalWeek(now)),
     plannedHours: plannedHoursThisWeek(plans, now),
-    loggedHours: loggedHoursThisWeek(sessions, now),
+    loggedHours: loggedHoursThisWeek(sessions, now, plans),
   };
+}
+
+export type DaysLeft = {
+  /** Days left in the local week including today: 7 on Monday, 1 on Sunday. */
+  count: number;
+  /** "Wed–Sun"; a single day is just "Sun". */
+  label: string;
+};
+
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+export function daysLeft(now: Date): DaysLeft {
+  const weekday = (now.getDay() + 6) % 7; // Monday = 0
+  const count = 7 - weekday;
+  return { count, label: count === 1 ? "Sun" : `${DAY_NAMES[weekday]}–Sun` };
 }
 
 /** One decimal, no trailing ".0": 7.5 -> "7.5", 12 -> "12", 0.04 -> "0". */
@@ -76,38 +169,58 @@ export function meterText(summary: Pick<WeekSummary, "plannedHours" | "loggedHou
 
 const sameName = (a: string | undefined, b: string) => (a ?? "").trim().toLowerCase() === b.trim().toLowerCase();
 
-/** The newest plan saved for this local week, if any. */
-export function latestPlanThisWeek(plans: PlanHistoryItem[], now: Date): PlanHistoryItem | undefined {
-  const monday = localDateKey(startOfLocalWeek(now));
-  return plans
-    .filter((plan) => plan.week_start === monday)
-    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at) || b.id - a.id)[0];
+/** True when there is a plan for this local week. */
+export function hasPlanThisWeek(plans: readonly PlanLike[], now: Date): boolean {
+  return currentPlanThisWeek(plans, now) !== undefined;
 }
 
-/** True when there is a plan for this local week. */
-export function hasPlanThisWeek(plans: PlanHistoryItem[], now: Date): boolean {
-  return latestPlanThisWeek(plans, now) !== undefined;
+/** True when next week already has a plan (made ahead on a Saturday or Sunday). */
+export function hasPlanNextWeek(plans: readonly PlanLike[], now: Date): boolean {
+  return currentPlanForWeek(plans, weekStartKey(now, 1)) !== undefined;
 }
+
+export type CourseWeekStatus = "in_plan" | "done" | "removed" | "not_in_plan";
+
+export type CourseWeekHours = {
+  /** Hours logged on the course this week (also for a course that is not counted). */
+  logged: number;
+  /** The course's planned hours this week; null unless it is in the plan. */
+  planned: number | null;
+  /** Hours still to do, never below 0; null unless it is in the plan. */
+  remaining: number | null;
+  /**
+   * in_plan: planned hours left. done: planned hours reached (or nothing planned). removed: taken out
+   * of this week's plan. not_in_plan: no plan, or the plan never had the course.
+   */
+  status: CourseWeekStatus;
+};
+
+/** Below this many hours (about a second) a remainder is rounding noise, not time left. */
+const REMAINING_EPSILON = 1e-6;
 
 /**
- * One course's hours this week: logged (matched by name, case-insensitively, as the backend
- * stores logs under the course's name) and planned (null when this week's plan leaves it out).
+ * One course's hours this week. Logs match the course by name, case-insensitively, as the backend
+ * stores them. `remaining` is live: planned minus what is logged now, never below 0.
  */
 export function courseHoursThisWeek(
   courseName: string,
-  plans: PlanHistoryItem[],
-  sessions: SessionHistoryItem[],
+  plans: readonly PlanLike[],
+  sessions: readonly SessionHistoryItem[],
   now: Date,
-): { loggedHours: number; plannedHours: number | null } {
-  const allocation = latestPlanThisWeek(plans, now)?.plan_json.allocations?.find((item) => sameName(item.course, courseName));
-  const planned = Number(allocation?.allocated_hours);
-  return {
-    loggedHours: loggedHoursThisWeek(
-      sessions.filter((session) => sameName(session.course_name, courseName)),
-      now,
-    ),
-    plannedHours: allocation && Number.isFinite(planned) && planned > 0 ? planned : null,
-  };
+): CourseWeekHours {
+  const plan = currentPlanThisWeek(plans, now);
+  const logged = sumHours(
+    sessions.filter((session) => sameName(session.course_name, courseName)),
+    now,
+  );
+  const entry = planEntries(plan).find((item) => sameName(item.name, courseName));
+  if (entry) {
+    const remaining = Math.max(0, entry.plannedHours - logged);
+    const left = remaining > REMAINING_EPSILON ? remaining : 0;
+    return { logged, planned: entry.plannedHours, remaining: left, status: left > 0 ? "in_plan" : "done" };
+  }
+  const removed = (plan?.plan_json.removed ?? []).some((item) => sameName(item.name, courseName));
+  return { logged, planned: null, remaining: null, status: removed ? "removed" : "not_in_plan" };
 }
 
 export type StripSegment = { courseId: number | null; courseName: string; minutes: number };

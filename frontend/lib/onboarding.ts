@@ -13,10 +13,17 @@ export const ONBOARDING_STEPS: ReadonlyArray<{ step: OnboardingStep; label: stri
   { step: 3, label: "First session" },
 ];
 
-/** Where to open: no courses -> 1; courses but no plan for this week -> 2; otherwise 3. */
-export function resolveStep(input: { courseCount: number; hasPlanThisWeek: boolean }): OnboardingStep {
+/**
+ * Where to open: no courses -> 1; courses but no plan for this week or next -> 2; otherwise 3.
+ * A plan made ahead for next week (on a Saturday or Sunday) counts as having a plan.
+ */
+export function resolveStep(input: {
+  courseCount: number;
+  hasPlanThisWeek: boolean;
+  hasPlanNextWeek?: boolean;
+}): OnboardingStep {
   if (input.courseCount <= 0) return 1;
-  return input.hasPlanThisWeek ? 3 : 2;
+  return input.hasPlanThisWeek || input.hasPlanNextWeek ? 3 : 2;
 }
 
 /** After a successful email verification: a safe `next` wins, otherwise the user starts onboarding. */

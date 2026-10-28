@@ -6,8 +6,8 @@
  * sleeping laptop can't make it drift.
  */
 
-import type { PlanHistoryItem, SessionHistoryItem } from "./api";
-import { latestPlanThisWeek, startOfLocalWeek } from "./week";
+import type { SessionHistoryItem } from "./api";
+import { currentPlanThisWeek, planEntries, startOfLocalWeek, type PlanLike } from "./week";
 
 export type TimerState = {
   /** The signed-in user who started it; another account in the same browser ignores it. */
@@ -124,27 +124,26 @@ const sameCourse = (a: string | undefined, b: string) => (a ?? "").trim().toLowe
  * The planned length suggested when starting a timer for a course:
  * 1. Start from the session length of this week's plan for the course (its focus block),
  *    or 50 minutes when the course isn't in this week's plan.
- * 2. Take the course's weekly allocation (this week's plan, else the course's own weekly target)
- *    minus what is already logged for it this week. If less than a block is left, suggest the
- *    remainder instead, but never under 15 minutes. With nothing left, or no allocation at all,
- *    keep the block.
+ * 2. Work out what is left: in the plan, its planned hours minus what is logged for it this week
+ *    (live, so it follows each session); not in the plan, the course's own weekly target minus
+ *    the same. If less than a block is left, suggest the remainder instead, but never under 15
+ *    minutes. With nothing left (the course is done for the week) or no target at all, keep the block.
  * 3. Round to 5 minutes and keep within 5 to 240.
  */
 export function defaultPlannedMinutes(input: {
   courseName: string;
   weeklyTargetHours?: number | null;
-  plans: PlanHistoryItem[];
-  sessions: SessionHistoryItem[];
+  plans: readonly PlanLike[];
+  sessions: readonly SessionHistoryItem[];
   now: Date;
 }): number {
   const { courseName, weeklyTargetHours, plans, sessions, now } = input;
-  const allocation = latestPlanThisWeek(plans, now)?.plan_json.allocations?.find((item) => sameCourse(item.course, courseName));
+  const entry = planEntries(currentPlanThisWeek(plans, now)).find((item) => sameCourse(item.name, courseName));
 
-  const blockFromPlan = Number(allocation?.focus_block_minutes);
-  const block = Number.isFinite(blockFromPlan) && blockFromPlan > 0 ? blockFromPlan : DEFAULT_BLOCK_MINUTES;
+  const block = entry?.focusBlockMinutes ?? DEFAULT_BLOCK_MINUTES;
 
-  const planHours = Number(allocation?.allocated_hours);
-  const weeklyHours = Number.isFinite(planHours) && planHours > 0 ? planHours : Number(weeklyTargetHours ?? 0);
+  // A course in the plan has its planned hours (0 means nothing more to plan); otherwise fall back to its target.
+  const weeklyHours = entry ? entry.plannedHours : Number(weeklyTargetHours ?? 0);
   let suggested = block;
   if (Number.isFinite(weeklyHours) && weeklyHours > 0) {
     const from = startOfLocalWeek(now).getTime();

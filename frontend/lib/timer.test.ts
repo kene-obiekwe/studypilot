@@ -123,3 +123,66 @@ describe("default planned minutes", () => {
     expect(defaultPlannedMinutes({ ...base, weeklyTargetHours: 1, sessions: [session("Calculus", at(2025, 10, 17), 40)] })).toBe(50);
   });
 });
+
+describe("defaultPlannedMinutes from a version-2 plan", () => {
+  // Wednesday 22 Oct 2025. Example 1 from the design note: A planned 10 h, 4 h done when the plan was made.
+  const v2: PlanHistoryItem = {
+    id: 2,
+    week_start: "2025-10-20",
+    created_at: at(2025, 10, 21, 9).toISOString(),
+    plan_json: {
+      version: 2,
+      total_hours: 14,
+      courses: [
+        {
+          course_id: 1,
+          name: "A",
+          planned_hours: 10,
+          logged_at_revision: 4,
+          remaining_at_revision: 6,
+          entered_on: "2025-10-20",
+          focus_block_minutes: 50,
+        },
+        { course_id: 2, name: "C", planned_hours: 4, logged_at_revision: 0, remaining_at_revision: 4, entered_on: "2025-10-21", focus_block_minutes: 40 },
+      ],
+      removed: [{ course_id: 3, name: "B", removed_on: "2025-10-21", logged_hours: 1 }],
+    },
+  };
+  const base = { courseName: "A", plans: [v2], now: NOW };
+  const logged = (minutes: number) => [session("A", at(2025, 10, 21), minutes)];
+
+  it("suggests the block while 6 hours are left", () => {
+    expect(defaultPlannedMinutes({ ...base, sessions: logged(240) })).toBe(50);
+  });
+
+  it("suggests the remainder when 20 minutes are left", () => {
+    expect(defaultPlannedMinutes({ ...base, sessions: logged(580) })).toBe(20);
+  });
+
+  it("suggests the block again once the course is done, exactly or past it", () => {
+    expect(defaultPlannedMinutes({ ...base, sessions: logged(600) })).toBe(50);
+    expect(defaultPlannedMinutes({ ...base, sessions: logged(700) })).toBe(50);
+  });
+
+  it("follows the logs live: each session shortens the remainder", () => {
+    const more = (minutes: number) => [...logged(500), session("a", at(2025, 10, 22, 9), minutes)];
+    expect(defaultPlannedMinutes({ ...base, sessions: more(40) })).toBe(50); // 60 min left: still a full block
+    expect(defaultPlannedMinutes({ ...base, sessions: more(75) })).toBe(25); // 25 min left
+  });
+
+  it("uses the course's own focus block from the plan", () => {
+    expect(defaultPlannedMinutes({ ...base, courseName: "C", sessions: [] })).toBe(40);
+  });
+
+  it("falls back to the weekly target for a course not in the plan (removed or never planned)", () => {
+    const sessions = [session("B", at(2025, 10, 21), 40)];
+    expect(defaultPlannedMinutes({ ...base, courseName: "B", weeklyTargetHours: 1, sessions })).toBe(20);
+    expect(defaultPlannedMinutes({ ...base, courseName: "B", sessions })).toBe(50);
+  });
+
+  it("ignores last week's logs and a superseded revision", () => {
+    const superseded = { ...v2, id: 1, revision: 1, is_current: false, plan_json: { ...v2.plan_json, courses: [{ ...v2.plan_json.courses![0], planned_hours: 1 }] } };
+    const current = { ...v2, revision: 2, is_current: true };
+    expect(defaultPlannedMinutes({ ...base, plans: [superseded, current], sessions: [session("A", at(2025, 10, 17), 9999)] })).toBe(50);
+  });
+});

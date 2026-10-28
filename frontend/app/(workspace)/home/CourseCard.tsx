@@ -27,7 +27,7 @@ export function CourseCard({
   course: Course;
   color: CourseColor;
   /** null when the session history couldn't be loaded. */
-  hours: { loggedHours: number; plannedHours: number | null } | null;
+  hours: { logged: number; planned: number | null } | null;
   forecast: CourseEvidence["forecast"] | null;
   topRecommendation: CourseRecommendation | null;
   /** The running timer, whichever course it is for. */
@@ -56,16 +56,16 @@ export function CourseCard({
 
       {hours === null ? (
         <p className={styles.muted}>Hours are unavailable right now.</p>
-      ) : hours.plannedHours !== null ? (
+      ) : hours.planned !== null && hours.planned > 0 ? (
         <ProgressBar
           label="This week"
-          value={hours.loggedHours}
-          max={hours.plannedHours}
-          valueText={`${formatHours(hours.loggedHours)} of ${formatHours(hours.plannedHours)} h`}
+          value={hours.logged}
+          max={hours.planned}
+          valueText={`${formatHours(hours.logged)} of ${formatHours(hours.planned)} h`}
         />
       ) : (
         <p className={styles.muted}>
-          {formatHours(hours.loggedHours)} h logged this week · not in this week&rsquo;s plan
+          {formatHours(hours.logged)} h logged this week · not in this week&rsquo;s plan
         </p>
       )}
 

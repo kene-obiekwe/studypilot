@@ -10,7 +10,7 @@ export const NETWORK_ERROR_MESSAGE = "Can't reach the server. Check your connect
 export const SERVER_ERROR_MESSAGE = "Something went wrong on our side. Please try again.";
 export const SESSION_EXPIRED_MESSAGE = "Your session expired. Sign in again.";
 
-type RequestMethod = "GET" | "POST" | "PATCH" | "DELETE";
+type RequestMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 type FieldErrors = Record<string, string[]>;
 
 /** The `code` of the sign-in error returned when the username or email and the password are right but the email is unverified. */
@@ -38,6 +38,36 @@ export class ApiError extends Error {
 /** True for the sign-in error that means "enter the code we emailed you" (status 400, code email_not_verified). */
 export function isEmailNotVerified(error: unknown): boolean {
   return error instanceof ApiError && error.code === EMAIL_NOT_VERIFIED_CODE;
+}
+
+/** The `code` of the 409 when someone else saved the week's plan after this client read it. */
+export const PLAN_CHANGED_CODE = "plan_changed";
+/** The `code` of the 409 when a first plan was sent but the week already has a plan. */
+export const PLAN_EXISTS_CODE = "plan_exists";
+
+/** 409 plan_changed: the plan was updated elsewhere (another tab); refetch it and review the new split. */
+export class PlanChangedError extends ApiError {
+  constructor(source: ApiError) {
+    super(source.status, source.message, source.fieldErrors, PLAN_CHANGED_CODE);
+    this.name = "PlanChangedError";
+  }
+}
+
+/** 409 plan_exists: the week already has a plan; open it and update it instead. */
+export class PlanExistsError extends ApiError {
+  constructor(source: ApiError) {
+    super(source.status, source.message, source.fieldErrors, PLAN_EXISTS_CODE);
+    this.name = "PlanExistsError";
+  }
+}
+
+/** Turn the plan endpoints' 409s into their typed errors; any other error passes through. */
+function planConflict(error: unknown): unknown {
+  if (error instanceof ApiError && error.status === 409) {
+    if (error.code === PLAN_CHANGED_CODE) return new PlanChangedError(error);
+    if (error.code === PLAN_EXISTS_CODE) return new PlanExistsError(error);
+  }
+  return error;
 }
 
 function fieldLabel(field: string): string {
@@ -287,12 +317,73 @@ export type PlanResponse = {
   }>;
 };
 
+export type AdjustmentSource = "model" | "rule" | "none";
+
+/** One course in a version-2 plan revision. planned_hours = logged_at_revision + remaining_at_revision. */
+export type PlanCourseEntry = {
+  /** Null only for a first-version plan converted on the server; absent for names no course has yet. */
+  course_id: number | null;
+  name: string;
+  difficulty: number;
+  factor: number;
+  adjustment_source: AdjustmentSource;
+  adherence_estimate: number | null;
+  /** YYYY-MM-DD the course entered the plan; pacing runs from here. */
+  entered_on: string;
+  logged_at_revision: number;
+  remaining_at_revision: number;
+  planned_hours: number;
+  focus_block_minutes: number;
+  break_minutes: number;
+};
+
+/** A course taken out of the week's plan; its logs stay in history but no longer count. */
+export type RemovedPlanCourse = {
+  course_id: number | null;
+  name: string;
+  /** YYYY-MM-DD. */
+  removed_on: string;
+  logged_hours: number;
+};
+
+export type PlanMode = "first" | "update" | "course_deleted";
+
+/** Version-2 plan_json: the revision's courses, plus the first-version fields older readers use. */
+export type WeeklyPlanJson = {
+  version: 2;
+  mode: PlanMode;
+  /** YYYY-MM-DD the revision was made (server date). */
+  made_on: string;
+  total_hours: number;
+  more_hours: number;
+  counted_hours: number;
+  /** True when the requested total was below the hours already counted and was raised to match. */
+  clamped: boolean;
+  courses: PlanCourseEntry[];
+  removed: RemovedPlanCourse[];
+  total_available_hours: number;
+  allocations: NonNullable<PlanResponse["allocations"]>;
+};
+
+/**
+ * A plan as the history endpoint returns it. Plans saved before revisions (version 1) carry only
+ * `allocations`, with `courses` as {name, difficulty}; version-2 plans (`WeeklyPlanJson`) carry both
+ * and every field is then present. Read it through lib/week.ts rather than directly.
+ */
 export type PlanHistoryItem = {
   id: number;
   week_start: string;
   plan_json: {
+    version?: number;
+    mode?: PlanMode;
+    made_on?: string;
+    total_hours?: number;
+    more_hours?: number;
+    counted_hours?: number;
+    clamped?: boolean;
     total_available_hours?: number;
-    courses?: Array<{ name?: string; difficulty?: number }>;
+    courses?: Array<Partial<PlanCourseEntry>>;
+    removed?: Array<Partial<RemovedPlanCourse>>;
     allocations?: Array<{
       course?: string;
       allocated_hours?: number;
@@ -305,6 +396,43 @@ export type PlanHistoryItem = {
 
 export type PlanHistoryResponse = {
   items: PlanHistoryItem[];
+};
+
+/** One revision of a week's plan, as /planner/plans/ returns it. */
+export type WeeklyPlan = {
+  id: number;
+  week_start: string;
+  revision: number;
+  /** How many revisions this week has in all (this one included). */
+  revision_count: number;
+  is_current: boolean;
+  superseded_at: string | null;
+  created_at: string;
+  updated_at: string;
+  plan_json: WeeklyPlanJson;
+};
+
+/** A week's current plan with the days left in it; `revisions` (older ones) only when asked for. */
+export type WeeklyPlanDetail = WeeklyPlan & { days_left: number; revisions?: WeeklyPlan[] };
+
+export type PlanCourseInput = { name: string; difficulty: number };
+
+/**
+ * What to plan. A first plan (nothing saved for the week) gives the whole week's `total_hours` and
+ * `base_revision: null`; an update gives `more_hours` (on top of what is already done) and the
+ * `base_revision` it was opened at.
+ */
+export type WeeklyPlanInput =
+  | { courses: PlanCourseInput[]; total_hours: number; base_revision: null }
+  | { courses: PlanCourseInput[]; more_hours: number; base_revision: number };
+
+/** The split a save would make; nothing is saved. */
+export type PlanPreview = {
+  week_start: string;
+  base_revision: number | null;
+  days_left: number;
+  clamped: boolean;
+  plan_json: WeeklyPlanJson;
 };
 
 export type SessionLogPayload = {
@@ -516,6 +644,48 @@ export function generatePlan(payload: PlanPayload): Promise<PlanResponse> {
 
 export function getPlanHistory(): Promise<PlanHistoryResponse> {
   return request<PlanHistoryResponse>("/planner/history/", "GET");
+}
+
+/** The current plan of each week, newest week first. */
+export async function listPlans(limit?: number): Promise<WeeklyPlan[]> {
+  const query = limit === undefined ? "" : `?limit=${encodeURIComponent(String(limit))}`;
+  const response = await request<{ items: WeeklyPlan[] }>(`/planner/plans/${query}`, "GET");
+  return response.items;
+}
+
+/**
+ * A week's current plan (`weekStart` is that week's Monday, YYYY-MM-DD), or null when it has none.
+ * `revisions: true` adds the superseded revisions.
+ */
+export async function getPlan(weekStart: string, options: { revisions?: boolean } = {}): Promise<WeeklyPlanDetail | null> {
+  const query = options.revisions ? "?revisions=1" : "";
+  try {
+    return await request<WeeklyPlanDetail>(`/planner/plans/${encodeURIComponent(weekStart)}/${query}`, "GET");
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+/** The split a save would make, with nothing saved. Throws PlanChangedError / PlanExistsError on a 409. */
+export async function previewPlan(weekStart: string, input: WeeklyPlanInput): Promise<PlanPreview> {
+  try {
+    return await request<PlanPreview>("/planner/plans/preview/", "POST", { week_start: weekStart, ...input });
+  } catch (error) {
+    throw planConflict(error);
+  }
+}
+
+/**
+ * Save the week's first plan or its next revision. Throws PlanChangedError when `base_revision` is
+ * no longer the current revision, and PlanExistsError when a first plan is sent for a week that has one.
+ */
+export async function savePlan(weekStart: string, input: WeeklyPlanInput): Promise<WeeklyPlanDetail> {
+  try {
+    return await request<WeeklyPlanDetail>(`/planner/plans/${encodeURIComponent(weekStart)}/`, "PUT", input);
+  } catch (error) {
+    throw planConflict(error);
+  }
 }
 
 export function logSession(payload: SessionLogPayload): Promise<SessionLogResponse> {

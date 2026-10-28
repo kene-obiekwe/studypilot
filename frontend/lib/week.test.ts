@@ -3,9 +3,12 @@ import { describe, expect, it } from "vitest";
 import type { PlanHistoryItem, SessionHistoryItem } from "./api";
 import {
   courseHoursThisWeek,
+  currentPlanForWeek,
+  daysLeft,
   formatHours,
   formatMinutes,
   formatMinutesShort,
+  hasPlanNextWeek,
   hasPlanThisWeek,
   localDateKey,
   loggedHoursThisWeek,
@@ -13,7 +16,9 @@ import {
   plannedHoursThisWeek,
   startOfLocalWeek,
   summariseWeek,
+  weekStartKey,
   weekStrip,
+  type PlanLike,
 } from "./week";
 
 // Local-time constructors keep these tests correct in any time zone the suite runs in.
@@ -110,7 +115,7 @@ describe("logged hours", () => {
 
 describe("summary and text", () => {
   it("combines both numbers for the local week", () => {
-    const summary = summariseWeek([plan(1, "2026-10-19", at(2026, 10, 19), [12])], [session(at(2026, 10, 20), 450)], NOW);
+    const summary = summariseWeek([plan(1, "2026-10-19", at(2026, 10, 19), [12])], [{ ...session(at(2026, 10, 20), 450), course_name: "C0" }], NOW);
     expect(summary).toEqual({ weekStart: "2026-10-19", plannedHours: 12, loggedHours: 7.5 });
     expect(meterText(summary)).toBe("7.5 of 12 h");
   });
@@ -182,12 +187,205 @@ describe("per-course hours", () => {
       { ...session(at(2026, 10, 20), 90), course_name: "c0" },
       { ...session(at(2026, 10, 21), 30), course_name: "C1" },
     ];
-    expect(courseHoursThisWeek("C0", plans, sessions, NOW)).toEqual({ loggedHours: 1.5, plannedHours: 3.5 });
-    expect(courseHoursThisWeek("Elsewhere", plans, sessions, NOW)).toEqual({ loggedHours: 0, plannedHours: null });
+    expect(courseHoursThisWeek("C0", plans, sessions, NOW)).toEqual({ logged: 1.5, planned: 3.5, remaining: 2, status: "in_plan" });
+    expect(courseHoursThisWeek("Elsewhere", plans, sessions, NOW)).toEqual({
+      logged: 0,
+      planned: null,
+      remaining: null,
+      status: "not_in_plan",
+    });
   });
 
   it("knows whether this week has a plan", () => {
     expect(hasPlanThisWeek(plans, NOW)).toBe(true);
     expect(hasPlanThisWeek(plans, at(2026, 10, 27))).toBe(false);
+  });
+});
+
+// -- version-2 plans (revisions) -------------------------------------------------------------
+
+type V2Course = { name: string; planned: number; logged?: number; enteredOn?: string };
+
+function planV2(
+  weekStart: string,
+  courses: V2Course[],
+  extra: { revision?: number; isCurrent?: boolean; removed?: Array<{ name: string; logged: number }>; id?: number; createdAt?: Date } = {},
+): PlanLike {
+  const total = courses.reduce((sum, course) => sum + course.planned, 0);
+  return {
+    id: extra.id ?? 1,
+    week_start: weekStart,
+    created_at: iso(extra.createdAt ?? at(2026, 10, 19, 9)),
+    revision: extra.revision ?? 1,
+    is_current: extra.isCurrent ?? true,
+    plan_json: {
+      version: 2,
+      total_hours: total,
+      courses: courses.map((course, index) => ({
+        course_id: index + 1,
+        name: course.name,
+        difficulty: 3,
+        planned_hours: course.planned,
+        logged_at_revision: course.logged ?? 0,
+        remaining_at_revision: course.planned - (course.logged ?? 0),
+        entered_on: course.enteredOn ?? weekStart,
+        focus_block_minutes: 50,
+      })),
+      removed: (extra.removed ?? []).map((item, index) => ({
+        course_id: 90 + index,
+        name: item.name,
+        removed_on: "2026-10-22",
+        logged_hours: item.logged,
+      })),
+      allocations: courses.map((course) => ({ course: course.name, allocated_hours: course.planned })),
+    },
+  };
+}
+
+const named = (courseName: string, when: Date, minutes: number): SessionHistoryItem => ({ ...session(when, minutes), course_name: courseName });
+
+describe("current plan for a week", () => {
+  it("prefers the current revision over newer superseded ones", () => {
+    const old = planV2("2026-10-19", [{ name: "A", planned: 7 }], { id: 1, revision: 1, isCurrent: false, createdAt: at(2026, 10, 22, 9) });
+    const current = planV2("2026-10-19", [{ name: "A", planned: 10 }], { id: 2, revision: 2, isCurrent: true, createdAt: at(2026, 10, 21, 9) });
+    expect(currentPlanForWeek([old, current], "2026-10-19")?.id).toBe(2);
+    expect(currentPlanForWeek([current, old], "2026-10-19")?.id).toBe(2);
+  });
+
+  it("falls back to the highest revision, then the newest, when none is flagged current", () => {
+    const first = planV2("2026-10-19", [{ name: "A", planned: 7 }], { id: 1, revision: 1, isCurrent: false });
+    const second = planV2("2026-10-19", [{ name: "A", planned: 9 }], { id: 2, revision: 2, isCurrent: false });
+    expect(currentPlanForWeek([first, second], "2026-10-19")?.id).toBe(2);
+    expect(currentPlanForWeek([plan(5, "2026-10-19", at(2026, 10, 19), [1]), plan(6, "2026-10-19", at(2026, 10, 20), [2])], "2026-10-19")?.id).toBe(6);
+  });
+
+  it("returns undefined for a week with no plan and never mixes weeks", () => {
+    expect(currentPlanForWeek([planV2("2026-10-12", [{ name: "A", planned: 7 }])], "2026-10-19")).toBeUndefined();
+    expect(currentPlanForWeek([], "2026-10-19")).toBeUndefined();
+  });
+
+  it("names this week and next week by their Mondays", () => {
+    expect(weekStartKey(NOW)).toBe("2026-10-19");
+    expect(weekStartKey(NOW, 1)).toBe("2026-10-26");
+    expect(weekStartKey(at(2026, 10, 25, 23), 1)).toBe("2026-10-26");
+    expect(hasPlanNextWeek([planV2("2026-10-26", [{ name: "A", planned: 8 }])], NOW)).toBe(true);
+    expect(hasPlanNextWeek([planV2("2026-10-19", [{ name: "A", planned: 8 }])], NOW)).toBe(false);
+    expect(hasPlanThisWeek([planV2("2026-10-26", [{ name: "A", planned: 8 }])], NOW)).toBe(false);
+  });
+});
+
+describe("version-2 planned and logged hours", () => {
+  // Example 1 from the design note after the update: A 10 h (4 done), C 4 h; B was removed with 1 h logged.
+  const example1 = [planV2("2026-10-19", [{ name: "A", planned: 10, logged: 4 }, { name: "C", planned: 4 }], { removed: [{ name: "B", logged: 1 }] })];
+  const sessions = [named("A", at(2026, 10, 20), 240), named("B", at(2026, 10, 20, 15), 60)];
+
+  it("reads the week's total from total_hours", () => {
+    expect(plannedHoursThisWeek(example1, NOW)).toBe(14);
+  });
+
+  it("keeps a total_hours of 0 (a finished week) rather than falling back", () => {
+    expect(plannedHoursThisWeek([planV2("2026-10-19", [{ name: "A", planned: 0 }])], NOW)).toBe(0);
+  });
+
+  it("counts only the courses in the current plan", () => {
+    expect(loggedHoursThisWeek(sessions, NOW, example1)).toBe(4);
+    expect(summariseWeek(example1, sessions, NOW)).toEqual({ weekStart: "2026-10-19", plannedHours: 14, loggedHours: 4 });
+    expect(meterText(summariseWeek(example1, sessions, NOW))).toBe("4 of 14 h");
+  });
+
+  it("matches course names case-insensitively", () => {
+    expect(loggedHoursThisWeek([named("a", at(2026, 10, 20), 120)], NOW, example1)).toBe(2);
+  });
+
+  it("does not count logs on a course that was never in the plan", () => {
+    expect(loggedHoursThisWeek([...sessions, named("Elective", at(2026, 10, 21), 90)], NOW, example1)).toBe(4);
+  });
+
+  it("counts everything when there is no plan for the week", () => {
+    expect(loggedHoursThisWeek(sessions, NOW, [])).toBe(5);
+    expect(loggedHoursThisWeek(sessions, NOW)).toBe(5);
+    expect(loggedHoursThisWeek(sessions, NOW, [planV2("2026-10-12", [{ name: "A", planned: 7 }])])).toBe(5);
+    expect(meterText(summariseWeek([], sessions, NOW))).toBe("5 h logged, no plan yet");
+  });
+
+  it("counts a course again when its name is added back to the plan", () => {
+    const readded = [planV2("2026-10-19", [{ name: "A", planned: 10, logged: 4 }, { name: "B", planned: 2 }])];
+    expect(loggedHoursThisWeek(sessions, NOW, readded)).toBe(5);
+  });
+});
+
+describe("version-2 per-course hours", () => {
+  const plans = [
+    planV2("2026-10-19", [{ name: "A", planned: 10, logged: 4 }, { name: "C", planned: 4 }, { name: "Quiet", planned: 0 }], {
+      removed: [{ name: "B", logged: 1 }],
+    }),
+  ];
+  const sessions = [named("A", at(2026, 10, 20), 240), named("B", at(2026, 10, 20, 15), 60), named("Elective", at(2026, 10, 21), 30)];
+
+  it("is in_plan with the hours left", () => {
+    expect(courseHoursThisWeek("A", plans, sessions, NOW)).toEqual({ logged: 4, planned: 10, remaining: 6, status: "in_plan" });
+    expect(courseHoursThisWeek("c", plans, sessions, NOW)).toEqual({ logged: 0, planned: 4, remaining: 4, status: "in_plan" });
+  });
+
+  it("is done once the planned hours are logged, and stays done past them", () => {
+    const exact = [...sessions, named("A", at(2026, 10, 21), 360)];
+    expect(courseHoursThisWeek("A", plans, exact, NOW)).toEqual({ logged: 10, planned: 10, remaining: 0, status: "done" });
+    const over = [...exact, named("A", at(2026, 10, 22), 30)];
+    expect(courseHoursThisWeek("A", plans, over, NOW)).toEqual({ logged: 10.5, planned: 10, remaining: 0, status: "done" });
+  });
+
+  it("is done for a course with nothing planned", () => {
+    expect(courseHoursThisWeek("Quiet", plans, sessions, NOW)).toMatchObject({ planned: 0, remaining: 0, status: "done" });
+  });
+
+  it("is removed for a course taken out of the plan, keeping its logged hours", () => {
+    expect(courseHoursThisWeek("B", plans, sessions, NOW)).toEqual({ logged: 1, planned: null, remaining: null, status: "removed" });
+  });
+
+  it("is not_in_plan for a course the plan never had, or with no plan at all", () => {
+    expect(courseHoursThisWeek("Elective", plans, sessions, NOW)).toEqual({ logged: 0.5, planned: null, remaining: null, status: "not_in_plan" });
+    expect(courseHoursThisWeek("A", [], sessions, NOW)).toMatchObject({ planned: null, remaining: null, status: "not_in_plan" });
+  });
+
+  it("ignores last week's logs", () => {
+    expect(courseHoursThisWeek("A", plans, [named("A", at(2026, 10, 18, 12), 600)], NOW).logged).toBe(0);
+  });
+});
+
+describe("version-1 plans keep working", () => {
+  const legacy = [plan(1, "2026-10-19", at(2026, 10, 19, 8), [3.5, 2])]; // no version, no entered_on, no total_hours
+
+  it("treats allocated hours as planned and the sum as the total", () => {
+    expect(plannedHoursThisWeek(legacy, NOW)).toBe(5.5);
+    expect(courseHoursThisWeek("C1", legacy, [named("C1", at(2026, 10, 21), 30)], NOW)).toEqual({
+      logged: 0.5,
+      planned: 2,
+      remaining: 1.5,
+      status: "in_plan",
+    });
+  });
+
+  it("counts only the planned courses in the meter too", () => {
+    const logs = [named("C0", at(2026, 10, 20), 60), named("Other", at(2026, 10, 20, 15), 60)];
+    expect(loggedHoursThisWeek(logs, NOW, legacy)).toBe(1);
+  });
+});
+
+describe("days left in the week", () => {
+  // 19 Oct 2026 is a Monday.
+  const days: Array<[string, number, number, string]> = [
+    ["Monday", 19, 7, "Mon–Sun"],
+    ["Tuesday", 20, 6, "Tue–Sun"],
+    ["Wednesday", 21, 5, "Wed–Sun"],
+    ["Thursday", 22, 4, "Thu–Sun"],
+    ["Friday", 23, 3, "Fri–Sun"],
+    ["Saturday", 24, 2, "Sat–Sun"],
+    ["Sunday", 25, 1, "Sun"],
+  ];
+
+  it.each(days)("%s", (_name, day, count, label) => {
+    expect(daysLeft(at(2026, 10, day))).toEqual({ count, label });
+    expect(daysLeft(at(2026, 10, day, 0, 5))).toEqual({ count, label });
+    expect(daysLeft(at(2026, 10, day, 23, 59))).toEqual({ count, label });
   });
 });

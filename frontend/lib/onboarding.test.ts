@@ -33,6 +33,12 @@ describe("resolveStep", () => {
   it("opens at the first session when courses and this week's plan exist", () => {
     expect(resolveStep({ courseCount: 1, hasPlanThisWeek: true })).toBe(3);
   });
+
+  it("counts a plan made ahead for next week as having a plan", () => {
+    expect(resolveStep({ courseCount: 2, hasPlanThisWeek: false, hasPlanNextWeek: true })).toBe(3);
+    expect(resolveStep({ courseCount: 2, hasPlanThisWeek: false, hasPlanNextWeek: false })).toBe(2);
+    expect(resolveStep({ courseCount: 0, hasPlanThisWeek: false, hasPlanNextWeek: true })).toBe(1);
+  });
 });
 
 describe("the skipped or finished flag", () => {
