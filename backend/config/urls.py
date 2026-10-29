@@ -1,9 +1,11 @@
 from django.contrib import admin
 from django.urls import include, path
 
+from apps.common.views import health
 from apps.users.views import ThrottledTokenObtainPairView, ThrottledTokenRefreshView
 
 urlpatterns = [
+    path("api/health/", health, name="health"),
     path("admin/", admin.site.urls),
     path("api/auth/token/", ThrottledTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("api/auth/token/refresh/", ThrottledTokenRefreshView.as_view(), name="token_refresh"),
