@@ -138,7 +138,6 @@ const PLAN: CoursePlan = {
   intro: "This week, focus on retrieval.",
   items: [],
   throttled: false,
-  model: "claude-haiku-5-5",
 };
 
 function rulesPlan(throttled = false): CoursePlan {

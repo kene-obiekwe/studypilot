@@ -105,7 +105,7 @@ class ReadTests(SavedPlanTestCase):
         self.clock.advance(minutes=1)
         newer = GeneratedPlan.objects.create(
             user=self.user, course=self.course, week_start=old.week_start, input_hash="b" * 64,
-            content={"intro": "Newer.", "items": []}, model_id="claude-haiku-5-5",
+            content={"intro": "Newer.", "items": []}, model_id="test-model",
         )
         self.assertEqual(self.read()["saved"]["intro"], newer.content["intro"])
 
