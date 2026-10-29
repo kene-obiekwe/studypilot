@@ -22,7 +22,9 @@ Thumbs.db
 # Datasets and generated ML artifacts (not committed; regenerated from scripts)
 Dataset/
 backend/ml/data/
-backend/ml/models/
+backend/ml/models/*
+!backend/ml/models/oulad_adherence_forecast.joblib
+!backend/ml/models/oulad_adherence_forecast.meta.json
 backend/ml/reports/
 
 # Personal working notes not intended for public repo

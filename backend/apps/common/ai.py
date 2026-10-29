@@ -87,8 +87,8 @@ class AICallThrottle(UserRateThrottle):
     """Per-user daily budget of model calls, shared by plans and trait suggestions.
 
     Checked by hand right before a call would be made, so cache hits and rules-only responses
-    never count. Counts live in Django's cache, which is per-process until the shared cache
-    (deploy task 6.2).
+    never count. Counts live in Django's cache: shared (database-backed) in production,
+    per-process memory in development and tests.
     """
 
     scope = "ai_plan"

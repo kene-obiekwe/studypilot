@@ -37,6 +37,10 @@ if not SECRET_KEY:
     SECRET_KEY = "unsafe-dev-key-do-not-use-in-production"
 
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", ["127.0.0.1", "localhost"])
+# Render sets this to the service's onrender.com hostname, so the first deploy works before ALLOWED_HOSTS is set.
+RENDER_EXTERNAL_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
+if RENDER_EXTERNAL_HOSTNAME and RENDER_EXTERNAL_HOSTNAME not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
 
 DEV_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"] if DEBUG else []
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", DEV_ORIGINS)
@@ -97,7 +101,8 @@ if DATABASE_URL:
     DATABASES = {
         "default": dj_database_url.parse(
             DATABASE_URL,
-            conn_max_age=600,
+            # Modest, because Neon scales to zero and drops idle connections; health checks replace dead ones.
+            conn_max_age=60,
             conn_health_checks=True,
             # sslmode is a PostgreSQL option; SQLite rejects it.
             ssl_require=not DEBUG and not DATABASE_URL.startswith("sqlite"),
@@ -119,6 +124,20 @@ else:
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
+
+if DEBUG or "test" in sys.argv:
+    # Per-process memory cache: no table to create for development or the test runner.
+    CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+else:
+    # Shared across workers and restarts, so throttle counters and AI call budgets hold in production.
+    # Create the table once with `manage.py createcachetable`. Each throttled key is a row, hence the headroom.
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+            "LOCATION": "django_cache",
+            "OPTIONS": {"MAX_ENTRIES": 10000},
         }
     }
 
@@ -156,8 +175,8 @@ EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "").strip() or (
     if DEBUG
     else "django.core.mail.backends.smtp.EmailBackend"
 )
-EMAIL_HOST = os.getenv("EMAIL_HOST", "localhost").strip()
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_HOST = os.getenv("EMAIL_HOST", "").strip() or "localhost"
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "").strip() or 587)
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
@@ -190,6 +209,9 @@ SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=int(os.getenv("JWT_ACCESS_MINUTES", "30"))),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=int(os.getenv("JWT_REFRESH_DAYS", "1"))),
 }
+
+# The host's health check calls over plain HTTP and must not be redirected to HTTPS.
+SECURE_REDIRECT_EXEMPT = [r"^api/health/$"]
 
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

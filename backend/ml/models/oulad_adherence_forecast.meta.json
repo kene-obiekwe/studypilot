@@ -1,0 +1,80 @@
+{
+  "model_name": "oulad_adherence_forecast",
+  "created_at": "2026-10-22T17:17:13.987028+00:00",
+  "model_file": "oulad_adherence_forecast.joblib",
+  "file_size_mb": 1.04,
+  "feature_order": [
+    "adh_lag1",
+    "adh_lag2",
+    "adh_mean3",
+    "adh_trend",
+    "weeks_history"
+  ],
+  "target": "adherence",
+  "target_definition": {
+    "expected_clicks": "median total_clicks over all enrolled students per module/presentation/week, zeros included",
+    "adherence": "clip(total_clicks / expected_clicks, 0, 1); missing when expected_clicks == 0"
+  },
+  "feature_definitions": {
+    "adh_lag1": "adherence at t-1 (missing if expected_clicks was 0)",
+    "adh_lag2": "adherence at t-2",
+    "adh_mean3": "mean of available adherence at t-1..t-3",
+    "adh_trend": "adh_lag1 - adh_lag2",
+    "weeks_history": "number of enrolled weeks before t (= t)"
+  },
+  "min_weeks_history": 2,
+  "sklearn_version": "1.5.1",
+  "numpy_version": "1.26.4",
+  "joblib_version": "1.4.2",
+  "presentations": {
+    "fit": [
+      "2013B",
+      "2013J",
+      "2014B"
+    ],
+    "selection_train": [
+      "2013B",
+      "2013J"
+    ],
+    "selection_validation": [
+      "2014B"
+    ],
+    "test": [
+      "2014J"
+    ]
+  },
+  "params": {
+    "n_estimators": 100,
+    "max_depth": 8,
+    "min_samples_leaf": 100,
+    "random_state": 42
+  },
+  "pipeline": "SimpleImputer(median) -> RandomForestRegressor",
+  "training_rows": 420338,
+  "test_metrics": {
+    "model": {
+      "n": 239456,
+      "mae": 0.30714845617382397,
+      "rmse": 0.3800832191157665,
+      "r2": 0.3143614255447852
+    },
+    "mean": {
+      "n": 239456,
+      "mae": 0.44035510300846425,
+      "rmse": 0.4590377427411022,
+      "r2": -7.977060555175441e-05
+    },
+    "persistence": {
+      "n": 239456,
+      "mae": 0.27683025071760303,
+      "rmse": 0.4622572012509258,
+      "r2": -0.014157070811613659
+    },
+    "mean3": {
+      "n": 239456,
+      "mae": 0.2684243833960759,
+      "rmse": 0.4031246466617886,
+      "r2": 0.2287120354089538
+    }
+  }
+}
