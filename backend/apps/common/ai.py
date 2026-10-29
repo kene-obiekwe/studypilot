@@ -101,5 +101,14 @@ def allow_ai_call(request) -> bool:
     return AICallThrottle().allow_request(request, None)
 
 
-def log_fallback(purpose: str, error: AIError) -> None:
-    logger.warning("AI %s unavailable, serving the rules-based result (%s)", purpose, error.reason)
+def log_fallback(purpose: str, error: AIError, tokens: tuple[int, int] | None = None) -> None:
+    """`tokens` is (input, output) when a call succeeded but its answer was rejected, so logs show the cost."""
+    if tokens is None:
+        logger.warning("AI %s unavailable, serving the rules-based result (%s)", purpose, error.reason)
+    else:
+        logger.warning(
+            "AI %s unavailable, serving the rules-based result (%s; %d input, %d output tokens)",
+            purpose,
+            error.reason,
+            *tokens,
+        )

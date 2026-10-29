@@ -231,8 +231,20 @@ class FallbackTests(PlanTestCase):
             with self.subTest(label):
                 cache.clear()
                 self.fake_client(side_effect=error)
-                with self.assertLogs("apps.common.ai", "WARNING"):
+                with self.assertLogs("apps.common.ai", "WARNING") as logs:
                     self.assert_rules(self.get_plan())
+                self.assertNotIn("tokens", "\n".join(logs.output))
+
+    def test_rejected_answer_logs_reason_and_tokens_only(self):
+        broken = self.broken_plans(self.output())["added number"]
+        self.fake_client(message(broken))
+        with self.assertLogs("apps.common.ai", "WARNING") as logs:
+            self.assert_rules(self.get_plan())
+        line = "\n".join(logs.output)
+        self.assertIn("AI plan unavailable", line)
+        self.assertIn("(number_added; 1234 input, 456 output tokens)", line)
+        self.assertNotIn("Aim for", line)
+        self.assertNotIn("Calculus", line)
 
     def test_bad_responses_fall_back(self):
         good = faithful_plan(self.output())
@@ -295,7 +307,7 @@ class PrivacyTests(PlanTestCase):
         self.assertEqual(set(payload), {"course", "evidence", "strategies"})
         self.assertNotIn("id", payload["course"])
         for strategy in payload["strategies"]:
-            self.assertEqual(set(strategy), {"strategy_id", "title", "what", "how", "why", "facts"})
+            self.assertEqual(set(strategy), {"strategy_id", "title", "what", "how", "why", "facts", "required_numbers"})
         for private in ("planner_person", "private@example.com"):
             self.assertNotIn(private, content)
             self.assertNotIn(private, system)
@@ -348,3 +360,99 @@ class NumberCheckTests(SimpleTestCase):
     def test_number_tokens(self):
         self.assertEqual(plan.numbers_in("35% of 4 sessions, 2.50 h, 5–10 min, 90+"), {"35", "4", "2.5", "5", "10", "90"})
         self.assertEqual(plan.numbers_in("6.0 days"), {"6"})
+
+
+def engine_output(name, difficulty, recommendations, exam_in_days=None):
+    return {
+        "course": {
+            "name": name,
+            "difficulty": difficulty,
+            "learning_demands": ["problem_solving"],
+            "builds_on_earlier": False,
+            "assessment_format": "coursework",
+        },
+        "evidence": {"summary": "Based on your course settings", "basis": "settings", "sessions": 0, "weeks": 0, "exam_in_days": exam_in_days},
+        "recommendations": [
+            {"strategy_id": strategy_id, "title": "A title", "what": "What to do.", "how": ["Work in 30-minute blocks."], "why": why, "facts": {}}
+            for strategy_id, why in recommendations
+        ],
+    }
+
+
+def plan_with(*bodies):
+    return {"intro": "Your week.", "items": [{"strategy_id": sid, "title": "A title", "body": body} for sid, body in bodies]}
+
+
+class RequiredNumbersTests(SimpleTestCase):
+    def setUp(self):
+        self.output = engine_output(
+            "CSC 401 Algorithms",
+            4,
+            [
+                ("split_long_sessions", "Your 90+ minute sessions averaged 34% completion (3 sessions), against 68% for shorter ones (4)."),
+                ("self_explanation", "CSC 401 Algorithms is set as needing conceptual understanding."),
+            ],
+        )
+        self.split_body = "Your 90-minute sessions averaged 34% completion over 3 sessions, against 68% for the 4 shorter ones."
+
+    def test_payload_lists_the_why_numbers_without_the_course_code(self):
+        strategies = plan.plan_input(self.output)["strategies"]
+        self.assertEqual(strategies[0]["required_numbers"], ["3", "4", "34", "68", "90"])
+        self.assertEqual(strategies[1]["required_numbers"], [])
+
+    def test_plan_with_every_required_number_passes(self):
+        data = plan_with(("split_long_sessions", self.split_body), ("self_explanation", "Explain each idea in Algorithms."))
+        self.assertEqual(plan.validate_plan(data, self.output)["items"][0]["body"], self.split_body)
+
+    def test_dropping_a_required_number_fails(self):
+        dropped = self.split_body.replace(" over 3 sessions", "")
+        data = plan_with(("split_long_sessions", dropped), ("self_explanation", "Explain each idea."))
+        with self.assertRaisesMessage(ai.AIError, "number_missing"):
+            plan.validate_plan(data, self.output)
+
+    def test_course_code_stays_allowed_and_other_numbers_stay_forbidden(self):
+        allowed = plan_with(("split_long_sessions", self.split_body), ("self_explanation", "Explain each idea in CSC 401."))
+        plan.validate_plan(allowed, self.output)
+        added = plan_with(("split_long_sessions", self.split_body), ("self_explanation", "Explain 2 ideas, such as SN2."))
+        with self.assertRaisesMessage(ai.AIError, "number_added"):
+            plan.validate_plan(added, self.output)
+
+    def test_a_number_shared_by_the_name_and_the_why_is_still_required(self):
+        output = engine_output("Physics 4", 4, [("worked_examples", "Physics 4 is set as problem solving at difficulty 4.")])
+        self.assertEqual(plan.plan_input(output)["strategies"][0]["required_numbers"], ["4"])
+        with self.assertRaisesMessage(ai.AIError, "number_missing"):
+            plan.validate_plan(plan_with(("worked_examples", "Work through solved problems first.")), output)
+        plan.validate_plan(plan_with(("worked_examples", "At difficulty 4, work through solved problems first.")), output)
+
+    def course_level_output(self, exam_in_days):
+        return engine_output(
+            "CSC 401 Algorithms",
+            4,
+            [("self_explanation", "CSC 401 Algorithms is set as needing conceptual understanding.")],
+            exam_in_days=exam_in_days,
+        )
+
+    def test_exam_days_are_allowed_in_any_item(self):
+        data = plan_with(("self_explanation", "Your exam is in 18 days, so explain each idea as you go."))
+        plan.validate_plan(data, self.course_level_output(18))
+
+    def test_difficulty_is_allowed_in_any_item(self):
+        data = plan_with(("self_explanation", "At difficulty 4, explain each idea as you go."))
+        plan.validate_plan(data, self.course_level_output(None))
+
+    def test_invented_number_next_to_course_numbers_still_fails(self):
+        data = plan_with(("self_explanation", "Your exam is in 18 days at difficulty 4, so explain 7 ideas."))
+        with self.assertRaisesMessage(ai.AIError, "number_added"):
+            plan.validate_plan(data, self.course_level_output(18))
+
+    def test_stray_days_without_an_exam_date_fail(self):
+        data = plan_with(("self_explanation", "Your exam is in 18 days, so explain each idea as you go."))
+        with self.assertRaisesMessage(ai.AIError, "number_added"):
+            plan.validate_plan(data, self.course_level_output(None))
+
+    def test_prompt_version_is_part_of_the_cache_key(self):
+        payload = plan.plan_input(self.output)
+        self.assertEqual(plan.PROMPT_VERSION, "plan-v2")
+        with mock.patch.object(plan, "PROMPT_VERSION", "plan-v1"):
+            old = plan.input_hash(payload)
+        self.assertNotEqual(plan.input_hash(payload), old)
