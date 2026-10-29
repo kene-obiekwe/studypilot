@@ -12,11 +12,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import date
+from datetime import date, datetime
 
 from django.conf import settings
+from django.utils import timezone
 
 from apps.common.ai import AIError, ai_enabled, allow_ai_call, call_structured, log_fallback
+from apps.tracking.models import StudySessionLog
 
 from .models import GeneratedPlan
 
@@ -211,8 +213,67 @@ def _response(source: str, monday: date, content: dict, model: str | None = None
     return response
 
 
+# -- saved plans and what changed since --------------------------------------------------------
+
+
+def latest_plans(user, courses, monday: date) -> dict[int, GeneratedPlan]:
+    """The newest plan written this week for each course, whatever its input hash."""
+    latest: dict[int, GeneratedPlan] = {}
+    for row in GeneratedPlan.objects.filter(user=user, week_start=monday, course__in=courses).order_by("created_at", "id"):
+        latest[row.course_id] = row
+    return latest
+
+
+def saved_plan_statuses(user, courses, plans: dict[int, GeneratedPlan]) -> dict[int, dict | None]:
+    """Per course: when its saved plan was written and whether sessions or settings changed since.
+
+    A plan is outdated by study sessions logged for the course (matched by name, ignoring case, as
+    the engine does) or by editing the course, after the plan was written. The exam countdown and
+    pacing moving on with the calendar do not count. Two queries however many courses there are.
+    """
+    logged: dict[str, list[datetime]] = {}
+    if plans:
+        since = min(row.created_at for row in plans.values())
+        for name, created_at in StudySessionLog.objects.filter(user=user, created_at__gt=since).values_list(
+            "course_name", "created_at"
+        ):
+            logged.setdefault(name.casefold(), []).append(created_at)
+
+    statuses: dict[int, dict | None] = {}
+    for course in courses:
+        row = plans.get(course.id)
+        if row is None:
+            statuses[course.id] = None
+            continue
+        new_sessions = sum(1 for created_at in logged.get(course.name.casefold(), ()) if created_at > row.created_at)
+        course_changed = course.updated_at > row.created_at
+        statuses[course.id] = {
+            "written_at": row.created_at.isoformat(),
+            "outdated": new_sessions > 0 or course_changed,
+            "new_sessions": new_sessions,
+            "course_changed": course_changed,
+        }
+    return statuses
+
+
+NO_PLAN_STATUS = {"written_at": None, "outdated": False, "new_sessions": 0, "course_changed": False}
+
+
+def plan_envelope(saved: dict | None, status: dict | None, monday: date) -> dict:
+    """What the plan endpoints return: the plan to show, and the status of the plan that is saved."""
+    return {"saved": saved, **(status or NO_PLAN_STATUS), "week_start": monday.isoformat()}
+
+
+def saved_response(row: GeneratedPlan, monday: date) -> dict:
+    return _response(SOURCE_AI, monday, row.content, row.model_id)
+
+
 def build_plan(request, course, output: dict, monday: date) -> dict:
-    """Cache hit -> AI plan; AI off or over the daily limit -> rules; else call, validate, cache."""
+    """Cache hit -> AI plan; AI off or over the daily limit -> rules; else call, validate, cache.
+
+    Only called when the user asks to write or update the plan. A cache hit is stamped as written
+    now, so it becomes the newest plan and what happened since no longer counts against it.
+    """
     rules = rules_plan(output)
     if not ai_enabled():
         return _response(SOURCE_RULES, monday, rules)
@@ -221,6 +282,7 @@ def build_plan(request, course, output: dict, monday: date) -> dict:
     key = input_hash(payload)
     cached = GeneratedPlan.objects.filter(user=request.user, course=course, week_start=monday, input_hash=key).first()
     if cached is not None:
+        GeneratedPlan.objects.filter(pk=cached.pk).update(created_at=timezone.now())
         return _response(SOURCE_AI, monday, cached.content, cached.model_id)
 
     if not allow_ai_call(request):

@@ -584,6 +584,16 @@ export type CourseRecommendations = {
   };
   evidence: CourseEvidence;
   recommendations: CourseRecommendation[];
+  /** This week's written plan and what changed since; null when none was written this week. */
+  saved_plan: SavedPlanStatus | null;
+};
+
+/** Sessions logged for the course or edits to its settings after the plan was written make it outdated. */
+export type SavedPlanStatus = {
+  written_at: string;
+  outdated: boolean;
+  new_sessions: number;
+  course_changed: boolean;
 };
 
 export type CourseRecommendationsResponse = {
@@ -606,6 +616,20 @@ export type CoursePlan = {
   throttled: boolean;
   /** The model id, present only when source is "ai". */
   model?: string;
+};
+
+/**
+ * Reading or writing a course's plan. `saved` is the plan to show: the AI plan, or the rules-only
+ * plan when none could be written (then `saved.source` is "rules"), or null when nothing was
+ * written this week. The other fields describe the plan that is saved: all empty when none is.
+ */
+export type CoursePlanResponse = {
+  saved: CoursePlan | null;
+  written_at: string | null;
+  outdated: boolean;
+  new_sessions: number;
+  course_changed: boolean;
+  week_start: string;
 };
 
 /** Suggested traits for a course name, for the user to confirm. Nothing is saved. */
@@ -711,8 +735,14 @@ export function getCourseRecommendations(courseId?: number): Promise<CourseRecom
   return request<CourseRecommendationsResponse>(`/recommendations/courses/${query}`, "GET");
 }
 
-export function getCoursePlan(courseId: number): Promise<CoursePlan> {
-  return request<CoursePlan>(`/recommendations/courses/${encodeURIComponent(String(courseId))}/plan/`, "GET");
+/** This week's saved plan for a course. Read-only: never asks the model and never uses the daily budget. */
+export function getCoursePlan(courseId: number): Promise<CoursePlanResponse> {
+  return request<CoursePlanResponse>(`/recommendations/courses/${encodeURIComponent(String(courseId))}/plan/`, "GET");
+}
+
+/** Write (or, once something changed, update) the plan. Only this can ask the model, and it counts toward the daily budget. */
+export function writeCoursePlan(courseId: number): Promise<CoursePlanResponse> {
+  return request<CoursePlanResponse>(`/recommendations/courses/${encodeURIComponent(String(courseId))}/plan/`, "POST");
 }
 
 export function suggestCourseTraits(name: string): Promise<TraitSuggestion> {

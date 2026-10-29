@@ -88,7 +88,7 @@ class CourseRecommendationsApiTests(APITestCase):
         self.assertEqual([c["course"]["name"] for c in payload["courses"]], ["Calculus", "HIS 210"])
         self.assertEqual(payload["week_start"], week_start(local_today()).isoformat())
         for item in payload["courses"]:
-            self.assertEqual(set(item), {"course", "evidence", "recommendations"})
+            self.assertEqual(set(item), {"course", "evidence", "recommendations", "saved_plan"})
             self.assertLessEqual(len(item["recommendations"]), 4)
             for rec in item["recommendations"]:
                 self.assertIsInstance(rec["shown_id"], int)
