@@ -2,8 +2,9 @@
 
 The model only rewrites the engine's chosen strategies. Its answer is accepted only if it keeps
 the same strategies in the same order, keeps every number in each strategy's why (numbers that
-are only part of the course name aside), adds no other numbers and stays within length limits;
-anything else falls back to the rules-only plan.
+are only part of the course name aside), adds no numbers beyond the strategy's own and the
+course's name, difficulty and exam countdown, and stays within length limits; anything else
+falls back to the rules-only plan.
 """
 
 from __future__ import annotations
@@ -169,11 +170,11 @@ def validate_plan(data: dict, output: dict) -> dict:
     if [item.get("strategy_id") for item in items] != [rec["strategy_id"] for rec in recs]:
         raise AIError("strategy_mismatch")
 
-    course_numbers = numbers_in(output["course"]["name"])
-    every_allowed = set(course_numbers) | numbers_in(output["evidence"]["summary"])
-    every_allowed |= {str(output["course"]["difficulty"])}
+    # The course's name, difficulty and exam countdown may appear anywhere in the plan.
+    course_numbers = numbers_in(output["course"]["name"]) | {str(output["course"]["difficulty"])}
     if output["evidence"]["exam_in_days"] is not None:
-        every_allowed.add(str(output["evidence"]["exam_in_days"]))
+        course_numbers.add(str(output["evidence"]["exam_in_days"]))
+    every_allowed = course_numbers | numbers_in(output["evidence"]["summary"])
 
     cleaned = []
     for item, rec in zip(items, recs):

@@ -362,7 +362,7 @@ class NumberCheckTests(SimpleTestCase):
         self.assertEqual(plan.numbers_in("6.0 days"), {"6"})
 
 
-def engine_output(name, difficulty, recommendations):
+def engine_output(name, difficulty, recommendations, exam_in_days=None):
     return {
         "course": {
             "name": name,
@@ -371,7 +371,7 @@ def engine_output(name, difficulty, recommendations):
             "builds_on_earlier": False,
             "assessment_format": "coursework",
         },
-        "evidence": {"summary": "Based on your course settings", "basis": "settings", "sessions": 0, "weeks": 0, "exam_in_days": None},
+        "evidence": {"summary": "Based on your course settings", "basis": "settings", "sessions": 0, "weeks": 0, "exam_in_days": exam_in_days},
         "recommendations": [
             {"strategy_id": strategy_id, "title": "A title", "what": "What to do.", "how": ["Work in 30-minute blocks."], "why": why, "facts": {}}
             for strategy_id, why in recommendations
@@ -423,6 +423,32 @@ class RequiredNumbersTests(SimpleTestCase):
         with self.assertRaisesMessage(ai.AIError, "number_missing"):
             plan.validate_plan(plan_with(("worked_examples", "Work through solved problems first.")), output)
         plan.validate_plan(plan_with(("worked_examples", "At difficulty 4, work through solved problems first.")), output)
+
+    def course_level_output(self, exam_in_days):
+        return engine_output(
+            "CSC 401 Algorithms",
+            4,
+            [("self_explanation", "CSC 401 Algorithms is set as needing conceptual understanding.")],
+            exam_in_days=exam_in_days,
+        )
+
+    def test_exam_days_are_allowed_in_any_item(self):
+        data = plan_with(("self_explanation", "Your exam is in 18 days, so explain each idea as you go."))
+        plan.validate_plan(data, self.course_level_output(18))
+
+    def test_difficulty_is_allowed_in_any_item(self):
+        data = plan_with(("self_explanation", "At difficulty 4, explain each idea as you go."))
+        plan.validate_plan(data, self.course_level_output(None))
+
+    def test_invented_number_next_to_course_numbers_still_fails(self):
+        data = plan_with(("self_explanation", "Your exam is in 18 days at difficulty 4, so explain 7 ideas."))
+        with self.assertRaisesMessage(ai.AIError, "number_added"):
+            plan.validate_plan(data, self.course_level_output(18))
+
+    def test_stray_days_without_an_exam_date_fail(self):
+        data = plan_with(("self_explanation", "Your exam is in 18 days, so explain each idea as you go."))
+        with self.assertRaisesMessage(ai.AIError, "number_added"):
+            plan.validate_plan(data, self.course_level_output(None))
 
     def test_prompt_version_is_part_of_the_cache_key(self):
         payload = plan.plan_input(self.output)
