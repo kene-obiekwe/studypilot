@@ -8,6 +8,7 @@ from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
 
+from .legacy_data import allow_legacy_duplicates
 from .serializers import LOGIN_FAILED_MESSAGE
 from .test_email_verification import EMAIL, NEW_PASSWORD, PASSWORD, TOKEN, EmailFlowTestCase
 from .verification import mark_verified
@@ -83,6 +84,7 @@ class SignInCaseTests(EmailFlowTestCase):
         self.assertEqual(self.post(TOKEN, identifier="ada@home", password=PASSWORD).status_code, 200)
 
     def test_legacy_case_duplicates_each_sign_in_by_their_exact_name_only(self):
+        allow_legacy_duplicates()
         self.verified_user(username="Kene", email="upper@example.com", password=PASSWORD)
         self.verified_user(username="kene", email="lower@example.com", password=OTHER_PASSWORD)
         self.assertEqual(self.post(TOKEN, identifier="Kene", password=PASSWORD).status_code, 200)
@@ -92,6 +94,7 @@ class SignInCaseTests(EmailFlowTestCase):
         self.assertEqual(self.post(TOKEN, identifier="kene", password=PASSWORD).status_code, 401)
 
     def test_a_third_casing_of_legacy_duplicates_fails_generically_even_with_a_right_password(self):
+        allow_legacy_duplicates()
         self.verified_user(username="Kene", email="upper@example.com", password=PASSWORD)
         self.verified_user(username="kene", email="lower@example.com", password=OTHER_PASSWORD)
         for password in (PASSWORD, OTHER_PASSWORD, "wrong-wrong-1"):
@@ -100,12 +103,16 @@ class SignInCaseTests(EmailFlowTestCase):
             self.assertEqual(response.data, {"detail": LOGIN_FAILED_MESSAGE})
 
     def test_the_email_path_is_unchanged(self):
+        allow_legacy_duplicates()
         self.verified_user(username="Kene", email="kene@example.com")
         self.verified_user(username="kene", email="other@example.com", password=OTHER_PASSWORD)
         self.assertEqual(self.post(TOKEN, identifier="KENE@example.com", password=PASSWORD).status_code, 200)
 
 
 class ListCaseDuplicateUsernamesTests(TestCase):
+    def setUp(self):
+        allow_legacy_duplicates()
+
     def run_command(self):
         out = StringIO()
         call_command("list_case_duplicate_usernames", stdout=out)
@@ -114,7 +121,9 @@ class ListCaseDuplicateUsernamesTests(TestCase):
     def test_reports_when_there_are_none(self):
         User.objects.create_user(username="kene", email="kene@example.com", password=PASSWORD)
         User.objects.create_user(username="keneth", email="keneth@example.com", password=PASSWORD)
-        self.assertEqual(self.run_command().strip(), "No usernames differ only by case.")
+        self.assertEqual(
+            self.run_command().strip(), "No usernames differ only by case.\nNo emails differ only by case."
+        )
 
     def test_lists_each_group_with_the_account_details_and_changes_nothing(self):
         upper = User.objects.create_user(username="Kene", email="upper@example.com", password=PASSWORD)
@@ -123,11 +132,25 @@ class ListCaseDuplicateUsernamesTests(TestCase):
         mark_verified(lower)
         User.objects.filter(pk=lower.pk).update(last_login=timezone.now())
         output = self.run_command()
-        self.assertIn("kene: 2 accounts", output)
+        self.assertIn("username kene: 2 accounts", output)
         self.assertIn(f"id={upper.pk} username=Kene email=upper@example.com", output)
         self.assertIn(f"id={lower.pk} username=kene email=lower@example.com", output)
         self.assertIn("verified=no last_login=never", output)
         self.assertIn("verified=yes last_login=20", output)
         self.assertNotIn("solo", output)
+        self.assertIn("No emails differ only by case.", output)
         self.assertIn("1 group(s) found. Nothing was changed.", output)
         self.assertEqual(User.objects.count(), 3)
+
+    def test_lists_emails_that_differ_only_by_case(self):
+        first = User.objects.create_user(username="first", email="Shared@Example.com", password=PASSWORD)
+        second = User.objects.create_user(username="second", email="shared@example.com", password=PASSWORD)
+        User.objects.create_user(username="blank1", email="", password=PASSWORD)
+        User.objects.create_user(username="blank2", email="", password=PASSWORD)
+        output = self.run_command()
+        self.assertIn("No usernames differ only by case.", output)
+        self.assertIn("email shared@example.com: 2 accounts", output)
+        self.assertIn(f"id={first.pk} username=first email=Shared@example.com", output)
+        self.assertIn(f"id={second.pk} username=second email=shared@example.com", output)
+        self.assertNotIn("blank", output)
+        self.assertIn("1 group(s) found. Nothing was changed.", output)

@@ -60,7 +60,7 @@ a second or two. The backend discards dead connections itself, so nothing needs 
 
    `SECRET_KEY` is generated for you. `DEBUG` is already `False`.
 4. Click **Apply**. The first deploy installs the packages, collects static files, runs the
-   database migrations and creates the cache table, then starts the server. It takes several
+   database migrations and housekeeping, creates the cache table, then starts the server. It takes several
    minutes. If a migration fails, the build fails and nothing new goes live, so read the build log.
 5. When the dashboard shows **Live**, copy the service URL (for example
    `https://studypilot-api.onrender.com`) into your note.
@@ -146,6 +146,11 @@ another port. This setup uses Brevo's free plan over port 2525.
    seconds in `render.yaml`, so a mail server that does not answer cannot hold a request open for
    the full minute. Save and let Render redeploy.
 
+   Codes are sent from a background thread right after the request is answered, so a slow mail
+   server never delays a response and a known address answers as fast as an unknown one. The cost: if
+   the server restarts in the instant between the answer and the send, that email is lost and the
+   person asks for another code.
+
 What recipients see: Brevo rewrites the From address to one on its own sending domain
 (`brevosend.com`), because the free plan sends from a shared domain. Gmail delivers these to the
 inbox. Microsoft 365 and Outlook often file them under **Junk**, which is why the verification
@@ -189,3 +194,62 @@ threads. If the cold start becomes a problem, change the plan in `render.yaml` f
 **Rate limits and logs.** Sign-in is limited to 10 attempts a minute per client and email requests
 to 5 an hour (`AUTH_THROTTLE_RATE`, `EMAIL_THROTTLE_RATE`). Server logs are in the Render dashboard
 under *Logs*; `LOG_LEVEL` sets how much they say.
+
+**Sessions and signing out.** Sign out revokes the refresh token on the server, and so do a password
+change and a password reset (every refresh token the account has). Another device then fails its
+next refresh and is sent to the sign-in page. Two limits: access tokens are not checked against the
+revoked list, so a revoked device keeps working until its access token expires (30 minutes,
+`JWT_ACCESS_MINUTES`); and tokens issued before the revoked-token tables existed are not in them, so
+a password change does not reach those. They expire on their own within the refresh lifetime (1 day,
+`JWT_REFRESH_DAYS`). Changing the email does not sign other devices out, because it already needs the
+password. The build runs `flushexpiredtokens` to keep the table small.
+
+**Unverified accounts.** An account that never verified its email is deleted 7 days after it was
+created (`UNVERIFIED_ACCOUNT_TTL` in `apps/users/verification.py`). The build runs
+`python manage.py purge_unverified_accounts` on every deploy, and registering also removes an
+expired unverified account that holds the same username or email. Verified accounts, staff and
+superusers are never deleted. To see what would go, run it from `backend/` with `--dry-run`.
+
+**Duplicate usernames and emails.** The database refuses two accounts whose usernames, or emails,
+differ only by letter case. The migration that adds this fails the build if such a pair already
+exists, and the old version keeps serving. Before deploying it, from `backend/` with `DATABASE_URL`
+set to the Neon string (see **Demo account** above for how), run:
+
+```bash
+python manage.py list_case_duplicate_usernames
+```
+
+For each pair it lists, sign in as the account you don't want and delete it from the Account page
+(or rename it there), then deploy.
+
+## 6. Check the client address behind Render's proxy
+
+The sign-in and email limits count requests per client address. Behind Render's proxy the app only
+learns that address from the `X-Forwarded-For` header, so unless it is told how many proxies sit in
+front of it, a caller can send a made-up header and dodge the limits. `NUM_PROXIES` tells it. It is
+deliberately not set in `render.yaml`: too high a value lets the spoofing through, too low a value
+makes every user share the proxy's address and one bucket. Test before you keep it. Commands are for
+Git Bash.
+
+1. In Render, **Environment → Add variable**: `NUM_PROXIES` = `1`. Save and wait until the deploy is
+   **Live**.
+2. **(a) Spoofing no longer helps.** From your PC, send 11 wrong-password sign-ins within a minute,
+   each with a different made-up `X-Forwarded-For`. Use your own API address:
+
+   ```bash
+   API=https://studypilot-api.onrender.com
+   for i in $(seq 1 11); do
+     curl -s -o /dev/null -w "$i: %{http_code}\n" -X POST "$API/api/auth/token/" \
+       -H "Content-Type: application/json" -H "X-Forwarded-For: 203.0.113.$i" \
+       -d '{"identifier":"nobody","password":"wrong-password-1"}'
+   done
+   ```
+
+   The first ten print `401` and the 11th must print `429`. If you got `401` all eleven times, wait
+   a minute before repeating anything.
+3. **(b) Other people are not blocked.** Straight after, open the live site on a phone using mobile
+   data (not your Wi-Fi) and sign in with a real account. It must work. This shows the limit is
+   keyed on each caller and not on a shared proxy address.
+4. If (a) fails, the value is too high: set `NUM_PROXIES` back to blank or remove it. If (b) fails,
+   set it to `2`, wait for the deploy, and repeat (a) and (b). If neither value passes both,
+   remove the variable and tell the Overseer.

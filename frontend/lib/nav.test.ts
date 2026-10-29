@@ -32,6 +32,8 @@ describe("navigation", () => {
     expect(pageTitle("/progress")).toBe("Progress");
     expect(pageTitle("/progress/log")).toBe("Log a session");
     expect(pageTitle("/progress/history/")).toBe("History");
+    expect(pageTitle("/account")).toBe("Account");
+    expect(pageTitle("/account/")).toBe("Account");
     expect(pageTitle("/unknown")).toBe("StudyPilot");
   });
 });

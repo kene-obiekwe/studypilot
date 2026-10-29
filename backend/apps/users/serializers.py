@@ -2,12 +2,20 @@ from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.validators import UnicodeUsernameValidator
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import IntegrityError, transaction
 from rest_framework import serializers
 from rest_framework.exceptions import APIException, AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from .models import EmailVerification
-from .verification import CODE_LENGTH, email_in_use, find_user_by_email, is_verified, users_with_email
+from .verification import (
+    CODE_LENGTH,
+    email_in_use,
+    find_user_by_email,
+    is_verified,
+    purge_expired_conflicts,
+    users_with_email,
+)
 
 EMAIL_NOT_VERIFIED_CODE = "email_not_verified"
 EMAIL_NOT_VERIFIED_MESSAGE = "Verify your email first."
@@ -16,8 +24,14 @@ USERNAME_TAKEN_MESSAGE = "A user with that username already exists."
 WRONG_PASSWORD_MESSAGE = "That password is incorrect."
 SAME_EMAIL_MESSAGE = "That is already your email address."
 EMAIL_IN_USE_MESSAGE = "That email is already in use."
+EMAIL_REGISTERED_MESSAGE = "Email is already registered."
 DELETE_CONFIRM_WORD = "DELETE"
 DELETE_CONFIRM_MESSAGE = "Type DELETE to confirm."
+
+
+def taken_field(exc: IntegrityError) -> str:
+    """Which unique index an IntegrityError from saving a user broke: "email", else "username"."""
+    return "email" if "email_lower" in str(exc) else "username"
 
 
 def password_errors(password: str, user: User) -> list[str]:
@@ -39,11 +53,13 @@ class RegisterSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         username, email, password = attrs["username"], attrs["email"], attrs["password"]
+        # An abandoned sign-up older than the unverified-account limit must not block a real one.
+        purge_expired_conflicts(username, email)
         by_email = find_user_by_email(email)
         if by_email is not None:
             # An unverified account may re-register with the same username (ignoring case) to get a new code.
             if is_verified(by_email) or by_email.username.casefold() != username.casefold():
-                raise serializers.ValidationError({"email": ["Email is already registered."]})
+                raise serializers.ValidationError({"email": [EMAIL_REGISTERED_MESSAGE]})
             self.resend_user = by_email
             candidate = by_email
         else:
@@ -56,8 +72,9 @@ class RegisterSerializer(serializers.Serializer):
         return attrs
 
     def create(self, validated_data):
-        user = User.objects.create_user(**validated_data)
-        EmailVerification.objects.create(user=user)
+        with transaction.atomic():
+            user = User.objects.create_user(**validated_data)
+            EmailVerification.objects.create(user=user)
         return user
 
 

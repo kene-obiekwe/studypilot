@@ -6,8 +6,10 @@ import {
   confirmEmailChange,
   deleteAccount,
   requestEmailChange,
+  signOut,
   updateUsername,
 } from "./api";
+import { getAccessToken, getRefreshToken, setSession } from "./session";
 
 class MemoryStorage {
   private items = new Map<string, string>();
@@ -67,6 +69,24 @@ describe("account API", () => {
     expect(sent[0]).toMatchObject({ path: "/users/me/password/", method: "POST", body: { current_password: "x", new_password: "y" } });
   });
 
+  it("stores the fresh pair a password change returns, so this tab stays signed in", async () => {
+    setSession({ access: "access-1", refresh: "refresh-1" });
+    serve(200, { detail: "Your password has been changed.", access: "access-2", refresh: "refresh-2" });
+    await expect(changePassword({ current_password: "x", new_password: "y" })).resolves.toEqual({
+      detail: "Your password has been changed.",
+    });
+    expect(getAccessToken()).toBe("access-2");
+    expect(getRefreshToken()).toBe("refresh-2");
+  });
+
+  it("keeps the session as it was when a password change returns no pair", async () => {
+    setSession({ access: "access-1", refresh: "refresh-1" });
+    serve(200, { detail: "Your password has been changed." });
+    await changePassword({ current_password: "x", new_password: "y" });
+    expect(getAccessToken()).toBe("access-1");
+    expect(getRefreshToken()).toBe("refresh-1");
+  });
+
   it("requests and confirms an email change", async () => {
     serve(200, { detail: "We sent a code to n@example.com.", email: "n@example.com" });
     await expect(requestEmailChange({ password: "p", new_email: "n@example.com" })).resolves.toMatchObject({ email: "n@example.com" });
@@ -82,5 +102,33 @@ describe("account API", () => {
     serve(204);
     await expect(deleteAccount({ password: "p", confirm: "DELETE" })).resolves.toBeUndefined();
     expect(sent[0]).toMatchObject({ path: "/users/me/delete/", method: "POST", body: { password: "p", confirm: "DELETE" } });
+  });
+
+  it("signs out by clearing the session and revoking the refresh token", async () => {
+    setSession({ access: "access-1", refresh: "refresh-1" });
+    serve(200, {});
+    await signOut();
+    expect(getAccessToken()).toBe("");
+    expect(getRefreshToken()).toBe("");
+    expect(sent).toEqual([{ path: "/auth/token/blacklist/", method: "POST", body: { refresh: "refresh-1" }, auth: undefined }]);
+  });
+
+  it("signs out even when the revoke fails", async () => {
+    setSession({ access: "access-1", refresh: "refresh-1" });
+    vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new TypeError("offline"))));
+    await expect(signOut()).resolves.toBeUndefined();
+    expect(getAccessToken()).toBe("");
+    expect(getRefreshToken()).toBe("");
+    serve(500, {});
+    setSession({ access: "access-1", refresh: "refresh-1" });
+    await expect(signOut()).resolves.toBeUndefined();
+    expect(getRefreshToken()).toBe("");
+  });
+
+  it("does not call the server when there is no refresh token", async () => {
+    serve(200, {});
+    await signOut();
+    expect(sent).toEqual([]);
+    expect(getAccessToken()).toBe("");
   });
 });

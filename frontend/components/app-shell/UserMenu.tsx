@@ -8,7 +8,7 @@ import { LogOut, Monitor, Moon, Sun, UserRound } from "lucide-react";
 import { Button, SegmentedControl } from "@/components/ui";
 import { cx } from "@/components/ui/cx";
 import uiStyles from "@/components/ui/ui.module.css";
-import { clearSession } from "@/lib/session";
+import { signOut } from "@/lib/api";
 import { getServerPreference, readPreference, setPreference, subscribe, type ThemePreference } from "@/lib/theme";
 
 import { useShellData } from "./ShellData";
@@ -114,7 +114,8 @@ function AccountLink({ menuId }: { menuId: string }) {
 function SignOutButton() {
   const router = useRouter();
   const onSignOut = () => {
-    clearSession();
+    // Clears the session at once; the server-side revoke finishes in the background.
+    void signOut();
     router.replace("/");
   };
   return (

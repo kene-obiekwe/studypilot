@@ -1,14 +1,15 @@
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
-from rest_framework import permissions, status
+from rest_framework import permissions, serializers, status
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
-from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import TokenBlacklistView, TokenObtainPairView, TokenRefreshView
 
 from .models import OneTimeCode
 from .serializers import (
+    EMAIL_REGISTERED_MESSAGE,
+    USERNAME_TAKEN_MESSAGE,
     AccountDeleteSerializer,
     EmailChangeConfirmSerializer,
     EmailChangeRequestSerializer,
@@ -21,11 +22,14 @@ from .serializers import (
     VerifiedTokenObtainPairSerializer,
     VerifyEmailSerializer,
     password_errors,
+    taken_field,
 )
+from .tokens import blacklist_user_tokens, issue_pair
 from .verification import (
     check_code,
     consume,
     cooldown_seconds_left,
+    decoy_work,
     deliver_code,
     email_in_use,
     find_user_by_email,
@@ -72,7 +76,13 @@ class RegisterView(EmailThrottledView):
             user.set_password(serializer.validated_data["password"])
             user.save(update_fields=["password"])
         else:
-            user = serializer.save()
+            try:
+                user = serializer.save()
+            except IntegrityError as exc:
+                # Someone registered the same name or address between the checks and the insert.
+                field = taken_field(exc)
+                message = EMAIL_REGISTERED_MESSAGE if field == "email" else USERNAME_TAKEN_MESSAGE
+                raise serializers.ValidationError({field: [message]}) from exc
         send_code(user, OneTimeCode.Purpose.VERIFY)
         return Response({"status": "verification_required", "email": user.email}, status=status.HTTP_201_CREATED)
 
@@ -90,8 +100,7 @@ class VerifyEmailView(EmailThrottledView):
         with transaction.atomic():
             consume(record)
             mark_verified(user)
-        refresh = RefreshToken.for_user(user)
-        return Response({"access": str(refresh.access_token), "refresh": str(refresh)})
+        return Response(issue_pair(user))
 
 
 class ResendCodeView(EmailThrottledView):
@@ -99,8 +108,9 @@ class ResendCodeView(EmailThrottledView):
         serializer = ResendCodeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = find_user_by_email(serializer.validated_data["email"])
-        if user is not None and not is_verified(user):
-            send_code(user, OneTimeCode.Purpose.VERIFY)
+        # Every branch does the same hashing, so the answer's timing doesn't say whether the address has an account.
+        if user is None or is_verified(user) or not send_code(user, OneTimeCode.Purpose.VERIFY):
+            decoy_work()
         return Response({"detail": RESEND_MESSAGE})
 
 
@@ -109,8 +119,8 @@ class PasswordResetRequestView(EmailThrottledView):
         serializer = PasswordResetRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = find_user_by_email(serializer.validated_data["email"])
-        if user is not None and user.is_active and is_verified(user):
-            send_code(user, OneTimeCode.Purpose.RESET)
+        if user is None or not user.is_active or not is_verified(user) or not send_code(user, OneTimeCode.Purpose.RESET):
+            decoy_work()
         return Response({"detail": RESET_REQUEST_MESSAGE})
 
 
@@ -118,8 +128,8 @@ class PasswordResetConfirmView(EmailThrottledView):
     """Sets a new password when the emailed code is right.
 
     The code is checked first, so a wrong email or code gives the same answer whether or not the
-    account exists. A weak password leaves the code usable. Existing refresh tokens stay valid until
-    they expire: the project has no token blacklist.
+    account exists. A weak password leaves the code usable. Every refresh token of the account is
+    revoked (see tokens.py for what that misses).
     """
 
     def post(self, request):
@@ -140,6 +150,7 @@ class PasswordResetConfirmView(EmailThrottledView):
             user.save(update_fields=["password"])
             consume(record)
             invalidate_all_codes(user)
+            blacklist_user_tokens(user)
         return Response({"detail": RESET_DONE_MESSAGE})
 
 
@@ -150,6 +161,13 @@ class ThrottledTokenObtainPairView(TokenObtainPairView):
 
 
 class ThrottledTokenRefreshView(TokenRefreshView):
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth"
+
+
+class ThrottledTokenBlacklistView(TokenBlacklistView):
+    """Sign out: revokes the refresh token in the body."""
+
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "auth"
 
@@ -172,7 +190,11 @@ class MeView(APIView):
         serializer.is_valid(raise_exception=True)
         user = request.user
         user.username = serializer.validated_data["username"]
-        user.save(update_fields=["username"])
+        try:
+            with transaction.atomic():
+                user.save(update_fields=["username"])
+        except IntegrityError as exc:
+            raise serializers.ValidationError({"username": [USERNAME_TAKEN_MESSAGE]}) from exc
         return Response(me_payload(user))
 
 
@@ -185,7 +207,8 @@ class AccountView(APIView):
 
 class PasswordChangeView(AccountView):
     """Sets a new password after checking the current one. Outstanding reset codes die with the old
-    password. Existing tokens stay valid until they expire: the project has no token blacklist."""
+    password, and so does every refresh token, so other devices are signed out on their next refresh.
+    Access tokens stay valid until they expire. The reply carries a fresh pair for this session."""
 
     def post(self, request):
         serializer = PasswordChangeSerializer(data=request.data, context={"user": request.user})
@@ -195,7 +218,9 @@ class PasswordChangeView(AccountView):
             user.set_password(serializer.validated_data["new_password"])
             user.save(update_fields=["password"])
             OneTimeCode.objects.filter(user=user, purpose=OneTimeCode.Purpose.RESET).delete()
-        return Response({"detail": PASSWORD_CHANGED_MESSAGE})
+            blacklist_user_tokens(user)
+            tokens = issue_pair(user)
+        return Response({"detail": PASSWORD_CHANGED_MESSAGE, **tokens})
 
 
 class EmailChangeRequestView(AccountView):
@@ -238,13 +263,19 @@ class EmailChangeConfirmView(AccountView):
             OneTimeCode.objects.filter(user=user, purpose=OneTimeCode.Purpose.EMAIL_CHANGE).delete()
             return Response({"detail": EMAIL_TAKEN_SINCE_MESSAGE}, status=status.HTTP_400_BAD_REQUEST)
         old_email = user.email
-        with transaction.atomic():
-            consume(record)
-            user.email = new_email
-            user.save(update_fields=["email"])
-            mark_verified(user)
-            # Codes sent to the old address (a password reset) must not outlive it.
-            invalidate_all_codes(user)
+        try:
+            with transaction.atomic():
+                consume(record)
+                user.email = new_email
+                user.save(update_fields=["email"])
+                mark_verified(user)
+                # Codes sent to the old address (a password reset) must not outlive it.
+                invalidate_all_codes(user)
+        except IntegrityError:
+            # Taken between the check above and the save.
+            user.email = old_email
+            OneTimeCode.objects.filter(user=user, purpose=OneTimeCode.Purpose.EMAIL_CHANGE).delete()
+            return Response({"detail": EMAIL_TAKEN_SINCE_MESSAGE}, status=status.HTTP_400_BAD_REQUEST)
         notify_email_changed(user, old_email)
         return Response(me_payload(user))
 
