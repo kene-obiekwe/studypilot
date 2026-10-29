@@ -69,6 +69,7 @@ const RESPONSE: CourseRecommendationsResponse = {
           feedback: { rating: null, tried: false },
         },
       ],
+      saved_plan: { written_at: "2026-10-22T09:30:00+00:00", outdated: true, new_sessions: 2, course_changed: false },
     },
   ],
 };

@@ -12,7 +12,7 @@ import { useCourseColors } from "@/lib/use-course-colors";
 
 import { setCourseCollapsed, useCollapsedCourses } from "./collapsed-courses";
 import { StrategyItem } from "./StrategyItem";
-import { WeeklyPlanButton, WeeklyPlanPanel, useWeeklyPlan } from "./WeeklyPlan";
+import { WeeklyPlanButton, WeeklyPlanPanel, outdatedNote, useWeeklyPlan } from "./WeeklyPlan";
 import styles from "./strategies.module.css";
 
 const NO_COURSES: CourseRecommendations[] = [];
@@ -136,11 +136,12 @@ function CourseSection({
   aiPlanAvailable: boolean;
 }) {
   const { course, evidence, recommendations } = entry;
-  const plan = useWeeklyPlan(course.id);
+  const plan = useWeeklyPlan(course.id, entry.saved_plan ?? null);
   const collapsed = useCollapsedCourses().has(course.id);
   const headingId = `course-${course.id}-heading`;
   const panelId = `course-${course.id}-strategies`;
   const count = `${recommendations.length} ${recommendations.length === 1 ? "strategy" : "strategies"}`;
+  const outdated = aiPlanAvailable ? outdatedNote(plan.saved) : "";
 
   // Asking for the weekly plan opens a collapsed course, so the plan appears where it's expected.
   const expand = () => setCourseCollapsed(course.id, false);
@@ -165,13 +166,20 @@ function CourseSection({
           <p className={styles.evidence}>
             {count} · {evidence.summary}
           </p>
+          {outdated && <p className={styles.outdatedNote}>{outdated}</p>}
         </div>
         {aiPlanAvailable && (
           <WeeklyPlanButton
             state={plan.state}
+            saved={plan.saved}
+            courseName={course.name}
             onWrite={() => {
               expand();
               void plan.write();
+            }}
+            onShow={() => {
+              expand();
+              void plan.show();
             }}
             onToggle={() => {
               if (!collapsed) {
@@ -186,7 +194,7 @@ function CourseSection({
         )}
       </div>
       <div id={panelId} className={styles.coursePanel} hidden={collapsed}>
-        <WeeklyPlanPanel state={plan.state} courseName={course.name} />
+        <WeeklyPlanPanel state={plan.state} saved={plan.saved} courseName={course.name} />
         <ul className={styles.list} aria-label={`Strategies for ${course.name}`}>
           {recommendations.map((rec) => (
             <StrategyItem key={rec.shown_id} rec={rec} />

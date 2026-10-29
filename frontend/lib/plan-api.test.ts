@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, getCoursePlan, suggestCourseTraits, type CoursePlan, type TraitSuggestion } from "./api";
+import {
+  ApiError,
+  getCoursePlan,
+  suggestCourseTraits,
+  writeCoursePlan,
+  type CoursePlan,
+  type CoursePlanResponse,
+  type TraitSuggestion,
+} from "./api";
 import { setSession } from "./session";
 
 class MemoryStorage {
@@ -60,12 +68,38 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+const STATUS = { written_at: "2026-10-20T09:30:00+00:00", outdated: false, new_sessions: 0, course_changed: false };
+const SAVED: CoursePlanResponse = { saved: AI_PLAN, ...STATUS, week_start: AI_PLAN.week_start };
+const NOTHING: CoursePlanResponse = {
+  saved: null,
+  written_at: null,
+  outdated: false,
+  new_sessions: 0,
+  course_changed: false,
+  week_start: AI_PLAN.week_start,
+};
+
 describe("course plan client", () => {
-  it("gets the plan for one course", async () => {
-    serve(() => ok(AI_PLAN));
-    await expect(getCoursePlan(7)).resolves.toEqual(AI_PLAN);
+  it("reads the saved plan with a GET", async () => {
+    serve(() => ok(SAVED));
+    await expect(getCoursePlan(7)).resolves.toEqual(SAVED);
     expect(sent).toEqual([
       { path: "/recommendations/courses/7/plan/", method: "GET", body: undefined, auth: "Bearer access-token" },
+    ]);
+  });
+
+  it("passes a missing plan through as null", async () => {
+    serve(() => ok(NOTHING));
+    const response = await getCoursePlan(7);
+    expect(response.saved).toBeNull();
+    expect(response.written_at).toBeNull();
+  });
+
+  it("writes the plan with a POST and no body", async () => {
+    serve(() => ok(SAVED));
+    await expect(writeCoursePlan(7)).resolves.toEqual(SAVED);
+    expect(sent).toEqual([
+      { path: "/recommendations/courses/7/plan/", method: "POST", body: undefined, auth: "Bearer access-token" },
     ]);
   });
 
@@ -77,18 +111,20 @@ describe("course plan client", () => {
       items: AI_PLAN.items,
       throttled: true,
     };
-    serve(() => ok(rules));
-    const plan = await getCoursePlan(7);
-    expect(plan.source).toBe("rules");
-    expect(plan.throttled).toBe(true);
-    expect(plan.model).toBeUndefined();
+    serve(() => ok({ ...NOTHING, saved: rules }));
+    const { saved } = await writeCoursePlan(7);
+    expect(saved?.source).toBe("rules");
+    expect(saved?.throttled).toBe(true);
+    expect(saved?.model).toBeUndefined();
   });
 
   it("surfaces another user's course as a 404", async () => {
     serve(() => ok({ detail: "Course not found." }, 404));
-    const error = await getCoursePlan(99).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(ApiError);
-    expect((error as ApiError).status).toBe(404);
+    for (const call of [getCoursePlan, writeCoursePlan]) {
+      const error = await call(99).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).status).toBe(404);
+    }
   });
 });
 

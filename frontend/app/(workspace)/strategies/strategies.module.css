@@ -126,6 +126,19 @@
   font-size: var(--sp-text-sm);
 }
 
+.outdatedNote {
+  margin: 2px 0 0;
+  padding-left: calc(18px + var(--sp-space-2));
+  color: var(--sp-muted);
+  font-size: var(--sp-text-sm);
+}
+
+.planActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-space-2);
+}
+
 /* -- Checklist ------------------------------------------------------------------------- */
 
 .list {

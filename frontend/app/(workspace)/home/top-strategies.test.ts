@@ -29,6 +29,7 @@ function course(id: number, examDate: string | null, recs: CourseRecommendation[
     course: { id, name: `C${id}`, difficulty: 3, learning_demands: [], builds_on_earlier: null, assessment_format: null, exam_date: examDate },
     evidence: {} as CourseRecommendations["evidence"],
     recommendations: recs,
+    saved_plan: null,
   };
 }
 
