@@ -33,6 +33,7 @@ const SUB_ROUTE_TITLES: Record<string, string> = {
   "/progress/log": "Log a session",
   "/progress/history": "History",
   "/progress/predict": "Forecast",
+  "/account": "Account",
 };
 
 /** The h1 for the top bar. */

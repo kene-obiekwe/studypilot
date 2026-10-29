@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getMe, getSessionHistory, listPlans } from "@/lib/api";
+import { getMe, getSessionHistory, listPlans, signOut } from "@/lib/api";
 import { cleanup, click, render } from "@/test/dom";
 
 import { ShellDataProvider } from "./ShellData";
@@ -22,6 +22,7 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   getMe: vi.fn(),
   listPlans: vi.fn(),
   getSessionHistory: vi.fn(),
+  signOut: vi.fn(),
 }));
 
 afterEach(() => {
@@ -52,5 +53,21 @@ describe("UserMenu", () => {
     link.addEventListener("click", (event) => event.preventDefault()); // jsdom can't navigate
     await click(link);
     expect(hidePopover).toHaveBeenCalled();
+  });
+
+  it("signs out through the API and goes home without waiting for the server", async () => {
+    vi.mocked(getMe).mockResolvedValue({ id: 1, username: "kene", email: "kene@example.com" });
+    vi.mocked(listPlans).mockResolvedValue([]);
+    vi.mocked(getSessionHistory).mockResolvedValue({ items: [] });
+    vi.mocked(signOut).mockReturnValue(new Promise(() => {})); // never settles
+    const { container } = await render(
+      <ShellDataProvider>
+        <UserMenu placement="sidebar" />
+      </ShellDataProvider>,
+    );
+    const button = [...container.querySelectorAll("button")].find((item) => item.textContent?.trim() === "Sign out")!;
+    await click(button);
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(router.replace).toHaveBeenCalledWith("/");
   });
 });

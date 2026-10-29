@@ -1,4 +1,4 @@
-import { clearSession, getAccessToken, getRefreshToken, hasSession, setAccessToken } from "./session";
+import { clearSession, getAccessToken, getRefreshToken, hasSession, setAccessToken, setSession } from "./session";
 
 // next.config.js refuses a production build without NEXT_PUBLIC_API_BASE_URL, so this
 // fallback only ever applies to `next dev`.
@@ -767,10 +767,36 @@ export type PasswordChangePayload = { current_password: string; new_password: st
 
 /**
  * Set a new password. A wrong current password is a 400 with `fieldErrors.current_password`, a weak
- * new one with `fieldErrors.new_password`. The session stays signed in.
+ * new one with `fieldErrors.new_password`. The server revokes every refresh token, so other devices are
+ * signed out on their next refresh; the pair it returns replaces this tab's, which stays signed in.
  */
-export function changePassword(payload: PasswordChangePayload): Promise<MessageResponse> {
-  return request<MessageResponse>("/users/me/password/", "POST", payload);
+export async function changePassword(payload: PasswordChangePayload): Promise<MessageResponse> {
+  const { detail, access, refresh } = await request<MessageResponse & Partial<LoginResponse>>(
+    "/users/me/password/",
+    "POST",
+    payload,
+  );
+  if (access && refresh) {
+    setSession({ access, refresh });
+  }
+  return { detail };
+}
+
+/**
+ * Sign out: forget the session here, and ask the server to revoke the refresh token. The request is
+ * best-effort. Nothing waits on it and no failure reaches the caller, so signing out never fails.
+ */
+export async function signOut(): Promise<void> {
+  const refresh = getRefreshToken();
+  clearSession();
+  if (!refresh) {
+    return;
+  }
+  try {
+    await send("/auth/token/blacklist/", "POST", { refresh }, "");
+  } catch {
+    // The token expires on its own within the refresh lifetime.
+  }
 }
 
 export type EmailChangePayload = { password: string; new_email: string };

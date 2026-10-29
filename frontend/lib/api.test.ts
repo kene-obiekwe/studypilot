@@ -183,6 +183,21 @@ describe("session refresh", () => {
     expect(redirect).toHaveBeenCalledTimes(1);
   });
 
+  it("sends a device whose refresh token was revoked back to sign-in", async () => {
+    setSession({ access: "old", refresh: "revoked" });
+    serve(({ path }) =>
+      path === "/auth/token/refresh/"
+        ? json(401, { detail: "Token is blacklisted", code: "token_not_valid" })
+        : json(401, TOKEN_INVALID),
+    );
+
+    await expect(listPlans()).rejects.toMatchObject({ status: 401, message: SESSION_EXPIRED_MESSAGE });
+
+    expect(getAccessToken()).toBe("");
+    expect(getRefreshToken()).toBe("");
+    expect(redirect).toHaveBeenCalledTimes(1);
+  });
+
   it("expires an access-only session without trying to refresh", async () => {
     window.localStorage.setItem("fyp_access_token", "legacy");
     serve(() => json(401, TOKEN_INVALID));
