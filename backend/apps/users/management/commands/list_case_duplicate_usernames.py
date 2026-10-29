@@ -1,8 +1,9 @@
-"""List accounts whose usernames differ only by letter case. Read-only: nothing is changed or deleted.
+"""List accounts whose usernames, or emails, differ only by letter case. Read-only: nothing is changed or deleted.
 
-Usernames were case-sensitive before registration started rejecting case-only duplicates, so older
-databases can hold pairs such as "kene" and "Kene". Signing in as either still works by its exact
-name; any other casing is refused until one of the accounts is renamed or removed by hand.
+Usernames were case-sensitive before registration started rejecting case-only duplicates, and emails were never
+unique in the database, so older databases can hold pairs such as "kene" and "Kene". Signing in as either still
+works by its exact name; any other casing is refused until one of the accounts is renamed or removed by hand.
+The migration that adds the unique indexes fails until every pair listed here is gone.
 
 Usage (from backend/):
 
@@ -18,19 +19,25 @@ from apps.users.verification import is_verified
 
 
 class Command(BaseCommand):
-    help = "List groups of usernames that differ only by letter case (read-only)."
+    help = "List groups of usernames, and of emails, that differ only by letter case (read-only)."
 
     def handle(self, *args, **options):
+        users = list(User.objects.select_related("email_verification").order_by("date_joined", "id"))
+        found = self.report("usernames", users, lambda user: user.username.casefold())
+        found += self.report("emails", [user for user in users if user.email], lambda user: user.email.lower())
+        if found:
+            self.stdout.write(f"{found} group(s) found. Nothing was changed.")
+
+    def report(self, label: str, users: list[User], key) -> int:
         groups: dict[str, list[User]] = defaultdict(list)
-        users = User.objects.select_related("email_verification").order_by("date_joined", "id")
         for user in users:
-            groups[user.username.casefold()].append(user)
+            groups[key(user)].append(user)
         duplicates = [members for members in groups.values() if len(members) > 1]
         if not duplicates:
-            self.stdout.write("No usernames differ only by case.")
-            return
-        for members in sorted(duplicates, key=lambda group: group[0].username.casefold()):
-            self.stdout.write(f"{members[0].username.casefold()}: {len(members)} accounts")
+            self.stdout.write(f"No {label} differ only by case.")
+            return 0
+        for members in sorted(duplicates, key=lambda group: key(group[0])):
+            self.stdout.write(f"{label[:-1]} {key(members[0])}: {len(members)} accounts")
             for user in members:
                 last_login = user.last_login.isoformat(timespec="seconds") if user.last_login else "never"
                 self.stdout.write(
@@ -38,4 +45,4 @@ class Command(BaseCommand):
                     f"joined={user.date_joined.isoformat(timespec='seconds')} "
                     f"verified={'yes' if is_verified(user) else 'no'} last_login={last_login}"
                 )
-        self.stdout.write(f"{len(duplicates)} group(s) found. Nothing was changed.")
+        return len(duplicates)

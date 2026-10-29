@@ -7,6 +7,7 @@ from django.core import mail
 from django.core.cache import cache
 from rest_framework.throttling import ScopedRateThrottle
 
+from .legacy_data import allow_legacy_duplicates
 from .serializers import LOGIN_FAILED_MESSAGE
 from .test_email_verification import PASSWORD, RESET_REQUEST, TOKEN, EmailFlowTestCase
 from .verification import find_user_by_email, mark_verified, users_with_email
@@ -100,6 +101,7 @@ class GenericFailureTests(EmailFlowTestCase):
 class DuplicateEmailTests(EmailFlowTestCase):
     def setUp(self):
         super().setUp()
+        allow_legacy_duplicates()
         self.first = self.verified_user(username="first", email="shared@example.com")
         self.second = self.verified_user(username="second", email="Shared@Example.com")
 

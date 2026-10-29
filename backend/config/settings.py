@@ -63,6 +63,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "corsheaders",
     "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
     "apps.users",
     "apps.planner",
     "apps.recommendations",
@@ -190,6 +191,9 @@ EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
 # Seconds before a stuck SMTP connection is abandoned, so a request is not held until the server timeout.
 EMAIL_TIMEOUT = env_int("EMAIL_TIMEOUT", 10)
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "").strip() or "StudyPilot <no-reply@localhost>"
+# Send code emails from a background thread after the request's transaction commits, so no request waits on
+# SMTP and a known address answers as fast as an unknown one. Off under the test runner, which stays synchronous.
+EMAIL_SEND_IN_BACKGROUND = env_bool("EMAIL_SEND_IN_BACKGROUND", "test" not in sys.argv)
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
@@ -199,7 +203,14 @@ STORAGES = {
 }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# How many reverse proxies sit in front of the app. Unset keeps DRF's default (the first X-Forwarded-For entry
+# is trusted), so a client can dodge the throttles by spoofing that header. Behind Render set 1 and check it
+# with the steps in docs/deploy.md: a value that is too high makes users share one throttle bucket.
+_num_proxies = os.getenv("NUM_PROXIES", "").strip()
+NUM_PROXIES = int(_num_proxies) if _num_proxies else None
+
 REST_FRAMEWORK = {
+    "NUM_PROXIES": NUM_PROXIES,
     "DEFAULT_THROTTLE_RATES": {
         "auth": os.getenv("AUTH_THROTTLE_RATE", "").strip() or "10/minute",
         "email": os.getenv("EMAIL_THROTTLE_RATE", "").strip() or "5/hour",

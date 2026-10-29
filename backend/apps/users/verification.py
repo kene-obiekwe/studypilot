@@ -9,8 +9,10 @@ which it stores until it is confirmed.
 import logging
 import math
 import secrets
+import threading
 from datetime import timedelta
 
+from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.models import User
 from django.db import transaction
@@ -25,6 +27,8 @@ CODE_LENGTH = 6
 CODE_TTL = timedelta(minutes=15)
 MAX_ATTEMPTS = 5
 RESEND_COOLDOWN = timedelta(seconds=60)
+# An account that never verified its email is deleted this long after it was created.
+UNVERIFIED_ACCOUNT_TTL = timedelta(days=7)
 
 
 def generate_code() -> str:
@@ -60,6 +64,21 @@ def find_user_by_email(email: str) -> User | None:
     return matches[0] if matches else None
 
 
+def expired_unverified_users():
+    """Accounts that never verified their email and are older than UNVERIFIED_ACCOUNT_TTL. Staff and
+    superusers are never included: `createsuperuser` makes accounts with no verification record."""
+    return User.objects.filter(
+        date_joined__lt=timezone.now() - UNVERIFIED_ACCOUNT_TTL, is_staff=False, is_superuser=False
+    ).exclude(email_verification__email_verified_at__isnull=False)
+
+
+def purge_expired_conflicts(username: str, email: str) -> None:
+    """Delete expired unverified accounts that hold `username` or `email` (ignoring case)."""
+    expired = expired_unverified_users()
+    expired.filter(username__iexact=username).delete()
+    expired.filter(email__iexact=email.strip()).delete()
+
+
 def issue_code(user: User, purpose: str, pending_email: str = "") -> str | None:
     """Create a fresh code and return it, or None while the resend cooldown is running."""
     now = timezone.now()
@@ -88,32 +107,55 @@ def cooldown_seconds_left(user: User, purpose: str) -> int:
     return max(0, math.ceil(left))
 
 
+def decoy_work() -> None:
+    """Hash a throwaway code, so a request that sends nothing costs about what one that issues a code does."""
+    make_password("000000")
+
+
+def run_after_commit(task, *args) -> None:
+    """Run `task(*args)` once the surrounding transaction commits: on a background thread when
+    EMAIL_SEND_IN_BACKGROUND is on, so the request never waits on SMTP, otherwise right here. `args` must be
+    plain values: the thread never touches the database or a model instance. A gunicorn worker restart can
+    drop an email that is still in flight; the user can ask for another."""
+    if not settings.EMAIL_SEND_IN_BACKGROUND:
+        task(*args)
+        return
+    transaction.on_commit(lambda: threading.Thread(target=task, args=args, daemon=True).start())
+
+
 def send_code(user: User, purpose: str) -> bool:
     """Issue a code and email it. A failure to send is logged, never raised, and never logs the code."""
     code = issue_code(user, purpose)
     if code is None:
         return False
-    return deliver_code(user, purpose, code)
-
-
-def deliver_code(user: User, purpose: str, code: str, to: str = "") -> bool:
-    """Email an issued code to `to` (the account's address by default). Failures are logged, not raised."""
-    try:
-        send_code_email(user, purpose, code, to=to)
-    except Exception:
-        logger.warning("Could not send a %s code email to user %s", purpose, user.pk, exc_info=True)
-        return False
+    deliver_code(user, purpose, code)
     return True
+
+
+def _send_code_now(user_id: int, to: str, username: str, purpose: str, code: str) -> None:
+    try:
+        send_code_email(to, username, purpose, code)
+    except Exception:
+        logger.warning("Could not send a %s code email to user %s", purpose, user_id, exc_info=True)
+
+
+def deliver_code(user: User, purpose: str, code: str, to: str = "") -> None:
+    """Email an issued code to `to` (the account's address by default). Failures are logged, not raised."""
+    run_after_commit(_send_code_now, user.pk, to or user.email, user.username, purpose, code)
+
+
+def _send_notice_now(user_id: int, to: str, username: str, new_email: str) -> None:
+    try:
+        send_email_changed_notice(to, username, new_email)
+    except Exception:
+        logger.warning("Could not send the email-changed notice for user %s", user_id, exc_info=True)
 
 
 def notify_email_changed(user: User, old_email: str) -> None:
     """Tell the old address about an email change. A failure is logged and ignored."""
     if not old_email:
         return
-    try:
-        send_email_changed_notice(user, old_email)
-    except Exception:
-        logger.warning("Could not send the email-changed notice for user %s", user.pk, exc_info=True)
+    run_after_commit(_send_notice_now, user.pk, old_email, user.username, user.email)
 
 
 def check_code(user: User, purpose: str, code: str) -> OneTimeCode | None:

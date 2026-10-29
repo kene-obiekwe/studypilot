@@ -1,4 +1,3 @@
-from django.contrib.auth.models import User
 from django.core.mail import send_mail
 from django.template.loader import render_to_string
 
@@ -28,13 +27,14 @@ def _send(subject: str, template: str, context: dict, to: str) -> None:
     )
 
 
-def send_code_email(user: User, purpose: str, code: str, to: str = "") -> None:
-    """Send `code` as a plain-text email with an HTML alternative, to `to` or else the user's address."""
-    context = {"username": user.username, "code": code, "expiry_minutes": EXPIRY_MINUTES}
-    _send(SUBJECTS[purpose], TEMPLATES[purpose], context, to or user.email)
+def send_code_email(to: str, username: str, purpose: str, code: str) -> None:
+    """Send `code` to `to` as a plain-text email with an HTML alternative. Takes plain values only, so it can
+    run on a background thread without touching the database."""
+    context = {"username": username, "code": code, "expiry_minutes": EXPIRY_MINUTES}
+    _send(SUBJECTS[purpose], TEMPLATES[purpose], context, to)
 
 
-def send_email_changed_notice(user: User, old_email: str) -> None:
-    """Tell the previous address that the account's email is now `user.email`."""
-    context = {"username": user.username, "new_email": user.email}
-    _send(EMAIL_CHANGED_SUBJECT, EMAIL_CHANGED_TEMPLATE, context, old_email)
+def send_email_changed_notice(to: str, username: str, new_email: str) -> None:
+    """Tell the previous address `to` that the account's email is now `new_email`."""
+    context = {"username": username, "new_email": new_email}
+    _send(EMAIL_CHANGED_SUBJECT, EMAIL_CHANGED_TEMPLATE, context, to)
