@@ -19,7 +19,7 @@ export function WeekMeter() {
       {week.plannedHours === 0 && <p className={styles.meterCaption}>No plan for this week yet.</p>}
       {week.plannedHours > 0 && formatHours(excludedHours) !== "0" && (
         <p className={styles.meterCaption}>
-          Excludes {formatHours(excludedHours)} h on courses no longer in this week&rsquo;s plan.
+          Excludes {formatHours(excludedHours)} h on courses not in this week&rsquo;s plan.
         </p>
       )}
     </div>

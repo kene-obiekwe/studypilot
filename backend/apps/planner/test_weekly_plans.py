@@ -1,4 +1,4 @@
-"""One plan per week: the catch-up split, the /plans/ API, the first-version aliases and course hooks.
+"""One plan per week: the catch-up split, the /plans/ API and course hooks.
 
 The worked examples are the ones in the 5.8b design note: plan A 7 h / B 3 h, logged A 4 h and
 B 1 h by Wednesday 28 October 2026 (week of Monday 26 October).
@@ -206,18 +206,27 @@ class WorkedExampleApiTests(WeeklyPlanApiTestCase):
         self.assertEqual((entries["B"]["remaining_at_revision"], entries["B"]["planned_hours"]), (1.0, 2.0))
         self.assertEqual(data["total_hours"], 6.0)
 
-    def test_example_3b_total_below_hours_done_through_the_alias(self):
-        self.start_week()
-        response = self.client.post(
-            "/api/planner/generate/",
-            {"total_available_hours": 4, "courses": [{"name": "A", "difficulty": 3}, {"name": "B", "difficulty": 3}]},
-            format="json",
-        )
+    def test_example_3b_first_plan_with_a_total_below_hours_done_is_clamped(self):
+        # The only way to give a total (rather than "more") is a first plan; a total below the hours
+        # already counted is clamped to what is done: more = 0, so the week is complete.
+        self.course("A", 3), self.course("B", 3)
+        self.log("A", 2, datetime(2026, 10, 26, 9, tzinfo=dt_timezone.utc))
+        self.log("A", 2, datetime(2026, 10, 27, 9, tzinfo=dt_timezone.utc))
+        self.log("B", 1, datetime(2026, 10, 27, 15, tzinfo=dt_timezone.utc))
+        courses = [{"name": "A", "difficulty": 3}, {"name": "B", "difficulty": 3}]
+
+        preview = self.preview("2026-10-26", courses, total_hours=4)
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertTrue(preview.data["clamped"])
+        self.assertEqual(StudyPlan.objects.count(), 0)
+
+        response = self.put("2026-10-26", courses, total_hours=4)
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual({a["course"]: a["allocated_hours"] for a in response.data["allocations"]}, {"A": 4.0, "B": 1.0})
-        current = StudyPlan.objects.get(is_current=True)
-        self.assertEqual((current.revision, current.plan_json["more_hours"], current.plan_json["clamped"]), (2, 0.0, True))
-        self.assertEqual(current.plan_json["total_hours"], 5.0)
+        data = response.data["plan_json"]
+        self.assertEqual({a["course"]: a["allocated_hours"] for a in data["allocations"]}, {"A": 4.0, "B": 1.0})
+        self.assertEqual((data["more_hours"], data["clamped"], data["total_hours"]), (0.0, True, 5.0))
+        self.assertEqual([e["remaining_at_revision"] for e in data["courses"]], [0.0, 0.0])
+        self.assertEqual(StudyPlan.objects.get(is_current=True).revision, 1)
 
     def test_more_zero_through_the_api(self):
         self.start_week()
@@ -342,27 +351,6 @@ class PlanRulesTests(WeeklyPlanApiTestCase):
         StudyPlan.objects.create(user=other, week_start=MONDAY, plan_json={"marker": "other"})
         self.assertEqual(self.client.get("/api/planner/plans/").data["items"], [])
         self.assertEqual(self.client.get("/api/planner/plans/2026-10-26/").status_code, 404)
-
-
-class FirstVersionAliasTests(WeeklyPlanApiTestCase):
-    def generate(self, hours, *names):
-        return self.client.post(
-            "/api/planner/generate/",
-            {"total_available_hours": hours, "courses": [{"name": n, "difficulty": 3} for n in names]},
-            format="json",
-        )
-
-    def test_generating_twice_revises_one_plan(self):
-        first = self.generate(10, "A", "B")
-        self.assertEqual(set(first.data), {"allocations"})
-        self.assertEqual({a["course"]: a["allocated_hours"] for a in first.data["allocations"]}, {"A": 5.0, "B": 5.0})
-        self.generate(8, "A", "B")
-        self.assertEqual(StudyPlan.objects.count(), 2)
-        self.assertEqual(list(StudyPlan.objects.filter(is_current=True).values_list("revision", flat=True)), [2])
-        items = self.client.get("/api/planner/history/").data["items"]
-        self.assertEqual(len(items), 1)
-        self.assertEqual(set(items[0]), {"id", "week_start", "plan_json", "created_at"})
-        self.assertEqual(items[0]["plan_json"]["total_available_hours"], 8.0)
 
 
 class CourseHookTests(WeeklyPlanApiTestCase):

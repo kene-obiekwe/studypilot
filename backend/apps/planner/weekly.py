@@ -411,24 +411,21 @@ def save_revision(
     base_revision: int | None,
     total_hours: float | None = None,
     more_hours: float | None = None,
-    check_base: bool = True,
     now: datetime | None = None,
 ) -> tuple[StudyPlan, Revision]:
     """Save the week's first plan or its next revision.
 
-    check_base (the default): base_revision None means "first plan" (PlanConflict "plan_exists" if
-    one exists); otherwise it must be the current revision (PlanConflict "plan_changed"). The
-    first-version /generate/ alias passes check_base=False and always revises the current plan.
+    base_revision None means "first plan" (PlanConflict "plan_exists" if one exists); otherwise it
+    must be the current revision (PlanConflict "plan_changed").
     """
     now = now or timezone.now()
     try:
         with transaction.atomic():
             current = current_plan(user, week_start, lock=True)
-            if check_base:
-                if base_revision is None and current is not None:
-                    raise PlanConflict("plan_exists", current)
-                if base_revision is not None and (current is None or current.revision != base_revision):
-                    raise PlanConflict("plan_changed", current)
+            if base_revision is None and current is not None:
+                raise PlanConflict("plan_exists", current)
+            if base_revision is not None and (current is None or current.revision != base_revision):
+                raise PlanConflict("plan_changed", current)
             revision = build_revision(
                 user, week_start, courses, total_hours=total_hours, more_hours=more_hours, previous=current, now=now
             )

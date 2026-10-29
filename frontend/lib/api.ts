@@ -297,24 +297,18 @@ export type RegisterVerificationResponse = { status: "verification_required"; em
 export type LoginPayload = { identifier: string; password: string };
 export type LoginResponse = { access: string; refresh: string };
 
-export type PlanPayload = {
-  total_available_hours: number;
-  courses: Array<{ name: string; difficulty: number }>;
-};
-
-export type PlanResponse = {
-  allocations: Array<{
-    course: string;
-    allocated_hours: number;
-    focus_block_minutes: number;
-    break_minutes: number;
-    base_hours?: number;
-    adherence_factor?: number;
-    /** Where the adherence adjustment came from; absent on plans from before adjustments. */
-    adjustment_source?: "model" | "rule" | "none";
-    /** The adherence the plan expected for this course, or null when there was nothing to estimate from. */
-    adherence_estimate?: number | null;
-  }>;
+/** One course's hours in a plan's `allocations`, the shape plans had before revisions. */
+export type PlanAllocation = {
+  course: string;
+  allocated_hours: number;
+  focus_block_minutes: number;
+  break_minutes: number;
+  base_hours?: number;
+  adherence_factor?: number;
+  /** Where the adherence adjustment came from; absent on plans from before adjustments. */
+  adjustment_source?: "model" | "rule" | "none";
+  /** The adherence the plan expected for this course, or null when there was nothing to estimate from. */
+  adherence_estimate?: number | null;
 };
 
 export type AdjustmentSource = "model" | "rule" | "none";
@@ -362,11 +356,11 @@ export type WeeklyPlanJson = {
   courses: PlanCourseEntry[];
   removed: RemovedPlanCourse[];
   total_available_hours: number;
-  allocations: NonNullable<PlanResponse["allocations"]>;
+  allocations: PlanAllocation[];
 };
 
 /**
- * A plan as the history endpoint returns it. Plans saved before revisions (version 1) carry only
+ * A plan's stored shape. Plans saved before revisions (version 1) carry only
  * `allocations`, with `courses` as {name, difficulty}; version-2 plans (`WeeklyPlanJson`) carry both
  * and every field is then present. Read it through lib/week.ts rather than directly.
  */
@@ -392,10 +386,6 @@ export type PlanHistoryItem = {
     }>;
   };
   created_at: string;
-};
-
-export type PlanHistoryResponse = {
-  items: PlanHistoryItem[];
 };
 
 /** One revision of a week's plan, as /planner/plans/ returns it. */
@@ -636,14 +626,6 @@ export type Me = { id: number; username: string; email: string };
 /** The signed-in user. */
 export function getMe(): Promise<Me> {
   return request<Me>("/users/me/", "GET");
-}
-
-export function generatePlan(payload: PlanPayload): Promise<PlanResponse> {
-  return request<PlanResponse>("/planner/generate/", "POST", payload);
-}
-
-export function getPlanHistory(): Promise<PlanHistoryResponse> {
-  return request<PlanHistoryResponse>("/planner/history/", "GET");
 }
 
 /** The current plan of each week, newest week first. */

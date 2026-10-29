@@ -108,7 +108,7 @@ describe("WeekMeter", () => {
   it("counts only courses in the plan and says how much it left out", async () => {
     const container = await meter([planFor([["A", 4]])], [session("A", 60), session("B", 60)]);
     expect(container.textContent).toContain("1 of 4 h");
-    expect(container.textContent).toContain("Excludes 1 h on courses no longer in this week’s plan.");
+    expect(container.textContent).toContain("Excludes 1 h on courses not in this week’s plan.");
   });
 
   it("has no exclusion caption when every logged hour counts", async () => {

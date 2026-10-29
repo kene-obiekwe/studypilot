@@ -6,7 +6,7 @@ import { act } from "react";
 import { cleanup, flush, render } from "@/test/dom";
 
 const api = vi.hoisted(() => ({
-  getPlanHistory: vi.fn(),
+  listPlans: vi.fn(),
   getSessionHistory: vi.fn(),
   getTrainingData: vi.fn(),
 }));
@@ -29,7 +29,7 @@ function Probe() {
 }
 
 beforeEach(() => {
-  api.getPlanHistory.mockReset().mockResolvedValue({ items: [] });
+  api.listPlans.mockReset().mockResolvedValue([]);
   api.getSessionHistory.mockReset().mockResolvedValue({ items: [] });
   api.getTrainingData.mockReset().mockResolvedValue({ rows: [] });
   session.hasSession.mockReset().mockReturnValue(true);
@@ -46,6 +46,7 @@ describe("ProgressProvider", () => {
     );
     await flush();
     expect(api.getSessionHistory).toHaveBeenCalledTimes(1);
+    expect(api.listPlans).toHaveBeenCalledTimes(1);
   });
 
   it("refreshes when a session is saved elsewhere (the timer)", async () => {

@@ -10,6 +10,7 @@ from apps.tracking import inference
 from apps.tracking.models import StudySessionLog
 
 from .models import StudyPlan
+from .plan_testing import allocations, first_plan
 
 
 class FakePipeline:
@@ -42,13 +43,9 @@ class PlannerAdjustmentSourceTests(APITestCase):
         StudySessionLog.objects.filter(pk=log.pk).update(created_at=timezone.now() - timedelta(days=days_ago))
 
     def plan(self, *course_names):
-        response = self.client.post(
-            "/api/planner/generate/",
-            {"total_available_hours": 10, "courses": [{"name": n, "difficulty": 3} for n in course_names]},
-            format="json",
-        )
+        response = first_plan(self.client, [{"name": n, "difficulty": 3} for n in course_names], 10)
         self.assertEqual(response.status_code, 200, response.data)
-        return {item["course"]: item for item in response.data["allocations"]}
+        return {item["course"]: item for item in allocations(response)}
 
     @mock.patch.object(inference, "get_model", return_value=FAKE_MODEL)
     def test_model_source_when_forecast_available(self, _):

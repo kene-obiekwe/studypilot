@@ -239,15 +239,15 @@ class AuthThrottleTests(APITestCase):
         self.client.force_authenticate(user=user)
         for _ in range(self.limit * 2):
             self.assertEqual(self.client.get("/api/tracking/history/").status_code, 200)
-            self.assertEqual(self.client.get("/api/planner/history/").status_code, 200)
+            self.assertEqual(self.client.get("/api/planner/plans/").status_code, 200)
 
 
 class ProtectedEndpointTests(APITestCase):
     """Every API endpoint except registration and token issue needs a bearer token."""
 
     protected = [
-        ("get", "/api/planner/history/"),
-        ("post", "/api/planner/generate/"),
+        ("get", "/api/planner/plans/"),
+        ("put", "/api/planner/plans/2026-10-26/"),
         ("get", "/api/recommendations/courses/"),
         ("post", "/api/recommendations/feedback/"),
         ("get", "/api/tracking/history/"),

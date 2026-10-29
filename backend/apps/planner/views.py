@@ -10,9 +10,6 @@ from rest_framework.views import APIView
 from .models import Course, StudyPlan
 from .serializers import (
     CourseSerializer,
-    PlanRequestSerializer,
-    PlanResponseSerializer,
-    StudyPlanHistorySerializer,
     TraitSuggestionRequestSerializer,
     WeeklyPlanPreviewSerializer,
     WeeklyPlanRequestSerializer,
@@ -26,7 +23,6 @@ from .weekly import (
     current_plan,
     days_left,
     drop_course_from_plans,
-    monday_of,
     rename_course_in_plans,
     revision_counts,
     save_revision,
@@ -68,46 +64,6 @@ def _check_plannable(week_start: date, today: date) -> None:
 def _serialize(user, plans: list[StudyPlan]) -> list:
     counts = revision_counts(user, [plan.week_start for plan in plans])
     return WeeklyPlanSerializer(plans, many=True, context={"revision_counts": counts}).data
-
-
-class GeneratePlanView(APIView):
-    """First-version planning, kept while the frontend moves to /plans/: a weekly total for this week.
-
-    It saves this week's next plan revision with the catch-up split (more = total - hours already
-    counted, never below 0) and answers in the first-version shape, {allocations}: one per course
-    with its planned hours. The week is the server's (UTC) week.
-    """
-
-    def post(self, request):
-        serializer = PlanRequestSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        try:
-            plan, _ = save_revision(
-                request.user,
-                monday_of(server_today()),
-                [dict(course) for course in data["courses"]],
-                base_revision=None,
-                total_hours=data["total_available_hours"],
-                check_base=False,
-            )
-        except PlanConflict as error:
-            return _conflict(error)
-        except PlanInputError as error:
-            raise ValidationError({"total_available_hours": [error.message]})
-
-        response_serializer = PlanResponseSerializer(data={"allocations": plan.plan_json["allocations"]})
-        response_serializer.is_valid(raise_exception=True)
-        return Response(response_serializer.data)
-
-
-class StudyPlanHistoryView(APIView):
-    """First-version history: the current plan of each of the latest 20 weeks, newest week first."""
-
-    def get(self, request):
-        plans = StudyPlan.objects.filter(user=request.user, is_current=True).order_by("-week_start", "-created_at")[:20]
-        serializer = StudyPlanHistorySerializer(plans, many=True)
-        return Response({"items": serializer.data})
 
 
 class WeeklyPlanListView(APIView):

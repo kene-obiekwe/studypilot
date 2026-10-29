@@ -7,6 +7,7 @@ from rest_framework.test import APITestCase
 from apps.tracking.models import StudySessionLog
 
 from .models import AssessmentFormat, Course, LearningDemand, StudyPlan
+from .plan_testing import allocations, first_plan
 
 LIST_URL = "/api/planner/courses/"
 FIELDS = {
@@ -362,18 +363,14 @@ class CourseDeleteTests(CourseApiTestCase):
 
 class PlannerUsesStoredNamesTests(CourseApiTestCase):
     def generate(self, *names):
-        response = self.client.post(
-            "/api/planner/generate/",
-            {"total_available_hours": 10, "courses": [{"name": n, "difficulty": 3} for n in names]},
-            format="json",
-        )
+        response = first_plan(self.client, [{"name": n, "difficulty": 3} for n in names], 10)
         self.assertEqual(response.status_code, 200, response.data)
         return response
 
     def test_allocations_and_plan_history_use_the_stored_name(self):
         Course.objects.create(user=self.user, name="CSC 401 Algorithms")
         response = self.generate("  csc 401 algorithms ", "New course")
-        self.assertEqual([a["course"] for a in response.data["allocations"]], ["CSC 401 Algorithms", "New course"])
+        self.assertEqual([a["course"] for a in allocations(response)], ["CSC 401 Algorithms", "New course"])
         plan = StudyPlan.objects.get()
         self.assertEqual([c["name"] for c in plan.plan_json["courses"]], ["CSC 401 Algorithms", "New course"])
         self.assertEqual([a["course"] for a in plan.plan_json["allocations"]], ["CSC 401 Algorithms", "New course"])

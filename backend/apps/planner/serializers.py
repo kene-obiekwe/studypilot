@@ -25,16 +25,6 @@ def validate_unique_courses(courses):
     return courses
 
 
-class PlanRequestSerializer(serializers.Serializer):
-    """The first-version /generate/ request: a weekly total for this week's plan."""
-
-    total_available_hours = FiniteFloatField(min_value=1, max_value=MAX_WEEKLY_HOURS)
-    courses = CourseInputSerializer(many=True, allow_empty=False, min_length=1, max_length=MAX_COURSES)
-
-    def validate_courses(self, courses):
-        return validate_unique_courses(courses)
-
-
 class WeeklyPlanRequestSerializer(serializers.Serializer):
     """A week's first plan (total_hours) or an update (more_hours), for preview or save.
 
@@ -108,19 +98,6 @@ class CourseSerializer(serializers.ModelSerializer):
         if len(set(value)) != len(value):
             raise serializers.ValidationError("Each learning demand can only be chosen once.")
         return value
-
-
-class PlanResponseSerializer(serializers.Serializer):
-    allocations = serializers.ListField(child=serializers.DictField())
-
-
-class StudyPlanHistorySerializer(serializers.Serializer):
-    """The first-version /history/ item."""
-
-    id = serializers.IntegerField()
-    week_start = serializers.DateField()
-    plan_json = serializers.JSONField()
-    created_at = serializers.DateTimeField()
 
 
 class WeeklyPlanSerializer(serializers.Serializer):

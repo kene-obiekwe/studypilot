@@ -2,18 +2,17 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Suspense, use, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { ClipboardCheck } from "lucide-react";
 
 import { PageAction } from "@/components/app-shell";
 import { Button, EmptyState, Notice, ProgressBar, Skeleton, Stat } from "@/components/ui";
-import { listPlans, type WeeklyPlan } from "@/lib/api";
 
 import { hoursFromMinutes, summariseCourses } from "./_lib/course-summary";
 import { percentText, shortDate } from "./_lib/history-model";
-import { PlanWeekRow } from "./_lib/PlansList";
 import styles from "./_lib/progress.module.css";
 import { useProgress } from "./_lib/shared";
+import { ThisWeekPlan } from "./_lib/ThisWeekPlan";
 import { useSavedCourses } from "./_lib/useSavedCourses";
 
 const RECENT_SESSIONS = 5;
@@ -22,20 +21,9 @@ function pct(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
-type LatestPlan = { plan: WeeklyPlan | null } | { error: string };
-
-/** Never rejects: the newest week's plan, or why it couldn't be loaded. */
-function loadLatestPlan(): Promise<LatestPlan> {
-  return listPlans(1).then(
-    (plans) => ({ plan: plans[0] ?? null }),
-    (failure: Error) => ({ error: failure.message }),
-  );
-}
-
 export default function ProgressOverviewPage() {
   const router = useRouter();
-  const { sessions, analytics, isLoading, error, refresh } = useProgress();
-  const [latestPromise, setLatestPromise] = useState(loadLatestPlan);
+  const { plans, sessions, analytics, isLoading, error, refresh } = useProgress();
   const { colorStyle } = useSavedCourses();
   const summaries = useMemo(() => summariseCourses(sessions), [sessions]);
 
@@ -166,47 +154,23 @@ export default function ProgressOverviewPage() {
         </>
       )}
 
-      <section className={styles.section} aria-labelledby="latest-plan">
+      <section className={styles.section} aria-labelledby="this-week-plan">
         <div className={styles.sectionHead}>
-          <h2 id="latest-plan" className={styles.sectionTitle}>
+          <h2 id="this-week-plan" className={styles.sectionTitle}>
             Weekly plan
           </h2>
           <Link href="/planner" className={styles.link}>
             Open the planner
           </Link>
         </div>
-        <Suspense fallback={<Skeleton height={64} radius="lg" />}>
-          <LatestPlanRow promise={latestPromise} colorStyle={colorStyle} onRetry={() => setLatestPromise(loadLatestPlan())} />
-        </Suspense>
+        {isLoading && plans.length === 0 ? (
+          <Skeleton height={64} radius="lg" />
+        ) : error && plans.length === 0 ? (
+          <p className={styles.muted}>Your plans are unavailable right now.</p>
+        ) : (
+          <ThisWeekPlan plans={plans} now={new Date()} colorStyle={colorStyle} />
+        )}
       </section>
     </div>
-  );
-}
-
-function LatestPlanRow({
-  promise,
-  colorStyle,
-  onRetry,
-}: {
-  promise: Promise<LatestPlan>;
-  colorStyle: ReturnType<typeof useSavedCourses>["colorStyle"];
-  onRetry: () => void;
-}) {
-  const result = use(promise);
-  if ("error" in result) {
-    return (
-      <p className={styles.muted}>
-        Your plans are unavailable right now.{" "}
-        <Button size="sm" variant="ghost" onClick={onRetry}>
-          Try again
-        </Button>
-      </p>
-    );
-  }
-  if (!result.plan) return <p className={styles.muted}>No plans yet. Make one in the planner.</p>;
-  return (
-    <ul className={styles.list}>
-      <PlanWeekRow plan={result.plan} colorStyle={colorStyle} />
-    </ul>
   );
 }

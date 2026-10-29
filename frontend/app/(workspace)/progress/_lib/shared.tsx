@@ -11,12 +11,12 @@ import {
 } from "react";
 
 import {
-  getPlanHistory,
   getSessionHistory,
   getTrainingData,
-  type PlanHistoryItem,
+  listPlans,
   type SessionHistoryItem,
   type TrainingDataItem,
+  type WeeklyPlan,
 } from "@/lib/api";
 import { groupByCourse } from "@/lib/courses";
 import { hasSession } from "@/lib/session";
@@ -29,7 +29,8 @@ import { onSessionsChanged } from "@/lib/timer-refresh";
 
 type ProgressContextValue = {
   signedIn: boolean;
-  plans: PlanHistoryItem[];
+  /** The current plan of each week, newest week first. */
+  plans: WeeklyPlan[];
   sessions: SessionHistoryItem[];
   trainingRows: TrainingDataItem[];
   isLoading: boolean;
@@ -64,13 +65,13 @@ const EMPTY_ANALYTICS: ProgressContextValue["analytics"] = {
   difficultyMix: { low: 0, medium: 0, high: 0 },
 };
 
-type Snapshot = { plans: PlanHistoryItem[]; sessions: SessionHistoryItem[]; trainingRows: TrainingDataItem[] };
+type Snapshot = { plans: WeeklyPlan[]; sessions: SessionHistoryItem[]; trainingRows: TrainingDataItem[] };
 
 const EMPTY_SNAPSHOT: Snapshot = { plans: [], sessions: [], trainingRows: [] };
 
 function fetchSnapshot(): Promise<Snapshot> {
-  return Promise.all([getPlanHistory(), getSessionHistory(), getTrainingData()]).then(([p, s, t]) => ({
-    plans: p.items,
+  return Promise.all([listPlans(), getSessionHistory(), getTrainingData()]).then(([p, s, t]) => ({
+    plans: p,
     sessions: s.items,
     trainingRows: t.rows,
   }));

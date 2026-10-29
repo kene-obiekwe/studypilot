@@ -1,6 +1,8 @@
 from django.contrib.auth.models import User
 from rest_framework.test import APITestCase
 
+from apps.planner.plan_testing import first_plan
+
 
 class CrossUserIsolationTests(APITestCase):
     """User A must never see user B's plans, recommendations, sessions or forecasts."""
@@ -15,11 +17,7 @@ class CrossUserIsolationTests(APITestCase):
         self.create_data("BOB 202", focus=0.9)
 
     def create_data(self, course_name, focus):
-        plan = self.client.post(
-            "/api/planner/generate/",
-            {"total_available_hours": 10, "courses": [{"name": course_name, "difficulty": 3}]},
-            format="json",
-        )
+        plan = first_plan(self.client, [{"name": course_name, "difficulty": 3}], 10)
         self.assertEqual(plan.status_code, 200, plan.data)
         session = self.client.post(
             "/api/tracking/session-log/",
@@ -43,7 +41,7 @@ class CrossUserIsolationTests(APITestCase):
     def test_plan_history_is_private(self):
         for user, own, foreign in [(self.alice, "ALICE 101", "BOB 202"), (self.bob, "BOB 202", "ALICE 101")]:
             with self.subTest(user=user.username):
-                items = self.get_as(user, "/api/planner/history/")["items"]
+                items = self.get_as(user, "/api/planner/plans/")["items"]
                 self.assertEqual(len(items), 1)
                 courses = [a["course"] for a in items[0]["plan_json"]["allocations"]]
                 self.assertEqual(courses, [own])
