@@ -1,0 +1,73 @@
+.page {
+  display: grid;
+  gap: var(--sp-space-5);
+  max-width: 640px;
+}
+
+.section {
+  display: grid;
+  gap: var(--sp-space-4);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--sp-text-lg);
+  font-weight: var(--sp-weight-strong);
+}
+
+.sectionLede {
+  margin: calc(var(--sp-space-2) - var(--sp-space-4)) 0 0;
+  color: var(--sp-ink-soft);
+  font-size: var(--sp-text-sm);
+}
+
+.form {
+  display: grid;
+  gap: var(--sp-space-4);
+}
+
+.divider {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--sp-line);
+}
+
+.emailRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-space-3);
+}
+
+.emailLabel {
+  margin: 0;
+  font-size: var(--sp-text-sm);
+  font-weight: var(--sp-weight-strong);
+}
+
+.emailValue {
+  margin: var(--sp-space-1) 0 0;
+  color: var(--sp-ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-space-3);
+}
+
+.resendRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-space-3);
+}
+
+.removedList {
+  margin: 0;
+  padding-left: 1.25em;
+  color: var(--sp-ink-soft);
+  font-size: var(--sp-text-sm);
+}

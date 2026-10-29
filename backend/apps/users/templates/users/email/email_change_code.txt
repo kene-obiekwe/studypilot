@@ -1,0 +1,9 @@
+Hi {{ username }},
+
+Your StudyPilot code to confirm this email address is:
+
+{{ code }}
+
+It expires in {{ expiry_minutes }} minutes. Your account's email changes to this address once you enter the code.
+
+If you didn't ask for this, you can ignore this email. Nothing has been changed.

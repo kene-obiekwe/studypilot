@@ -7,11 +7,17 @@ from rest_framework.exceptions import APIException, AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from .models import EmailVerification
-from .verification import CODE_LENGTH, find_user_by_email, is_verified, users_with_email
+from .verification import CODE_LENGTH, email_in_use, find_user_by_email, is_verified, users_with_email
 
 EMAIL_NOT_VERIFIED_CODE = "email_not_verified"
 EMAIL_NOT_VERIFIED_MESSAGE = "Verify your email first."
 LOGIN_FAILED_MESSAGE = "Incorrect username, email or password."
+USERNAME_TAKEN_MESSAGE = "A user with that username already exists."
+WRONG_PASSWORD_MESSAGE = "That password is incorrect."
+SAME_EMAIL_MESSAGE = "That is already your email address."
+EMAIL_IN_USE_MESSAGE = "That email is already in use."
+DELETE_CONFIRM_WORD = "DELETE"
+DELETE_CONFIRM_MESSAGE = "Type DELETE to confirm."
 
 
 def password_errors(password: str, user: User) -> list[str]:
@@ -42,7 +48,7 @@ class RegisterSerializer(serializers.Serializer):
             candidate = by_email
         else:
             if User.objects.filter(username__iexact=username).exists():
-                raise serializers.ValidationError({"username": ["A user with that username already exists."]})
+                raise serializers.ValidationError({"username": [USERNAME_TAKEN_MESSAGE]})
             candidate = User(username=username, email=email)
         problems = password_errors(password, candidate)
         if problems:
@@ -78,6 +84,77 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
     email = serializers.EmailField()
     code = CodeField()
     new_password = serializers.CharField(write_only=True)
+
+
+class AccountSerializer(serializers.Serializer):
+    """Base for the signed-in user's account changes. Pass the user as `context["user"]`."""
+
+    @property
+    def user(self) -> User:
+        return self.context["user"]
+
+    def check_current_password(self, password: str, field: str = "password") -> None:
+        if not self.user.check_password(password):
+            raise serializers.ValidationError({field: [WRONG_PASSWORD_MESSAGE]})
+
+
+class UsernameChangeSerializer(AccountSerializer):
+    """The registration rules, except that the user's own name (in any case) doesn't count as taken."""
+
+    username = serializers.CharField(max_length=150, validators=[UnicodeUsernameValidator()])
+
+    def validate_username(self, value):
+        if User.objects.filter(username__iexact=value).exclude(pk=self.user.pk).exists():
+            raise serializers.ValidationError(USERNAME_TAKEN_MESSAGE)
+        return value
+
+
+class PasswordChangeSerializer(AccountSerializer):
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        self.check_current_password(attrs["current_password"], "current_password")
+        problems = password_errors(attrs["new_password"], self.user)
+        if problems:
+            raise serializers.ValidationError({"new_password": problems})
+        return attrs
+
+
+class EmailChangeRequestSerializer(AccountSerializer):
+    """The password is checked first, so a wrong one says nothing about whether an address is taken."""
+
+    password = serializers.CharField(write_only=True)
+    new_email = serializers.EmailField()
+
+    def validate(self, attrs):
+        self.check_current_password(attrs["password"])
+        new_email = User.objects.normalize_email(attrs["new_email"].strip())
+        if new_email.casefold() == self.user.email.strip().casefold():
+            raise serializers.ValidationError({"new_email": [SAME_EMAIL_MESSAGE]})
+        if email_in_use(new_email, exclude=self.user):
+            raise serializers.ValidationError({"new_email": [EMAIL_IN_USE_MESSAGE]})
+        attrs["new_email"] = new_email
+        return attrs
+
+
+class EmailChangeConfirmSerializer(serializers.Serializer):
+    code = CodeField()
+
+
+class AccountDeleteSerializer(AccountSerializer):
+    password = serializers.CharField(write_only=True)
+    confirm = serializers.CharField()
+
+    def validate(self, attrs):
+        errors = {}
+        if not self.user.check_password(attrs["password"]):
+            errors["password"] = [WRONG_PASSWORD_MESSAGE]
+        if attrs["confirm"] != DELETE_CONFIRM_WORD:
+            errors["confirm"] = [DELETE_CONFIRM_MESSAGE]
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
 
 
 class EmailNotVerified(APIException):

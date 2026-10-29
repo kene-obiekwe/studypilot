@@ -755,3 +755,47 @@ export type PasswordResetPayload = { email: string; code: string; new_password: 
 export function confirmPasswordReset(payload: PasswordResetPayload): Promise<MessageResponse> {
   return request<MessageResponse>("/users/password-reset/confirm/", "POST", payload, { auth: false });
 }
+
+// -- account (signed in) ---------------------------------------------------------
+
+/** Change the username (the sign-up rules; a change of case alone is fine). Returns the updated user. */
+export function updateUsername(username: string): Promise<Me> {
+  return request<Me>("/users/me/", "PATCH", { username });
+}
+
+export type PasswordChangePayload = { current_password: string; new_password: string };
+
+/**
+ * Set a new password. A wrong current password is a 400 with `fieldErrors.current_password`, a weak
+ * new one with `fieldErrors.new_password`. The session stays signed in.
+ */
+export function changePassword(payload: PasswordChangePayload): Promise<MessageResponse> {
+  return request<MessageResponse>("/users/me/password/", "POST", payload);
+}
+
+export type EmailChangePayload = { password: string; new_email: string };
+/** `email` is the normalised address the code was sent to. */
+export type EmailChangeResponse = { detail: string; email: string };
+
+/**
+ * Email a 6-digit code to the new address; the account's email changes only once it is confirmed.
+ * Calling it again (after the 60-second cooldown) resends, and replaces any earlier pending address.
+ */
+export function requestEmailChange(payload: EmailChangePayload): Promise<EmailChangeResponse> {
+  return request<EmailChangeResponse>("/users/me/email/", "POST", payload);
+}
+
+/** Confirm the pending email change with its code. Returns the user with the new address. */
+export function confirmEmailChange(code: string): Promise<Me> {
+  return request<Me>("/users/me/email/confirm/", "POST", { code });
+}
+
+/** The word the user types to confirm deleting their account. */
+export const DELETE_ACCOUNT_CONFIRMATION = "DELETE";
+
+export type DeleteAccountPayload = { password: string; confirm: string };
+
+/** Permanently delete the account and everything in it. The caller then clears the session. */
+export async function deleteAccount(payload: DeleteAccountPayload): Promise<void> {
+  await request<unknown>("/users/me/delete/", "POST", payload);
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, startTransition, use, useEffect, useState, type ReactNode } from "react";
+import { createContext, startTransition, use, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { getMe, getSessionHistory, listPlans, type Me, type SessionHistoryItem, type WeeklyPlan } from "@/lib/api";
 import { onSessionsChanged } from "@/lib/timer-refresh";
@@ -41,17 +41,29 @@ export function loadShellData(now: () => Date = () => new Date()): Promise<Shell
 }
 
 const ShellDataContext = createContext<Promise<ShellData> | null>(null);
+const ShellRefreshContext = createContext<() => void>(() => undefined);
 
 /**
  * Starts the shell's requests once per mount (a lazy state initialiser, not an effect) and
  * shares the promise. Readers call useShellData() inside a Suspense boundary.
  * When a session is logged (lib/timer-refresh.ts) it fetches again inside a transition, so the
- * meter keeps showing the old numbers until the new ones arrive instead of a skeleton.
+ * meter keeps showing the old numbers until the new ones arrive instead of a skeleton. The account
+ * page does the same after a username or email change (useRefreshShellData).
  */
 export function ShellDataProvider({ children }: { children: ReactNode }) {
   const [promise, setPromise] = useState(loadShellData);
-  useEffect(() => onSessionsChanged(() => startTransition(() => setPromise(loadShellData()))), []);
-  return <ShellDataContext.Provider value={promise}>{children}</ShellDataContext.Provider>;
+  const refresh = useCallback(() => startTransition(() => setPromise(loadShellData())), []);
+  useEffect(() => onSessionsChanged(refresh), [refresh]);
+  return (
+    <ShellRefreshContext.Provider value={refresh}>
+      <ShellDataContext.Provider value={promise}>{children}</ShellDataContext.Provider>
+    </ShellRefreshContext.Provider>
+  );
+}
+
+/** Fetch the shell's data again, keeping what is on screen until it arrives. */
+export function useRefreshShellData(): () => void {
+  return useContext(ShellRefreshContext);
 }
 
 export function useShellData(): ShellData {

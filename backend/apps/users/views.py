@@ -9,10 +9,15 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .models import OneTimeCode
 from .serializers import (
+    AccountDeleteSerializer,
+    EmailChangeConfirmSerializer,
+    EmailChangeRequestSerializer,
+    PasswordChangeSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
     RegisterSerializer,
     ResendCodeSerializer,
+    UsernameChangeSerializer,
     VerifiedTokenObtainPairSerializer,
     VerifyEmailSerializer,
     password_errors,
@@ -20,10 +25,15 @@ from .serializers import (
 from .verification import (
     check_code,
     consume,
+    cooldown_seconds_left,
+    deliver_code,
+    email_in_use,
     find_user_by_email,
     invalidate_all_codes,
     is_verified,
+    issue_code,
     mark_verified,
+    notify_email_changed,
     send_code,
 )
 
@@ -31,6 +41,8 @@ BAD_CODE_MESSAGE = "That code is incorrect or has expired. Request a new one."
 RESEND_MESSAGE = "If that email belongs to an account that needs a code, we have sent one."
 RESET_REQUEST_MESSAGE = "If that email belongs to an account, we have sent a password reset code."
 RESET_DONE_MESSAGE = "Your password has been reset. You can sign in now."
+PASSWORD_CHANGED_MESSAGE = "Your password has been changed."
+EMAIL_TAKEN_SINCE_MESSAGE = "Another account now uses that email. Start again with a different address."
 
 
 class EmailScopeThrottle(ScopedRateThrottle):
@@ -142,9 +154,107 @@ class ThrottledTokenRefreshView(TokenRefreshView):
     throttle_scope = "auth"
 
 
+def me_payload(user) -> dict:
+    return {"id": user.id, "username": user.username, "email": user.email}
+
+
 class MeView(APIView):
-    """The signed-in user's own identity, for the app shell. Authenticated by the project default."""
+    """The signed-in user's own identity, for the app shell. Authenticated by the project default.
+
+    PATCH changes the username under the registration rules; a change of case alone is allowed.
+    """
 
     def get(self, request):
+        return Response(me_payload(request.user))
+
+    def patch(self, request):
+        serializer = UsernameChangeSerializer(data=request.data, context={"user": request.user})
+        serializer.is_valid(raise_exception=True)
         user = request.user
-        return Response({"id": user.id, "username": user.username, "email": user.email})
+        user.username = serializer.validated_data["username"]
+        user.save(update_fields=["username"])
+        return Response(me_payload(user))
+
+
+class AccountView(APIView):
+    """A signed-in change that checks the password: throttled like sign-in."""
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth"
+
+
+class PasswordChangeView(AccountView):
+    """Sets a new password after checking the current one. Outstanding reset codes die with the old
+    password. Existing tokens stay valid until they expire: the project has no token blacklist."""
+
+    def post(self, request):
+        serializer = PasswordChangeSerializer(data=request.data, context={"user": request.user})
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        with transaction.atomic():
+            user.set_password(serializer.validated_data["new_password"])
+            user.save(update_fields=["password"])
+            OneTimeCode.objects.filter(user=user, purpose=OneTimeCode.Purpose.RESET).delete()
+        return Response({"detail": PASSWORD_CHANGED_MESSAGE})
+
+
+class EmailChangeRequestView(AccountView):
+    """Emails a code to the new address and remembers that address with the code. The account's
+    email is unchanged until the code is confirmed. A newer request replaces an older one, once the
+    resend cooldown has passed; asking again is also how a code is resent."""
+
+    throttle_classes = [ScopedRateThrottle, EmailScopeThrottle]
+    email_throttle_scope = "email"
+
+    def post(self, request):
+        serializer = EmailChangeRequestSerializer(data=request.data, context={"user": request.user})
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        new_email = serializer.validated_data["new_email"]
+        code = issue_code(user, OneTimeCode.Purpose.EMAIL_CHANGE, pending_email=new_email)
+        if code is None:
+            seconds = max(1, cooldown_seconds_left(user, OneTimeCode.Purpose.EMAIL_CHANGE))
+            return Response(
+                {"detail": f"Wait {seconds} seconds before asking for another code."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        deliver_code(user, OneTimeCode.Purpose.EMAIL_CHANGE, code, to=new_email)
+        return Response({"detail": f"We sent a code to {new_email}.", "email": new_email})
+
+
+class EmailChangeConfirmView(AccountView):
+    """Applies the pending address when its code is right, then tells the old address."""
+
+    def post(self, request):
+        serializer = EmailChangeConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        record = check_code(user, OneTimeCode.Purpose.EMAIL_CHANGE, serializer.validated_data["code"])
+        if record is None or not record.pending_email:
+            return Response({"detail": BAD_CODE_MESSAGE}, status=status.HTTP_400_BAD_REQUEST)
+        new_email = record.pending_email
+        if email_in_use(new_email, exclude=user):
+            # Taken since the code was sent: this request is over.
+            OneTimeCode.objects.filter(user=user, purpose=OneTimeCode.Purpose.EMAIL_CHANGE).delete()
+            return Response({"detail": EMAIL_TAKEN_SINCE_MESSAGE}, status=status.HTTP_400_BAD_REQUEST)
+        old_email = user.email
+        with transaction.atomic():
+            consume(record)
+            user.email = new_email
+            user.save(update_fields=["email"])
+            mark_verified(user)
+            # Codes sent to the old address (a password reset) must not outlive it.
+            invalidate_all_codes(user)
+        notify_email_changed(user, old_email)
+        return Response(me_payload(user))
+
+
+class AccountDeleteView(AccountView):
+    """Deletes the account and, through the cascades, everything it owns."""
+
+    def post(self, request):
+        serializer = AccountDeleteSerializer(data=request.data, context={"user": request.user})
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            request.user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

@@ -18,7 +18,7 @@ class MeEndpointTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data, {"id": self.user.id, "username": "pilot_person", "email": "pilot@example.com"})
 
-    def test_is_read_only(self):
+    def test_only_get_and_patch_are_allowed(self):
         self.client.force_authenticate(self.user)
-        for method in ("post", "put", "patch", "delete"):
+        for method in ("post", "put", "delete"):
             self.assertEqual(getattr(self.client, method)(URL, {}, format="json").status_code, 405, method)
