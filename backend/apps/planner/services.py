@@ -26,60 +26,50 @@ def resolve_adjustment(forecast_value: Optional[float], rule_value: Optional[flo
     return {"source": source, "estimate": round(estimate, 4), "factor": adherence_factor(estimate)}
 
 
-def generate_plan(total_available_hours: float, courses: List[Dict]) -> List[Dict]:
-    total_weight = sum(float(item["difficulty"]) for item in courses)
+def _to_cents(hours: float) -> int:
+    return int(round(float(hours) * 100))
 
-    allocations: List[Dict] = []
-    for course in courses:
-        weight = float(course["difficulty"])
-        allocated = round((weight / total_weight) * total_available_hours, 2)
-        allocations.append(
+
+def catch_up_split(more_hours: float, courses: List[Dict]) -> List[Dict]:
+    """Share `more_hours` across the plan's courses, catching up on what is already logged.
+
+    Each course is {"name", "difficulty", "factor", "logged"} (logged = hours already logged this
+    week). Its weight is difficulty x factor. The fair full-week target is its share of
+    (more + all logged hours); the course gets what it still lacks, max(0, target - logged), scaled
+    so the shares add up to `more_hours`. A course at or past its share gets 0; with more = 0 every
+    course gets 0.
+
+    Remaining hours are whole hundredths that sum to `more_hours` (rounded to 2 dp) exactly: each is
+    rounded down and the leftover hundredths go to the largest fractions (largest-remainder), so
+    none is ever negative. Returns, per course in input order: target_hours, remaining_hours and
+    planned_hours (= logged + remaining).
+    """
+    more_cents = max(0, _to_cents(more_hours))
+    weights = [float(course["difficulty"]) * float(course.get("factor", 1.0)) for course in courses]
+    total_weight = sum(weights)
+    logged = [max(0.0, float(course.get("logged", 0.0))) for course in courses]
+    base = more_cents / 100 + sum(logged)
+
+    targets = [(weight / total_weight) * base if total_weight > 0 else 0.0 for weight in weights]
+    raw = [max(0.0, target - done) for target, done in zip(targets, logged)]
+    raw_total = sum(raw)
+
+    exact = [(share / raw_total) * more_cents if raw_total > 0 else 0.0 for share in raw]
+    cents = [int(value) for value in exact]
+    leftover = more_cents - sum(cents) if raw_total > 0 else 0
+    by_fraction = sorted(range(len(exact)), key=lambda index: (-(exact[index] - cents[index]), index))
+    for index in by_fraction[:leftover]:
+        cents[index] += 1
+
+    results: List[Dict] = []
+    for course, target, done, share in zip(courses, targets, logged, cents):
+        remaining = share / 100
+        results.append(
             {
-                "course": course["name"],
-                "allocated_hours": allocated,
-                "focus_block_minutes": 50,
-                "break_minutes": 10,
+                "name": course["name"],
+                "target_hours": round(target, 2),
+                "remaining_hours": remaining,
+                "planned_hours": round(done + remaining, 2),
             }
         )
-    return allocations
-
-
-def apply_adherence_adjustments(
-    allocations: List[Dict],
-    total_available_hours: float,
-    adherence_factors: Dict[str, float],
-) -> List[Dict]:
-    adjusted: List[Dict] = []
-    for item in allocations:
-        course = item.get("course", "Unknown")
-        base_hours = float(item.get("allocated_hours", 0))
-        factor = float(adherence_factors.get(course, 1.0))
-        updated = {**item}
-        updated["base_hours"] = base_hours
-        updated["adherence_factor"] = round(factor, 2)
-        updated["allocated_hours"] = base_hours * factor
-        adjusted.append(updated)
-
-    total_adjusted = sum(float(item.get("allocated_hours", 0)) for item in adjusted)
-    if total_adjusted <= 0:
-        return allocations
-
-    scale = float(total_available_hours) / total_adjusted
-    for item in adjusted:
-        item["allocated_hours"] = round(float(item["allocated_hours"]) * scale, 2)
-
-    return adjusted
-
-
-def annotate_adjustment_sources(allocations: List[Dict], adjustments: Dict[str, Dict]) -> List[Dict]:
-    annotated: List[Dict] = []
-    for item in allocations:
-        adjustment = adjustments.get(item.get("course", "Unknown"), {})
-        annotated.append(
-            {
-                **item,
-                "adjustment_source": adjustment.get("source", ADJUSTMENT_SOURCE_NONE),
-                "adherence_estimate": adjustment.get("estimate"),
-            }
-        )
-    return annotated
+    return results

@@ -1,0 +1,149 @@
+/* -- Top-bar pill -------------------------------------------------------------------------- */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-space-2);
+  height: 36px;
+  max-width: 260px;
+  padding: 0 var(--sp-space-3);
+  border: 1px solid transparent;
+  border-radius: var(--sp-radius-pill);
+  background: var(--sp-accent-soft);
+  color: var(--sp-accent-ink);
+  font: inherit;
+  font-size: var(--sp-text-sm);
+  font-weight: var(--sp-weight-strong);
+  cursor: pointer;
+}
+
+.pill:hover {
+  border-color: var(--sp-accent);
+}
+
+.pill:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 2px;
+}
+
+.pillIcon {
+  flex: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pillIcon {
+    animation: pulse 2s ease-in-out infinite;
+  }
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* On phones the top bar is tight: elapsed time only. */
+.pillCourse {
+  display: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pillTime {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 768px) {
+  .pillCourse {
+    display: inline;
+  }
+}
+
+/* -- Stop dialog -------------------------------------------------------------------------- */
+
+.form {
+  display: grid;
+  gap: var(--sp-space-5);
+}
+
+.scale {
+  display: grid;
+  gap: var(--sp-space-2);
+  justify-items: start;
+}
+
+.scaleLabel {
+  margin: 0;
+  font-size: var(--sp-text-sm);
+  font-weight: var(--sp-weight-strong);
+  color: var(--sp-ink);
+}
+
+.scaleBody {
+  display: grid;
+  gap: var(--sp-space-1);
+  width: max-content;
+  max-width: 100%;
+}
+
+.scaleEnds {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-space-3);
+  margin: 0;
+  font-size: var(--sp-text-xs);
+  color: var(--sp-muted);
+}
+
+.discard {
+  margin-right: auto;
+  color: var(--sp-danger-ink);
+}
+
+/* -- "Session logged" notice ---------------------------------------------------------------- */
+
+.toast {
+  position: fixed;
+  z-index: var(--sp-z-toast);
+  right: var(--sp-space-4);
+  bottom: calc(80px + env(safe-area-inset-bottom));
+  left: var(--sp-space-4);
+  display: grid;
+  justify-items: end;
+  pointer-events: none;
+}
+
+.toast > * {
+  pointer-events: auto;
+  max-width: 420px;
+  box-shadow: var(--sp-shadow-2);
+}
+
+.toastBody {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-space-3);
+}
+
+@media (min-width: 768px) {
+  .toast {
+    left: auto;
+    bottom: var(--sp-space-6);
+    right: var(--sp-space-7);
+  }
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

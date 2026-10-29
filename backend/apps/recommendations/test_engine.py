@@ -238,6 +238,53 @@ class UnderStudiedTests(SimpleTestCase):
         )
 
 
+class UnderStudiedFromEntryTests(SimpleTestCase):
+    WEDNESDAY = date(2026, 10, 21)
+    FRIDAY = date(2026, 10, 23)
+
+    def check(self, allocated, logged, entered_on, today=FRIDAY):
+        return fired(data(CALM, plan=PlanInfo(allocated, logged, entered_on), today=today))
+
+    def test_paces_from_the_entry_day(self):
+        # Entered Wednesday, checked Friday: window 5, elapsed 3, expected 10 * 3/5 = 6 h, half is 3 h.
+        self.assertIn("under_studied", self.check(10, 2.9, self.WEDNESDAY))
+        self.assertNotIn("under_studied", self.check(10, 3.0, self.WEDNESDAY))
+
+    def test_expected_hours_and_days_into_week(self):
+        result = dx.under_studied(data(CALM, plan=PlanInfo(10, 1, self.WEDNESDAY), today=self.FRIDAY))
+        self.assertEqual(result.facts["expected_hours"], 6.0)
+        self.assertEqual(result.facts["days_into_week"], 3)
+
+    def test_the_minimum_days_count_from_entry(self):
+        # Entered Wednesday, checked Thursday: only 2 days in, so nothing fires.
+        self.assertNotIn("under_studied", self.check(10, 0, self.WEDNESDAY, today=date(2026, 10, 22)))
+        # Entered Friday, checked Sunday is day 3 of a 3-day window.
+        self.assertIn("under_studied", self.check(10, 0, self.FRIDAY, today=date(2026, 10, 25)))
+
+    def test_without_an_entry_day_it_paces_from_monday(self):
+        # Friday from Monday: expected 10 * 5/7 = 7.14 h, half is 3.57 h.
+        self.assertIn("under_studied", self.check(10, 3.5, None))
+        self.assertNotIn("under_studied", self.check(10, 3.6, None))
+
+    def test_a_course_with_its_hours_done_never_fires(self):
+        self.assertNotIn("under_studied", self.check(1, 1, None, today=date(2026, 10, 25)))
+        self.assertNotIn("under_studied", self.check(10, 12, self.WEDNESDAY))
+
+    def test_why_names_the_start_day_unless_it_is_monday(self):
+        late = dx.under_studied(
+            data(CALM, plan=PlanInfo(10, 1, self.WEDNESDAY), today=self.FRIDAY, course_traits=course(name="CSC 401"))
+        )
+        self.assertEqual(
+            late.why,
+            "This week's plan gives CSC 401 10 h, from Wednesday. By Friday you've logged 1 h, against "
+            "about 6 h to be on track.",
+        )
+        monday = dx.under_studied(
+            data(CALM, plan=PlanInfo(7, 1, date(2026, 10, 19)), today=self.WEDNESDAY, course_traits=course(name="CSC 401"))
+        )
+        self.assertNotIn("from", monday.why)
+
+
 class TechniqueSelectionTests(SimpleTestCase):
     def order(self, **traits):
         return [strategy for strategy, _ in technique_order(data(course_traits=course(**traits)))]

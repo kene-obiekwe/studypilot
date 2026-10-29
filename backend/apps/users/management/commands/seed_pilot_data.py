@@ -2,8 +2,7 @@
 Seed deterministic pilot demo data for Chapter 4 screenshots and end-to-end demos.
 
 Creates five pilot users with distinct adherence/focus profiles, three courses each,
-one study plan, a handful of recommendation logs, and roughly 18 session logs
-spread over the last 28 days. Timestamps are backdated so the planner's 30-day
+one study plan and roughly 18 session logs spread over the last 28 days. Timestamps are backdated so the planner's 30-day
 adherence-factor lookup and the progress dashboard's history paging both show
 meaningful content immediately.
 
@@ -15,7 +14,7 @@ This is demo data for system validation, NOT real pilot user feedback. Real pilo
 feedback is collected separately and remains future work.
 
 Re-running the command is safe: it uses get_or_create for users and courses, and
-clears prior plans/recommendations/sessions for the pilot accounts before
+clears prior plans, shown strategies and sessions for the pilot accounts before
 re-seeding so the data stays deterministic across runs.
 
 Passwords: the pilot accounts get the PILOT_PASSWORD environment variable, or, when it is
@@ -46,18 +45,18 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.planner.models import Course, StudyPlan
-from apps.planner.services import generate_plan
-from apps.recommendations.models import RecommendationLog, ShownStrategy
-from apps.recommendations.services import get_recommendations
+from apps.planner.services import ADJUSTMENT_SOURCE_NONE, catch_up_split
+from apps.planner.weekly import BREAK_MINUTES, FOCUS_BLOCK_MINUTES, MODE_FIRST, compose_plan_json
+from apps.recommendations.models import ShownStrategy
 from apps.tracking.inference import STATUS_OK, forecast_course
 from apps.tracking.models import StudySessionLog
+from apps.users.verification import mark_verified
 
 
 @dataclass(frozen=True)
 class PilotProfile:
     username: str
     full_label: str
-    preferred_style: str
     adherence_mean: float       # baseline ratio of actual / planned minutes
     adherence_jitter: float     # +- noise applied per session
     focus_mean: float
@@ -72,8 +71,7 @@ class PilotProfile:
 PILOTS: tuple[PilotProfile, ...] = (
     PilotProfile(
         username="pilot_consistent",
-        full_label="Consistent high adherer (visual learner)",
-        preferred_style="visual",
+        full_label="Consistent high adherer",
         adherence_mean=0.92,
         adherence_jitter=0.08,
         focus_mean=0.82,
@@ -82,8 +80,7 @@ PILOTS: tuple[PilotProfile, ...] = (
     ),
     PilotProfile(
         username="pilot_struggling",
-        full_label="Struggling learner (mixed approach)",
-        preferred_style="mixed",
+        full_label="Struggling learner",
         adherence_mean=0.45,
         adherence_jitter=0.15,
         focus_mean=0.40,
@@ -92,8 +89,7 @@ PILOTS: tuple[PilotProfile, ...] = (
     ),
     PilotProfile(
         username="pilot_improving",
-        full_label="Improving practice-oriented learner",
-        preferred_style="practice",
+        full_label="Improving learner",
         adherence_mean=0.70,
         adherence_jitter=0.12,
         focus_mean=0.65,
@@ -103,8 +99,7 @@ PILOTS: tuple[PilotProfile, ...] = (
     ),
     PilotProfile(
         username="pilot_declining",
-        full_label="Declining reading-oriented learner",
-        preferred_style="reading",
+        full_label="Declining learner",
         adherence_mean=0.60,
         adherence_jitter=0.18,
         focus_mean=0.55,
@@ -115,7 +110,6 @@ PILOTS: tuple[PilotProfile, ...] = (
     PilotProfile(
         username="pilot_average",
         full_label="Average mixed learner whose long sessions fade",
-        preferred_style="mixed",
         adherence_mean=0.75,
         adherence_jitter=0.10,
         focus_mean=0.70,
@@ -230,7 +224,6 @@ class Command(BaseCommand):
             self._clear_existing_data(user)
             courses = self._upsert_courses(user, profile)
             plan = self._seed_plan(user, profile, courses, now)
-            self._seed_recommendations(user, profile, plan, seed_start, now)
             self._seed_sessions(user, profile, courses, seed_start, now, rng)
             self.stdout.write(self.style.SUCCESS(f"Seeded pilot: {user.username} ({profile.full_label})"))
 
@@ -249,13 +242,13 @@ class Command(BaseCommand):
         user.set_password(password)
         user.email = f"{profile.username}@studyplanner.local"
         user.save()
+        mark_verified(user)  # demo accounts have no inbox to verify from
         if created:
             self.stdout.write(f"  + created user {profile.username}")
         return user
 
     def _clear_existing_data(self, user: User) -> None:
         StudySessionLog.objects.filter(user=user).delete()
-        RecommendationLog.objects.filter(user=user).delete()
         ShownStrategy.objects.filter(user=user).delete()
         StudyPlan.objects.filter(user=user).delete()
         # Courses are kept (re-upserted) to preserve external referential pointers
@@ -283,52 +276,45 @@ class Command(BaseCommand):
         return result
 
     def _seed_plan(self, user: User, profile: PilotProfile, courses: list[Course], now) -> StudyPlan:
-        course_payload = [{"name": c.name, "difficulty": c.difficulty} for c in courses]
         # Sized to the hours the profile actually plans, so "under-studied vs this week's plan"
         # reflects the profile (low adherers fall behind) rather than an oversized plan.
         total_hours = profile.sessions_per_week * SEEDED_SESSION_HOURS
-        allocations = generate_plan(total_hours, course_payload)
         week_start = (now - timedelta(days=now.weekday())).date()
+        # The plan a pilot made on Monday, before logging anything: one current revision.
+        split = catch_up_split(
+            total_hours, [{"name": c.name, "difficulty": c.difficulty, "factor": 1.0, "logged": 0.0} for c in courses]
+        )
+        entries = [
+            {
+                "course_id": course.id,
+                "name": course.name,
+                "difficulty": course.difficulty,
+                "factor": 1.0,
+                "adjustment_source": ADJUSTMENT_SOURCE_NONE,
+                "adherence_estimate": None,
+                "entered_on": week_start.isoformat(),
+                "logged_at_revision": 0.0,
+                "remaining_at_revision": share["remaining_hours"],
+                "planned_hours": share["planned_hours"],
+                "focus_block_minutes": FOCUS_BLOCK_MINUTES,
+                "break_minutes": BREAK_MINUTES,
+            }
+            for course, share in zip(courses, split)
+        ]
         plan = StudyPlan.objects.create(
             user=user,
             week_start=week_start,
-            plan_json={
-                "total_available_hours": total_hours,
-                "courses": course_payload,
-                "allocations": allocations,
-                "adherence_adjustments": {},
-            },
+            revision=1,
+            is_current=True,
+            plan_json=compose_plan_json(
+                mode=MODE_FIRST, made_on=week_start, entries=entries, removed=[], more_hours=total_hours, clamped=False
+            ),
         )
         # Backdate the plan to the start of the seed window so the planner history
         # shows it among older entries rather than always as "today".
         StudyPlan.objects.filter(pk=plan.pk).update(created_at=now - timedelta(days=SEED_DAYS_WINDOW // 2))
         return plan
 
-    def _seed_recommendations(
-        self,
-        user: User,
-        profile: PilotProfile,
-        plan: StudyPlan,
-        seed_start,
-        now,
-    ) -> None:
-        # Three recommendation events: at start of window, midpoint, near present.
-        markers = [seed_start, seed_start + timedelta(days=SEED_DAYS_WINDOW // 2), now - timedelta(days=1)]
-        for marker in markers:
-            strategies, confidence = get_recommendations(
-                focus_score=profile.focus_mean,
-                completion_rate=profile.completion_mean,
-                preferred_style=profile.preferred_style,
-            )
-            log = RecommendationLog.objects.create(
-                user=user,
-                focus_score=profile.focus_mean,
-                completion_rate=profile.completion_mean,
-                preferred_style=profile.preferred_style,
-                strategies_json=strategies,
-                confidence=confidence,
-            )
-            RecommendationLog.objects.filter(pk=log.pk).update(created_at=marker)
 
     def _seed_sessions(
         self,

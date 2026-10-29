@@ -1,3 +1,16 @@
+/*
+ * Legacy styles for the pages not yet redesigned (removed as pages migrate in 5.5 and in 5.6b).
+ * They sit in a cascade layer so the new design-system styles (unlayered, see styles/tokens.css
+ * and components/ui) always win over these element-level rules, whatever their specificity.
+ */
+@layer legacy {
+
+/* The old serif body and display fonts now map to the single sans family (next/font, <html>). */
+html {
+  --font-body: var(--font-sans);
+  --font-display: var(--font-sans);
+}
+
 :root {
   /* Baby-blue palette --------------------------------------------------- */
   --sky-50: #f3f9ff;
@@ -1116,3 +1129,5 @@ ul li {
   margin: var(--space-4) 0;
   border: none;
 }
+
+} /* @layer legacy */

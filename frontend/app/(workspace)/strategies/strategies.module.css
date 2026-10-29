@@ -1,0 +1,330 @@
+.page {
+  display: grid;
+  gap: var(--sp-space-7);
+}
+
+/* -- Filter: segmented on desktop, select on phones ------------------------------------- */
+
+.filterDesktop {
+  display: none;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.filterPhone {
+  display: block;
+  max-width: 360px;
+}
+
+@media (min-width: 768px) {
+  .filterDesktop {
+    display: block;
+  }
+
+  .filterPhone {
+    display: none;
+  }
+}
+
+/* -- Course section -------------------------------------------------------------------- */
+
+.course {
+  display: grid;
+  gap: var(--sp-space-3);
+}
+
+.courseHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-space-3);
+}
+
+.courseHeading {
+  min-width: 0;
+}
+
+.courseTitle {
+  margin: 0;
+  font-size: var(--sp-text-xl);
+}
+
+/* The heading is the collapse toggle. Undo the legacy element styles for button (globals.css). */
+.courseToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-space-2);
+  width: auto;
+  margin: 0 0 0 calc(-1 * var(--sp-space-1));
+  padding: 2px var(--sp-space-2) 2px var(--sp-space-1);
+  border: 0;
+  border-radius: var(--sp-radius-sm);
+  background: none;
+  box-shadow: none;
+  color: var(--sp-ink);
+  font: inherit;
+  font-family: var(--sp-font-sans);
+  font-weight: var(--sp-weight-strong);
+  letter-spacing: -0.01em;
+  text-align: left;
+  overflow: visible;
+  transform: none;
+  cursor: pointer;
+}
+
+.courseToggle::before {
+  content: none;
+}
+
+.courseToggle:hover:not(:disabled) {
+  background: var(--sp-sunken);
+  box-shadow: none;
+  transform: none;
+}
+
+.courseToggle:focus {
+  box-shadow: none;
+}
+
+.courseToggle:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 2px;
+}
+
+.courseChevron {
+  flex: none;
+  color: var(--sp-ink-soft);
+  transition: transform var(--sp-duration-fast) var(--sp-ease-standard);
+}
+
+.courseToggle[aria-expanded="false"] .courseChevron {
+  transform: rotate(-90deg);
+}
+
+.coursePanel {
+  display: grid;
+  gap: var(--sp-space-3);
+}
+
+.coursePanel[hidden] {
+  display: none;
+}
+
+.dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--course-dot);
+}
+
+.evidence {
+  margin: 2px 0 0;
+  padding-left: calc(18px + var(--sp-space-2));
+  color: var(--sp-ink-soft);
+  font-size: var(--sp-text-sm);
+}
+
+/* -- Checklist ------------------------------------------------------------------------- */
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--sp-line);
+  border-radius: var(--sp-radius-lg);
+  background: var(--sp-surface);
+}
+
+/* Compact rows. Phones stack title, details and controls; from 720px the controls sit to the
+   right of the title and the details open underneath the title only. */
+.item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "head"
+    "details"
+    "controls"
+    "error";
+  gap: var(--sp-space-2);
+  padding: var(--sp-space-3) var(--sp-space-4);
+}
+
+@media (min-width: 720px) {
+  .item {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "head controls"
+      "details controls"
+      "error error";
+    column-gap: var(--sp-space-6);
+    row-gap: var(--sp-space-1);
+    padding: var(--sp-space-3) var(--sp-space-5);
+  }
+}
+
+.error {
+  grid-area: error;
+}
+
+.item + .item {
+  border-top: 1px solid var(--sp-line);
+}
+
+.itemHead {
+  grid-area: head;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-space-1) var(--sp-space-2);
+}
+
+.details {
+  grid-area: details;
+}
+
+.detailsBody {
+  display: grid;
+  gap: var(--sp-space-2);
+  max-width: 70ch;
+}
+
+.itemTitle {
+  margin: 0;
+  font-size: var(--sp-text-md);
+  font-weight: var(--sp-weight-strong);
+  color: var(--sp-ink);
+}
+
+.what {
+  margin: 0;
+  color: var(--sp-ink);
+  font-size: var(--sp-text-md);
+}
+
+.why {
+  margin: 0;
+  color: var(--sp-ink-soft);
+  font-size: var(--sp-text-sm);
+}
+
+.steps {
+  margin: 0;
+  padding-left: var(--sp-space-5);
+  color: var(--sp-ink);
+  font-size: var(--sp-text-sm);
+  display: grid;
+  gap: var(--sp-space-1);
+}
+
+.source {
+  margin: 0;
+  color: var(--sp-muted);
+  font-size: var(--sp-text-xs);
+}
+
+.controls {
+  grid-area: controls;
+  align-self: start;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-space-2) var(--sp-space-4);
+}
+
+@media (min-width: 720px) {
+  .controls {
+    justify-content: flex-end;
+  }
+}
+
+.done {
+  color: var(--sp-success-ink);
+  font-weight: var(--sp-weight-strong);
+}
+
+.rating {
+  display: inline-flex;
+  gap: var(--sp-space-1);
+}
+
+/* Compact toggle buttons; aria-pressed marks the active rating. */
+.ratingButton[aria-pressed="true"] {
+  background: var(--sp-accent-soft);
+  color: var(--sp-accent-ink);
+  border-color: transparent;
+}
+
+/* -- Weekly plan ------------------------------------------------------------------------ */
+
+.plan {
+  display: grid;
+  gap: var(--sp-space-3);
+}
+
+.planLabel {
+  margin: 0;
+  font-size: var(--sp-text-xs);
+  font-weight: var(--sp-weight-strong);
+  color: var(--sp-accent-ink);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.planIntro {
+  margin: 0;
+  color: var(--sp-ink);
+}
+
+.planItems {
+  margin: 0;
+  padding-left: var(--sp-space-5);
+  display: grid;
+  gap: var(--sp-space-3);
+}
+
+.planItemTitle {
+  font-weight: var(--sp-weight-strong);
+}
+
+.planItemBody {
+  margin: 2px 0 0;
+  color: var(--sp-ink-soft);
+}
+
+.muted {
+  margin: 0;
+  color: var(--sp-muted);
+  font-size: var(--sp-text-sm);
+}
+
+.secondaryLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-space-2);
+  height: 40px;
+  padding: 0 var(--sp-space-4);
+  border: 1px solid var(--sp-line-strong);
+  border-radius: var(--sp-radius-md);
+  background: var(--sp-surface);
+  color: var(--sp-ink);
+  font-weight: var(--sp-weight-strong);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.secondaryLink:hover {
+  background: var(--sp-sunken);
+}
+
+.secondaryLink:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 2px;
+}
+
+.skeletonList {
+  display: grid;
+  gap: var(--sp-space-3);
+}

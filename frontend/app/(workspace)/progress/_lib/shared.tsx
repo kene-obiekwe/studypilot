@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import {
   createContext,
   useCallback,
@@ -9,21 +7,20 @@ import {
   useEffect,
   useMemo,
   useState,
+  useSyncExternalStore,
 } from "react";
-import { ClipboardCheck, History, LineChart, Sparkles } from "lucide-react";
 
 import {
-  getPlanHistory,
-  getRecommendationHistory,
   getSessionHistory,
   getTrainingData,
-  type PlanHistoryItem,
-  type RecommendationHistoryItem,
+  listPlans,
   type SessionHistoryItem,
   type TrainingDataItem,
+  type WeeklyPlan,
 } from "@/lib/api";
 import { groupByCourse } from "@/lib/courses";
 import { hasSession } from "@/lib/session";
+import { onSessionsChanged } from "@/lib/timer-refresh";
 
 // ---------------------------------------------------------------------------
 // Shared progress data context — fetched once at the layout level so all
@@ -32,8 +29,8 @@ import { hasSession } from "@/lib/session";
 
 type ProgressContextValue = {
   signedIn: boolean;
-  plans: PlanHistoryItem[];
-  recommendations: RecommendationHistoryItem[];
+  /** The current plan of each week, newest week first. */
+  plans: WeeklyPlan[];
   sessions: SessionHistoryItem[];
   trainingRows: TrainingDataItem[];
   isLoading: boolean;
@@ -49,7 +46,6 @@ type ProgressContextValue = {
     topCourse: string;
     topCourseSessions: number;
     weeklyIntensity: number;
-    latestModelVersion: string;
     difficultyMix: { low: number; medium: number; high: number };
   };
 };
@@ -66,48 +62,71 @@ const EMPTY_ANALYTICS: ProgressContextValue["analytics"] = {
   topCourse: "-",
   topCourseSessions: 0,
   weeklyIntensity: 0,
-  latestModelVersion: "-",
   difficultyMix: { low: 0, medium: 0, high: 0 },
 };
 
+type Snapshot = { plans: WeeklyPlan[]; sessions: SessionHistoryItem[]; trainingRows: TrainingDataItem[] };
+
+const EMPTY_SNAPSHOT: Snapshot = { plans: [], sessions: [], trainingRows: [] };
+
+function fetchSnapshot(): Promise<Snapshot> {
+  return Promise.all([listPlans(), getSessionHistory(), getTrainingData()]).then(([p, s, t]) => ({
+    plans: p,
+    sessions: s.items,
+    trainingRows: t.rows,
+  }));
+}
+
+// Re-check when another tab signs in or out (localStorage "storage" events).
+function subscribeSession(onChange: () => void): () => void {
+  window.addEventListener("storage", onChange);
+  return () => window.removeEventListener("storage", onChange);
+}
+
 export function ProgressProvider({ children }: { children: React.ReactNode }) {
-  const [signedIn, setSignedIn] = useState(false);
-  const [plans, setPlans] = useState<PlanHistoryItem[]>([]);
-  const [recommendations, setRecommendations] = useState<RecommendationHistoryItem[]>([]);
-  const [sessions, setSessions] = useState<SessionHistoryItem[]>([]);
-  const [trainingRows, setTrainingRows] = useState<TrainingDataItem[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  // False on the server and during hydration, then the real answer.
+  const signedIn = useSyncExternalStore(subscribeSession, hasSession, () => false);
+  const [{ plans, sessions, trainingRows }, setSnapshot] = useState(EMPTY_SNAPSHOT);
+  const [loaded, setLoaded] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    setSignedIn(hasSession());
-  }, []);
+  // Never rejects. State is only set in the callbacks, once the requests have settled.
+  const load = useCallback(
+    () =>
+      fetchSnapshot().then(
+        (next) => {
+          setSnapshot(next);
+          setError("");
+          setLoaded(true);
+        },
+        (failure: Error) => {
+          setError(failure.message);
+          setLoaded(true);
+        },
+      ),
+    [],
+  );
 
   const refresh = useCallback(async () => {
     if (!signedIn) return;
-    setIsLoading(true);
+    setRefreshing(true);
     setError("");
     try {
-      const [p, r, s, t] = await Promise.all([
-        getPlanHistory(),
-        getRecommendationHistory(),
-        getSessionHistory(),
-        getTrainingData(),
-      ]);
-      setPlans(p.items);
-      setRecommendations(r.items);
-      setSessions(s.items);
-      setTrainingRows(t.rows);
-    } catch (e) {
-      setError((e as Error).message);
+      await load();
     } finally {
-      setIsLoading(false);
+      setRefreshing(false);
     }
-  }, [signedIn]);
+  }, [signedIn, load]);
 
   useEffect(() => {
-    if (signedIn) void refresh();
-  }, [signedIn, refresh]);
+    if (signedIn) void load();
+  }, [signedIn, load]);
+
+  // A session saved by the timer (here or in another tab) changes everything these views show.
+  useEffect(() => (signedIn ? onSessionsChanged(() => void refresh()) : undefined), [signedIn, refresh]);
+
+  const isLoading = signedIn && (!loaded || refreshing);
 
   const analytics = useMemo(() => {
     if (sessions.length === 0) {
@@ -140,8 +159,6 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
       trainingRows.length > 0
         ? trainingRows.reduce((acc, row) => acc + row.sessions_last_7_days, 0) / trainingRows.length
         : 0;
-    const latestModelVersion =
-      sessions.find((item) => item.model_version && item.model_version.length > 0)?.model_version ?? "-";
     const difficultyMix = trainingRows.reduce(
       (acc, row) => {
         if (row.difficulty <= 2) acc.low += 1;
@@ -161,7 +178,6 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
       topCourse,
       topCourseSessions,
       weeklyIntensity,
-      latestModelVersion,
       difficultyMix,
     };
   }, [sessions, trainingRows]);
@@ -169,7 +185,6 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
   const value: ProgressContextValue = {
     signedIn,
     plans,
-    recommendations,
     sessions,
     trainingRows,
     isLoading,
@@ -190,41 +205,8 @@ export function useProgress(): ProgressContextValue {
 }
 
 // ---------------------------------------------------------------------------
-// Tab navigation for /progress sub-routes
-// ---------------------------------------------------------------------------
-
-const tabs = [
-  { href: "/progress", label: "Overview", icon: LineChart },
-  { href: "/progress/log", label: "Log Session", icon: ClipboardCheck },
-  { href: "/progress/predict", label: "Predictor", icon: Sparkles },
-  { href: "/progress/history", label: "History", icon: History },
-] as const;
-
-export function ProgressTabNav() {
-  const pathname = usePathname();
-  return (
-    <nav className="tab-nav animate-in" aria-label="Progress tabs">
-      {tabs.map(({ href, label, icon: Icon }) => {
-        const active =
-          href === "/progress" ? pathname === "/progress" : pathname.startsWith(href);
-        return (
-          <Link key={href} href={href} className={`tab-link ${active ? "active" : ""}`}>
-            <Icon size={15} />
-            <span>{label}</span>
-          </Link>
-        );
-      })}
-    </nav>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Tiny formatter helpers used across pages
 // ---------------------------------------------------------------------------
-
-export function formatDate(value: string) {
-  return new Date(value).toLocaleString();
-}
 
 export function clampPercent(value: number) {
   return Math.max(0, Math.min(100, value * 100));

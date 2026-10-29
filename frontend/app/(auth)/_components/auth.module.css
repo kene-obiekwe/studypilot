@@ -1,0 +1,148 @@
+/* position and z-index lift the page above the legacy decorative body::before overlay. */
+.page {
+  position: relative;
+  z-index: 1;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--sp-space-6) 16px var(--sp-space-7);
+}
+
+.header {
+  width: 100%;
+  max-width: 420px;
+  padding-bottom: var(--sp-space-6);
+}
+
+.wordmark {
+  display: inline-block;
+  font-size: var(--sp-text-lg);
+  font-weight: var(--sp-weight-strong);
+  color: var(--sp-ink);
+  text-decoration: none;
+  letter-spacing: -0.01em;
+}
+
+.wordmark:focus-visible,
+.footerLink:focus-visible,
+.link:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 2px;
+  border-radius: var(--sp-radius-sm);
+}
+
+.main {
+  width: 100%;
+  max-width: 420px;
+  flex: 1;
+}
+
+/* On larger screens the card sits in the middle of the space between the header and the footer. */
+@media (min-width: 721px) {
+  .main {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-bottom: var(--sp-space-8);
+  }
+}
+
+.footer {
+  width: 100%;
+  max-width: 420px;
+  padding-top: var(--sp-space-6);
+  font-size: var(--sp-text-sm);
+  color: var(--sp-ink-soft);
+}
+
+.footerLink,
+.link {
+  color: var(--sp-accent);
+  font-weight: var(--sp-weight-strong);
+  text-decoration: none;
+}
+
+.footerLink:hover,
+.link:hover {
+  text-decoration: underline;
+}
+
+.title {
+  margin: 0 0 var(--sp-space-2);
+  font-size: var(--sp-text-xl);
+  font-weight: var(--sp-weight-strong);
+  line-height: var(--sp-leading-tight);
+  color: var(--sp-ink);
+}
+
+.lede {
+  margin: 0 0 var(--sp-space-5);
+  color: var(--sp-ink-soft);
+  font-size: var(--sp-text-md);
+}
+
+.form {
+  display: grid;
+  gap: var(--sp-space-4);
+}
+
+.stack {
+  display: grid;
+  gap: var(--sp-space-3);
+}
+
+.messageSlot {
+  outline: none;
+}
+
+.messageSlot:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 2px;
+  border-radius: var(--sp-radius-md);
+}
+
+.actions {
+  display: grid;
+  gap: var(--sp-space-3);
+}
+
+.actions > button {
+  width: 100%;
+}
+
+.alt {
+  margin: var(--sp-space-5) 0 0;
+  font-size: var(--sp-text-sm);
+  color: var(--sp-ink-soft);
+  text-align: center;
+}
+
+.rowEnd {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--sp-space-2);
+}
+
+/* The 6-digit code: large, spaced digits, same control chrome as the other inputs. */
+.code {
+  font-size: var(--sp-text-xl);
+  letter-spacing: 0.4em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  padding-left: 0.4em;
+}
+
+/* Bullets keep the spacing even; digits in a placeholder looked unevenly spaced. */
+.code::placeholder {
+  letter-spacing: 0.4em;
+  opacity: 0.6;
+}
+
+.resendRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-space-3);
+  flex-wrap: wrap;
+}

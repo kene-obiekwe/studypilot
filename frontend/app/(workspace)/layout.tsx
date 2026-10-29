@@ -1,17 +1,9 @@
-import { MainNav } from "@/components/main-nav";
-import { TopChrome } from "@/components/top-chrome";
-import { WorkspaceGuard } from "@/components/workspace-guard";
+import { AppShell, WorkspaceGuard } from "@/components/app-shell";
 
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   return (
     <WorkspaceGuard>
-      <div className="app-shell">
-        <MainNav />
-        <section className="panel main-panel animate-in">
-          <TopChrome />
-          {children}
-        </section>
-      </div>
+      <AppShell>{children}</AppShell>
     </WorkspaceGuard>
   );
 }

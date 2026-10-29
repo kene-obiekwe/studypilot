@@ -1,6 +1,8 @@
 from django.contrib.auth.models import User
 from rest_framework.test import APITestCase
 
+from apps.planner.plan_testing import first_plan
+
 
 class CrossUserIsolationTests(APITestCase):
     """User A must never see user B's plans, recommendations, sessions or forecasts."""
@@ -10,23 +12,13 @@ class CrossUserIsolationTests(APITestCase):
         self.bob = User.objects.create_user(username="bob", password="TestPass123!")
 
         self.client.force_authenticate(user=self.alice)
-        self.create_data("ALICE 101", focus=0.2, style="visual")
+        self.create_data("ALICE 101", focus=0.2)
         self.client.force_authenticate(user=self.bob)
-        self.create_data("BOB 202", focus=0.9, style="practice")
+        self.create_data("BOB 202", focus=0.9)
 
-    def create_data(self, course_name, focus, style):
-        plan = self.client.post(
-            "/api/planner/generate/",
-            {"total_available_hours": 10, "courses": [{"name": course_name, "difficulty": 3}]},
-            format="json",
-        )
+    def create_data(self, course_name, focus):
+        plan = first_plan(self.client, [{"name": course_name, "difficulty": 3}], 10)
         self.assertEqual(plan.status_code, 200, plan.data)
-        recommendation = self.client.post(
-            "/api/recommendations/generate/",
-            {"focus_score": focus, "completion_rate": 0.8, "preferred_style": style},
-            format="json",
-        )
-        self.assertEqual(recommendation.status_code, 200, recommendation.data)
         session = self.client.post(
             "/api/tracking/session-log/",
             {
@@ -49,17 +41,11 @@ class CrossUserIsolationTests(APITestCase):
     def test_plan_history_is_private(self):
         for user, own, foreign in [(self.alice, "ALICE 101", "BOB 202"), (self.bob, "BOB 202", "ALICE 101")]:
             with self.subTest(user=user.username):
-                items = self.get_as(user, "/api/planner/history/")["items"]
+                items = self.get_as(user, "/api/planner/plans/")["items"]
                 self.assertEqual(len(items), 1)
                 courses = [a["course"] for a in items[0]["plan_json"]["allocations"]]
                 self.assertEqual(courses, [own])
                 self.assertNotIn(foreign, str(items))
-
-    def test_recommendation_history_is_private(self):
-        alice_items = self.get_as(self.alice, "/api/recommendations/history/")["items"]
-        bob_items = self.get_as(self.bob, "/api/recommendations/history/")["items"]
-        self.assertEqual([i["preferred_style"] for i in alice_items], ["visual"])
-        self.assertEqual([i["preferred_style"] for i in bob_items], ["practice"])
 
     def test_session_history_is_private(self):
         alice_items = self.get_as(self.alice, "/api/tracking/history/")["items"]

@@ -1,0 +1,443 @@
+/* Shared styles for the progress pages: overview, history and forecast. Tokens only. */
+
+.page {
+  display: grid;
+  gap: var(--sp-space-7);
+  max-width: 980px;
+}
+
+.section {
+  display: grid;
+  gap: var(--sp-space-4);
+}
+
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-space-2) var(--sp-space-4);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--sp-text-lg);
+  font-weight: var(--sp-weight-strong);
+  color: var(--sp-ink);
+}
+
+.muted {
+  margin: 0;
+  color: var(--sp-ink-soft);
+  font-size: var(--sp-text-sm);
+}
+
+.link {
+  color: var(--sp-accent);
+  font-size: var(--sp-text-sm);
+  font-weight: var(--sp-weight-strong);
+  text-decoration: none;
+  border-radius: var(--sp-radius-sm);
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 2px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.dot {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--course-dot, var(--sp-ink-soft));
+}
+
+/* -- Sub-navigation ------------------------------------------------------------------------ */
+
+.tabs {
+  display: flex;
+  gap: var(--sp-space-1);
+  margin-bottom: var(--sp-space-6);
+  border-bottom: 1px solid var(--sp-line);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--sp-space-4);
+  color: var(--sp-ink-soft);
+  font-size: var(--sp-text-md);
+  font-weight: var(--sp-weight-strong);
+  text-decoration: none;
+  white-space: nowrap;
+  border-radius: var(--sp-radius-sm) var(--sp-radius-sm) 0 0;
+}
+
+.tab:hover {
+  color: var(--sp-ink);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: -2px;
+}
+
+.tab[aria-current="page"] {
+  color: var(--sp-ink);
+}
+
+.tab[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  left: var(--sp-space-3);
+  right: var(--sp-space-3);
+  bottom: 0;
+  height: 3px;
+  border-radius: var(--sp-radius-pill);
+  background: var(--sp-accent);
+}
+
+/* -- Stats ----------------------------------------------------------------------------------- */
+
+.stats {
+  display: grid;
+  gap: var(--sp-space-5) var(--sp-space-6);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+}
+
+.stats > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* -- Bordered lists ------------------------------------------------------------------------- */
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--sp-line);
+  border-radius: var(--sp-radius-lg);
+  background: var(--sp-surface);
+  overflow: hidden;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--sp-space-2) var(--sp-space-4);
+  align-items: center;
+  padding: var(--sp-space-4);
+}
+
+.row + .row {
+  border-top: 1px solid var(--sp-line);
+}
+
+.rowMain {
+  display: grid;
+  gap: var(--sp-space-1);
+  min-width: 0;
+}
+
+.rowTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-space-2);
+  margin: 0;
+  font-size: var(--sp-text-md);
+  font-weight: var(--sp-weight-strong);
+  color: var(--sp-ink);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.rowMeta {
+  margin: 0;
+  font-size: var(--sp-text-sm);
+  color: var(--sp-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.rowNumber {
+  font-size: var(--sp-text-lg);
+  font-weight: var(--sp-weight-strong);
+  font-variant-numeric: tabular-nums;
+  color: var(--sp-ink);
+  white-space: nowrap;
+}
+
+/* -- Forecast cards ------------------------------------------------------------------------ */
+
+.cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-space-4);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+}
+
+.card {
+  display: grid;
+  align-content: start;
+  gap: var(--sp-space-3);
+  padding: var(--sp-space-5);
+  border: 1px solid var(--sp-line);
+  border-top: 3px solid var(--course-dot, var(--sp-accent));
+  border-radius: var(--sp-radius-lg);
+  background: var(--sp-surface);
+  min-width: 0;
+}
+
+.cardTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-space-2);
+  margin: 0;
+  font-size: var(--sp-text-md);
+  font-weight: var(--sp-weight-strong);
+  color: var(--sp-ink);
+}
+
+.bigNumber {
+  margin: 0;
+  font-size: var(--sp-text-stat);
+  font-weight: var(--sp-weight-strong);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--sp-ink);
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-space-2);
+}
+
+/* -- Session table ------------------------------------------------------------------------- */
+
+.tableWrap {
+  border: 1px solid var(--sp-line);
+  border-radius: var(--sp-radius-lg);
+  background: var(--sp-surface);
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--sp-text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.table th,
+.table td {
+  padding: var(--sp-space-3) var(--sp-space-4);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.table th:first-child,
+.table td:first-child,
+.table th:nth-child(2),
+.table td:nth-child(2) {
+  text-align: left;
+}
+
+.table thead th {
+  border-bottom: 1px solid var(--sp-line);
+  background: var(--sp-sunken);
+  font-weight: var(--sp-weight-strong);
+  color: var(--sp-ink-soft);
+  padding-block: 0;
+}
+
+.table tbody tr + tr td {
+  border-top: 1px solid var(--sp-line);
+}
+
+.sortButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-space-1);
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: var(--sp-weight-strong);
+  cursor: pointer;
+  border-radius: var(--sp-radius-sm);
+}
+
+.sortButton:hover {
+  color: var(--sp-ink);
+}
+
+.sortButton:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 2px;
+}
+
+th[aria-sort="ascending"] .sortButton,
+th[aria-sort="descending"] .sortButton {
+  color: var(--sp-ink);
+}
+
+.sortIcon {
+  opacity: 0.35;
+}
+
+th[aria-sort="ascending"] .sortIcon,
+th[aria-sort="descending"] .sortIcon {
+  opacity: 1;
+  color: var(--sp-accent);
+}
+
+.courseCell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-space-2);
+  color: var(--sp-ink);
+  font-weight: var(--sp-weight-strong);
+}
+
+.sortBar {
+  display: none;
+  gap: var(--sp-space-2);
+  align-items: center;
+}
+
+.sortBar > :first-child {
+  flex: 1;
+}
+
+/* Focused by script when "Show more" runs out; a ring only for keyboard use. */
+.moreStatus:focus {
+  outline: none;
+}
+
+.moreStatus:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 2px;
+  border-radius: var(--sp-radius-sm);
+}
+
+.more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-space-3);
+  flex-wrap: wrap;
+}
+
+.sessions {
+  display: grid;
+  gap: var(--sp-space-4);
+  container-type: inline-size;
+}
+
+/* When the space is too narrow for seven columns the table becomes a stack: one block per session, each value labelled. */
+@container (max-width: 880px) {
+  .sortBar {
+    display: flex;
+  }
+
+  .table thead {
+    display: none;
+  }
+
+  .table,
+  .table tbody,
+  .table tr,
+  .table td {
+    display: block;
+  }
+
+  .table tr {
+    padding: var(--sp-space-3) var(--sp-space-4);
+  }
+
+  .table tbody tr + tr {
+    border-top: 1px solid var(--sp-line);
+  }
+
+  .table tbody tr + tr td {
+    border-top: 0;
+  }
+
+  .table td,
+  .table td:first-child,
+  .table td:nth-child(2) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-space-3);
+    padding: var(--sp-space-1) 0;
+    text-align: right;
+  }
+
+  .table td::before {
+    content: attr(data-label);
+    color: var(--sp-ink-soft);
+    font-weight: var(--sp-weight-regular);
+    text-align: left;
+  }
+}
+
+/* -- Plans ----------------------------------------------------------------------------------- */
+
+.planRow {
+  display: grid;
+  gap: var(--sp-space-2);
+  padding: var(--sp-space-4);
+}
+
+.planHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-space-1) var(--sp-space-4);
+}
+
+.allocations {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-space-2);
+}
+
+.allocation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-space-3);
+  font-size: var(--sp-text-sm);
+  font-variant-numeric: tabular-nums;
+}

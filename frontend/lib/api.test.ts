@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vite
 
 import {
   ApiError,
-  generatePlan,
-  getPlanHistory,
+  listPlans,
   loginUser,
   NETWORK_ERROR_MESSAGE,
-  registerUser,
+  savePlan,
+  startRegistration,
   SERVER_ERROR_MESSAGE,
   SESSION_EXPIRED_MESSAGE,
   setSessionExpiredHandler,
@@ -38,7 +38,8 @@ function json(status: number, body: unknown, headers: Record<string, string> = {
 }
 
 const TOKEN_INVALID = { detail: "Given token not valid for any token type", code: "token_not_valid" };
-const PLAN = { total_available_hours: 10, courses: [{ name: "CSC 401", difficulty: 3 }] };
+const PLAN = { total_hours: 10, base_revision: null, courses: [{ name: "CSC 401", difficulty: 3 }] };
+const PLAN_WEEK = "2026-10-26";
 
 let calls: Call[];
 let redirect: Mock<() => void>;
@@ -88,8 +89,8 @@ describe("error mapping", () => {
   });
 
   it("uses detail and non_field_errors text as-is", () => {
-    expect(toApiError(401, { detail: "No active account found with the given credentials" }).message).toBe(
-      "No active account found with the given credentials",
+    expect(toApiError(401, { detail: "Incorrect username, email or password." }).message).toBe(
+      "Incorrect username, email or password.",
     );
     expect(toApiError(400, { non_field_errors: ["Passwords do not match."] }).message).toBe("Passwords do not match.");
   });
@@ -124,19 +125,19 @@ describe("error mapping", () => {
 
   it("maps responses and network failures through request()", async () => {
     serve(() => json(429, { detail: "Request was throttled. Expected available in 12 seconds." }, { "Retry-After": "12" }));
-    await expect(loginUser({ username: "a", password: "b" })).rejects.toMatchObject({
+    await expect(loginUser({ identifier: "a", password: "b" })).rejects.toMatchObject({
       status: 429,
       message: "Too many attempts. Please wait 12 seconds and try again.",
     });
 
     serve(() => json(400, { password: ["This password is too common."] }));
-    await expect(registerUser({ username: "a", email: "a@b.c", password: "password123" })).rejects.toMatchObject({
+    await expect(startRegistration({ username: "a", email: "a@b.c", password: "password123" })).rejects.toMatchObject({
       message: "Password: This password is too common.",
       fieldErrors: { password: ["This password is too common."] },
     });
 
     vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new TypeError("Failed to fetch"))));
-    await expect(getPlanHistory()).rejects.toMatchObject({ status: 0, message: NETWORK_ERROR_MESSAGE });
+    await expect(listPlans()).rejects.toMatchObject({ status: 0, message: NETWORK_ERROR_MESSAGE });
   });
 });
 
@@ -149,13 +150,13 @@ describe("session refresh", () => {
         return json(200, { access: "new" });
       }
       if (auth !== "Bearer new") return json(401, TOKEN_INVALID);
-      return path === "/planner/generate/" ? json(200, { allocations: [] }) : json(200, { items: [] });
+      return path === `/planner/plans/${PLAN_WEEK}/` ? json(200, { revision: 1 }) : json(200, { items: [] });
     });
 
-    const [plan, history] = await Promise.all([generatePlan(PLAN), getPlanHistory()]);
+    const [plan, plans] = await Promise.all([savePlan(PLAN_WEEK, PLAN), listPlans()]);
 
-    expect(plan).toEqual({ allocations: [] });
-    expect(history).toEqual({ items: [] });
+    expect(plan).toEqual({ revision: 1 });
+    expect(plans).toEqual([]);
     expect(refreshCalls()).toHaveLength(1);
     expect(calls.filter((call) => call.auth === "Bearer old")).toHaveLength(2);
     expect(calls.filter((call) => call.auth === "Bearer new")).toHaveLength(2);
@@ -170,7 +171,7 @@ describe("session refresh", () => {
       path === "/auth/token/refresh/" ? json(status, { detail: "Token is invalid or expired" }) : json(401, TOKEN_INVALID),
     );
 
-    const results = await Promise.allSettled([generatePlan(PLAN), getPlanHistory()]);
+    const results = await Promise.allSettled([savePlan(PLAN_WEEK, PLAN), listPlans()]);
 
     for (const result of results) {
       expect(result.status).toBe("rejected");
@@ -186,7 +187,7 @@ describe("session refresh", () => {
     window.localStorage.setItem("fyp_access_token", "legacy");
     serve(() => json(401, TOKEN_INVALID));
 
-    await expect(getPlanHistory()).rejects.toMatchObject({ message: SESSION_EXPIRED_MESSAGE });
+    await expect(listPlans()).rejects.toMatchObject({ message: SESSION_EXPIRED_MESSAGE });
     expect(refreshCalls()).toHaveLength(0);
     expect(getAccessToken()).toBe("");
     expect(redirect).toHaveBeenCalledTimes(1);
@@ -196,8 +197,8 @@ describe("session refresh", () => {
     setSession({ access: "old", refresh: "r1" });
     serve(({ path }) => (path === "/auth/token/refresh/" ? json(200, { access: "new" }) : json(401, TOKEN_INVALID)));
 
-    await expect(getPlanHistory()).rejects.toMatchObject({ message: SESSION_EXPIRED_MESSAGE });
-    expect(calls.filter((call) => call.path === "/planner/history/")).toHaveLength(2);
+    await expect(listPlans()).rejects.toMatchObject({ message: SESSION_EXPIRED_MESSAGE });
+    expect(calls.filter((call) => call.path === "/planner/plans/")).toHaveLength(2);
     expect(redirect).toHaveBeenCalledTimes(1);
   });
 
@@ -205,20 +206,20 @@ describe("session refresh", () => {
     setSession({ access: "old", refresh: "r1" });
     serve(({ path }) => (path === "/auth/token/refresh/" ? json(503, {}) : json(401, TOKEN_INVALID)));
 
-    await expect(getPlanHistory()).rejects.toMatchObject({ status: 503, message: SERVER_ERROR_MESSAGE });
+    await expect(listPlans()).rejects.toMatchObject({ status: 503, message: SERVER_ERROR_MESSAGE });
     expect(getRefreshToken()).toBe("r1");
     expect(redirect).not.toHaveBeenCalled();
   });
 
   it("never refreshes for login or register, and sends them no bearer token", async () => {
     setSession({ access: "stale", refresh: "r1" });
-    serve(() => json(401, { detail: "No active account found with the given credentials" }));
+    serve(() => json(401, { detail: "Incorrect username, email or password." }));
 
-    await expect(loginUser({ username: "a", password: "wrong" })).rejects.toMatchObject({
+    await expect(loginUser({ identifier: "a", password: "wrong" })).rejects.toMatchObject({
       status: 401,
-      message: "No active account found with the given credentials",
+      message: "Incorrect username, email or password.",
     });
-    await expect(registerUser({ username: "a", email: "a@b.c", password: "x" })).rejects.toMatchObject({
+    await expect(startRegistration({ username: "a", email: "a@b.c", password: "x" })).rejects.toMatchObject({
       status: 401,
     });
 
@@ -232,7 +233,7 @@ describe("session refresh", () => {
     setSession({ access: "old", refresh: "r1" });
     serve(({ path }) => (path === "/auth/token/refresh/" ? json(401, TOKEN_INVALID) : json(401, TOKEN_INVALID)));
 
-    await expect(getPlanHistory()).rejects.toMatchObject({ message: SESSION_EXPIRED_MESSAGE });
+    await expect(listPlans()).rejects.toMatchObject({ message: SESSION_EXPIRED_MESSAGE });
     expect(refreshCalls()).toHaveLength(1);
     expect(refreshCalls()[0].auth).toBeNull();
   });
@@ -243,7 +244,7 @@ describe("session refresh", () => {
     window.localStorage.setItem("fyp_access_token", "legacy");
     serve(() => json(401, TOKEN_INVALID));
 
-    await expect(getPlanHistory()).rejects.toBeInstanceOf(ApiError);
-    expect(assign).toHaveBeenCalledWith("/auth?next=%2Fplanner%3Fweek%3D2&reason=expired");
+    await expect(listPlans()).rejects.toBeInstanceOf(ApiError);
+    expect(assign).toHaveBeenCalledWith("/sign-in?next=%2Fplanner%3Fweek%3D2&reason=expired");
   });
 });
