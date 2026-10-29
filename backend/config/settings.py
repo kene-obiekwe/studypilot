@@ -18,6 +18,13 @@ def env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in ("true", "1")
 
 
+def env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    return int(value.strip())
+
+
 def env_list(name: str, default: list[str]) -> list[str]:
     value = os.getenv(name)
     if value is None or not value.strip():
@@ -176,10 +183,12 @@ EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "").strip() or (
     else "django.core.mail.backends.smtp.EmailBackend"
 )
 EMAIL_HOST = os.getenv("EMAIL_HOST", "").strip() or "localhost"
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", "").strip() or 587)
+EMAIL_PORT = env_int("EMAIL_PORT", 587)
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
+# Seconds before a stuck SMTP connection is abandoned, so a request is not held until the server timeout.
+EMAIL_TIMEOUT = env_int("EMAIL_TIMEOUT", 10)
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "").strip() or "StudyPilot <no-reply@localhost>"
 
 STATIC_URL = "static/"

@@ -35,13 +35,13 @@ class RegisterSerializer(serializers.Serializer):
         username, email, password = attrs["username"], attrs["email"], attrs["password"]
         by_email = find_user_by_email(email)
         if by_email is not None:
-            # An unverified account may re-register with the same username to get a new code.
-            if is_verified(by_email) or by_email.username != username:
+            # An unverified account may re-register with the same username (ignoring case) to get a new code.
+            if is_verified(by_email) or by_email.username.casefold() != username.casefold():
                 raise serializers.ValidationError({"email": ["Email is already registered."]})
             self.resend_user = by_email
             candidate = by_email
         else:
-            if User.objects.filter(username=username).exists():
+            if User.objects.filter(username__iexact=username).exists():
                 raise serializers.ValidationError({"username": ["A user with that username already exists."]})
             candidate = User(username=username, email=email)
         problems = password_errors(password, candidate)
@@ -92,8 +92,10 @@ class VerifiedTokenObtainPairSerializer(TokenObtainPairSerializer):
     The one identifier arrives as `identifier` (or as `username`, the original name). When it contains
     "@" it is looked up by email, ignoring case; if that finds no account it is tried as a username,
     since usernames may contain "@". Two accounts sharing an address is never guessed between: that
-    fails like any other wrong login. Every failure, whichever part was wrong, is the same 401, and the
-    distinct "verify your email" answer is only given once the identifier and password are right.
+    fails like any other wrong login. A username matches exactly first; failing that, a single account
+    whose username differs only by case is used, and several such accounts fail the same way. Every
+    failure, whichever part was wrong, is the same 401, and the distinct "verify your email" answer is
+    only given once the identifier and password are right.
     """
 
     default_error_messages = {"no_active_account": LOGIN_FAILED_MESSAGE}
@@ -108,17 +110,24 @@ class VerifiedTokenObtainPairSerializer(TokenObtainPairSerializer):
         User().set_password(password)
         raise AuthenticationFailed(self.error_messages["no_active_account"], "no_active_account")
 
+    def _resolve_username(self, identifier: str, password: str) -> str:
+        """The exact username if it exists, else the one account that matches ignoring case."""
+        if User.objects.filter(username=identifier).exists():
+            return identifier
+        matches = list(User.objects.filter(username__iexact=identifier).values_list("username", flat=True)[:2])
+        if len(matches) > 1:
+            self._fail(password)
+        return matches[0] if matches else identifier
+
     def validate(self, attrs):
         identifier = (attrs.get("identifier") or attrs.get(self.username_field) or "").strip()
         password = attrs.get("password", "")
         if not identifier:
             raise serializers.ValidationError({"identifier": ["Enter your username or email."]})
-        if "@" in identifier:
-            matches = users_with_email(identifier, 2)
-            if len(matches) > 1:
-                self._fail(password)
-            if matches:
-                identifier = matches[0].username
+        matches = users_with_email(identifier, 2) if "@" in identifier else []
+        if len(matches) > 1:
+            self._fail(password)
+        identifier = matches[0].username if matches else self._resolve_username(identifier, password)
         data = super().validate({self.username_field: identifier, "password": password})
         if not is_verified(self.user):
             raise EmailNotVerified({"detail": EMAIL_NOT_VERIFIED_MESSAGE, "code": EMAIL_NOT_VERIFIED_CODE})

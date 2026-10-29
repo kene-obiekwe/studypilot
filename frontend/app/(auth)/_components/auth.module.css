@@ -82,6 +82,13 @@
   font-size: var(--sp-text-md);
 }
 
+/* Sits under a .lede, so it pulls up into the lede's bottom margin. */
+.hint {
+  margin: calc(var(--sp-space-3) - var(--sp-space-5)) 0 var(--sp-space-5);
+  color: var(--sp-ink-soft);
+  font-size: var(--sp-text-sm);
+}
+
 .form {
   display: grid;
   gap: var(--sp-space-4);
