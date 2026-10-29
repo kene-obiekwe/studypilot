@@ -208,10 +208,6 @@ export function useProgress(): ProgressContextValue {
 // Tiny formatter helpers used across pages
 // ---------------------------------------------------------------------------
 
-export function formatDate(value: string) {
-  return new Date(value).toLocaleString();
-}
-
 export function clampPercent(value: number) {
   return Math.max(0, Math.min(100, value * 100));
 }

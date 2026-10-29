@@ -7,6 +7,7 @@ import {
   DEFAULT_SORT,
   nextSort,
   percentText,
+  shortDate,
   SORT_KEYS,
   sortSessions,
   startSort,
@@ -117,5 +118,15 @@ describe("percentText", () => {
     expect(percentText(0)).toBe("0%");
     expect(percentText(null)).toBe("n/a");
     expect(percentText(undefined)).toBe("n/a");
+  });
+});
+
+describe("shortDate", () => {
+  it("is day, month, year in UK order", () => {
+    expect(shortDate("2026-10-27T12:00:00Z")).toBe("27 Oct 2026");
+  });
+
+  it("is empty for an invalid date", () => {
+    expect(shortDate("not a date")).toBe("");
   });
 });

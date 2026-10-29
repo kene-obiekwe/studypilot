@@ -80,11 +80,11 @@ export function sortSessions(items: ReadonlyArray<SessionHistoryItem>, state: So
   });
 }
 
-/** "5 Mar 2026", in the browser's locale. */
+/** "5 Mar 2026": UK order whatever the browser's locale, like the rest of the app. */
 export function shortDate(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
 /** "82%" from a 0 to 1 score, or "n/a" when there is none. */

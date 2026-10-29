@@ -32,7 +32,7 @@ export function localDateKey(date: Date): string {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
-/** A plan from /planner/plans/ (WeeklyPlan) or the history alias (PlanHistoryItem, version 1 or 2). */
+/** A plan from /planner/plans/ (WeeklyPlan) or a plan in the stored shape (PlanHistoryItem: the version-1 shape kept for plans saved before 5.8b.1, or version 2). */
 export type PlanLike = PlanHistoryItem & { revision?: number; is_current?: boolean };
 
 /** One course of a plan, read the same way from a version-1 or a version-2 plan. */
