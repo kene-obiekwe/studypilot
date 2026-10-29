@@ -3,6 +3,7 @@ services:
     name: studypilot-api
     runtime: python
     plan: free
+    region: oregon
     branch: master
     autoDeployTrigger: commit
     rootDir: backend
@@ -58,7 +59,7 @@ services:
         value: "20"
       - key: AI_PLAN_TIMEOUT_SECONDS
         value: "20"
-      # Outgoing email (see docs/deploy.md: Render's free plan blocks SMTP ports 25, 465 and 587).
+      # Outgoing email (see docs/deploy.md: Render's free plan blocks SMTP ports 25, 465 and 587; use 2525).
       - key: EMAIL_BACKEND
         sync: false
       - key: EMAIL_HOST
@@ -73,3 +74,6 @@ services:
         sync: false
       - key: DEFAULT_FROM_EMAIL
         sync: false
+      # Seconds before a stuck mail connection is abandoned.
+      - key: EMAIL_TIMEOUT
+        value: "10"
