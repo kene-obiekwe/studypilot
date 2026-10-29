@@ -10,7 +10,7 @@ from apps.planner.models import Course
 from .engine import recommend
 from .engine.gather import gather_course_data, local_today, week_start
 from .models import ShownStrategy
-from .plan import build_plan
+from .plan import build_plan, latest_plans, plan_envelope, saved_plan_statuses, saved_response
 from .serializers import StrategyFeedbackRequestSerializer
 from .shown import feedback_state, log_shown, record_feedback
 
@@ -33,6 +33,11 @@ class CourseRecommendationsView(APIView):
 
         now = timezone.now()
         monday = week_start(local_today(now))
+        courses = list(courses)
+        ai_plan_available = ai_enabled()
+        statuses = {}
+        if ai_plan_available:
+            statuses = saved_plan_statuses(request.user, courses, latest_plans(request.user, courses, monday))
         results = []
         with transaction.atomic():
             for course in courses:
@@ -43,6 +48,8 @@ class CourseRecommendationsView(APIView):
                     row = shown[rec["strategy_id"]]
                     rec["shown_id"] = row.id
                     rec["feedback"] = states[row.id]
+                # Whether this week's AI plan was written and what changed since; null with none.
+                output["saved_plan"] = statuses.get(course.id)
                 results.append(output)
 
         return Response(
@@ -50,7 +57,7 @@ class CourseRecommendationsView(APIView):
                 "generated_at": now.isoformat(),
                 "week_start": monday.isoformat(),
                 # Lets the client hide "Write my weekly plan" when only the rules plan exists.
-                "ai_plan_available": ai_enabled(),
+                "ai_plan_available": ai_plan_available,
                 "courses": results,
             }
         )
@@ -67,12 +74,49 @@ class StrategyFeedbackView(APIView):
 
 
 class CoursePlanView(APIView):
-    """This week's plan for one course: AI-written when enabled and valid, otherwise rules-only."""
+    """This week's plan for one course.
 
-    def get(self, request, pk):
+    GET only reads: the newest plan written this week, with whether sessions or settings changed
+    since (`saved` is null when none was written; with AI off it is the rules-only plan). It never
+    calls the model. POST writes: it returns the saved plan untouched while nothing has changed,
+    and otherwise asks the model (cache, daily limit and validation as before), falling back to
+    the rules-only plan, which is not saved. Either way the status fields describe the saved plan.
+    """
+
+    def _course(self, request, pk):
         course = Course.objects.filter(pk=pk, user=request.user).first()
         if course is None:
             raise NotFound("Course not found.")
-        now = timezone.now()
+        return course
+
+    def _rules(self, request, course, now, monday):
         output = recommend(gather_course_data(request.user, course, now))
-        return Response(build_plan(request, course, output, week_start(local_today(now))))
+        return plan_envelope(build_plan(request, course, output, monday), None, monday)
+
+    def get(self, request, pk):
+        course = self._course(request, pk)
+        now = timezone.now()
+        monday = week_start(local_today(now))
+        if not ai_enabled():
+            return Response(self._rules(request, course, now, monday))
+        plans = latest_plans(request.user, [course], monday)
+        status = saved_plan_statuses(request.user, [course], plans)[course.id]
+        saved = saved_response(plans[course.id], monday) if course.id in plans else None
+        return Response(plan_envelope(saved, status, monday))
+
+    def post(self, request, pk):
+        course = self._course(request, pk)
+        now = timezone.now()
+        monday = week_start(local_today(now))
+        if not ai_enabled():
+            return Response(self._rules(request, course, now, monday))
+
+        plans = latest_plans(request.user, [course], monday)
+        status = saved_plan_statuses(request.user, [course], plans)[course.id]
+        if status is not None and not status["outdated"]:
+            return Response(plan_envelope(saved_response(plans[course.id], monday), status, monday))
+
+        output = recommend(gather_course_data(request.user, course, now))
+        written = build_plan(request, course, output, monday)
+        plans = latest_plans(request.user, [course], monday)
+        return Response(plan_envelope(written, saved_plan_statuses(request.user, [course], plans)[course.id], monday))
