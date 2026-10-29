@@ -1,5 +1,11 @@
+import os
+from unittest import mock
+
+from django.conf import settings
 from django.test import SimpleTestCase, TestCase, override_settings
 from rest_framework import serializers
+
+from config.settings import env_int
 
 from .fields import FiniteFloatField
 
@@ -52,3 +58,23 @@ class HealthCheckTests(TestCase):
             redirected = self.client.get("/api/users/me/")
         self.assertEqual(redirected.status_code, 301)
         self.assertTrue(redirected["Location"].startswith("https://"))
+
+
+class EnvIntTests(SimpleTestCase):
+    def test_reads_a_number_and_ignores_surrounding_spaces(self):
+        with mock.patch.dict(os.environ, {"SOME_NUMBER": " 25 "}):
+            self.assertEqual(env_int("SOME_NUMBER", 10), 25)
+
+    def test_unset_or_blank_uses_the_default(self):
+        with mock.patch.dict(os.environ, {"BLANK_NUMBER": "   "}):
+            self.assertEqual(env_int("BLANK_NUMBER", 10), 10)
+        self.assertEqual(env_int("NUMBER_THAT_IS_NOT_SET", 10), 10)
+
+    def test_a_non_number_is_an_error_at_startup(self):
+        with mock.patch.dict(os.environ, {"BAD_NUMBER": "ten"}), self.assertRaises(ValueError):
+            env_int("BAD_NUMBER", 10)
+
+    def test_email_timeout_defaults_to_ten_seconds(self):
+        self.assertIsInstance(settings.EMAIL_TIMEOUT, int)
+        if not os.environ.get("EMAIL_TIMEOUT", "").strip():
+            self.assertEqual(settings.EMAIL_TIMEOUT, 10)

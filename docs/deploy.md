@@ -19,9 +19,9 @@ string**, the **Render URL** and the **Vercel URL**.
 ## 1. Neon: the database
 
 1. Sign in at neon.com and create a project. Name it `studypilot`, keep the default Postgres version.
-2. **Region:** pick the one nearest the Render region you will use in step 2. The two should
-   match (for example Frankfurt for both, or Ohio for both) so each query is not crossing an ocean.
-   Choose the region now; it cannot be changed later.
+2. **Region:** the backend runs in Render's Oregon region (`region: oregon` in `render.yaml`), so
+   create the Neon project in **AWS US West 2 (Oregon)**. Keeping the two together means each query
+   is not crossing an ocean. The region cannot be changed after the project is created.
 3. On the project dashboard click **Connect**. Under *Connection string* turn **Connection pooling
    OFF** so the host does not contain `-pooler`. Copy the string. It looks like:
 
@@ -43,18 +43,20 @@ a second or two. The backend discards dead connections itself, so nothing needs 
 
 1. Sign in at render.com with GitHub and grant it access to this repository.
 2. Click **New → Blueprint**, pick this repository and the `master` branch. Render reads
-   `render.yaml` and shows one web service, `studypilot-api`, on the **Free** plan. Choose the
-   region that matches your Neon project when asked.
-3. Render asks for a value for each variable marked as a secret. Fill them in like this:
+   `render.yaml` and shows one web service, `studypilot-api`, on the **Free** plan in the Oregon
+   region.
+3. Render asks for a value for each variable marked as a secret. Only one needs a value now:
 
    | Variable | Value |
    |---|---|
    | `DATABASE_URL` | The Neon string from step 1 |
-   | `ALLOWED_HOSTS` | Leave blank for now. Render's own `*.onrender.com` name is added automatically |
-   | `CORS_ALLOWED_ORIGINS` | Leave blank for now (filled in at step 4) |
-   | `CSRF_TRUSTED_ORIGINS` | Leave blank for now (filled in at step 4) |
-   | `ANTHROPIC_API_KEY` | Leave blank unless you want AI-written plans (see the notes below) |
-   | `EMAIL_*`, `DEFAULT_FROM_EMAIL` | Leave blank for now (see the notes below) |
+
+   **Render does not create a secret variable that you leave blank here.** The others
+   (`ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS`, `ANTHROPIC_API_KEY`, the
+   `EMAIL_*` variables and `DEFAULT_FROM_EMAIL`) simply will not exist yet. That is fine for the
+   first deploy: Render's own `*.onrender.com` name is added to the allowed hosts automatically.
+   Add each one later from the service's **Environment** page with **Add variable** (step 4 and the
+   notes below say which and when).
 
    `SECRET_KEY` is generated for you. `DEBUG` is already `False`.
 4. Click **Apply**. The first deploy installs the packages, collects static files, runs the
@@ -95,16 +97,19 @@ every 10 minutes would also keep it awake.
 
 ## 4. Render again: allow the site
 
-In Render, open the service → **Environment** and set:
+In Render, open the service → **Environment** and use **Add variable** for each of these (they do
+not exist yet, see step 2):
 
 | Variable | Value |
 |---|---|
 | `CORS_ALLOWED_ORIGINS` | `https://<project>.vercel.app` |
 | `CSRF_TRUSTED_ORIGINS` | `https://<project>.vercel.app` |
-| `ALLOWED_HOSTS` | Only needed for a custom API domain (comma-separated); otherwise leave blank |
+| `ALLOWED_HOSTS` | Only needed for a custom API domain (comma-separated); otherwise do not add it |
 
-Use the scheme (`https://`) and no trailing slash or path. Separate several origins with commas. Save; Render redeploys. Then open the Vercel site, register or sign in, and
-check that the dashboard loads.
+Use the scheme (`https://`) and no trailing slash or path. Separate several origins with commas.
+Save; Render redeploys. Then open the Vercel site, register or sign in, and check that the
+dashboard loads. (Angle brackets in this guide, like `<project>`, only mark a value to replace;
+never type them.)
 
 If the browser console shows a CORS error, the origin in `CORS_ALLOWED_ORIGINS` does not match the
 address in the address bar exactly. Preview URLs on Vercel (`...-git-branch-....vercel.app`) are
@@ -114,12 +119,46 @@ Because the services deploy from `master`, changes reach them once a pull reques
 
 ## 5. Notes
 
-**Email.** Sign-up and password reset send a code by email. Render's free plan blocks outgoing
-SMTP on ports 25, 465 and 587, so the default setup cannot send mail. Until email is set up, new
-sign-ups cannot get their verification code. The fix is to send through a provider's HTTP API, or
-through an SMTP port other than those three (for example 2525, which several providers offer). It
-is configured with the `EMAIL_*` variables in `render.yaml`. Accounts created by the seeding
-command below are already verified, so they sign in without any email.
+**Email.** Sign-up and password reset send a code by email, so the backend needs a mail server.
+Render's free plan blocks outgoing SMTP on ports 25, 465 and 587, so use a provider that offers
+another port. This setup uses Brevo's free plan over port 2525.
+
+1. Create a Brevo account. Under **Senders, domains & dedicated IPs → Senders**, add the address
+   the emails should come from and verify it by clicking the link Brevo emails to it.
+2. Open **SMTP & API → SMTP**. Note the server (`smtp-relay.brevo.com`) and the **login**, which
+   ends in `@smtp-brevo.com`. This is not your account email.
+3. Click **Generate a new SMTP key**, choose a *Standard* key, and copy the key **in full** from
+   the pop-up. It is shown once. All keys start with the same long prefix and the list afterwards
+   only shows the last few characters, so a partly copied key looks right but fails.
+4. Leave Brevo's **IP blocking** off. Render's free plan has no fixed outgoing address, so a block
+   list would reject your own server.
+5. In Render, **Environment → Add variable**:
+
+   | Variable | Value |
+   |---|---|
+   | `EMAIL_HOST` | `smtp-relay.brevo.com` |
+   | `EMAIL_PORT` | `2525` (587 is blocked on Render's free plan) |
+   | `EMAIL_HOST_USER` | The `...@smtp-brevo.com` login from step 2 |
+   | `EMAIL_HOST_PASSWORD` | The full SMTP key from step 3 |
+   | `DEFAULT_FROM_EMAIL` | `StudyPilot <your-verified-sender@example.com>`, using the address verified in step 1 |
+
+   `EMAIL_USE_TLS` is already on by default, which Brevo needs. `EMAIL_TIMEOUT` is set to 10
+   seconds in `render.yaml`, so a mail server that does not answer cannot hold a request open for
+   the full minute. Save and let Render redeploy.
+
+What recipients see: Brevo rewrites the From address to one on its own sending domain
+(`brevosend.com`), because the free plan sends from a shared domain. Gmail delivers these to the
+inbox. Microsoft 365 and Outlook often file them under **Junk**, which is why the verification
+and password-reset pages tell people to check their spam folder.
+
+If emails do not arrive: open the service's **Logs** in Render and search for `Could not send`.
+The last line of the traceback says why. `535` means the login or key is wrong (check for a
+half-copied key, or the account email used instead of the `@smtp-brevo.com` login). A timeout means
+the port or host is wrong or blocked. A send failure is logged, never shown to the person signing
+up, so the logs are the only place it appears.
+
+Accounts created by the seeding command below are already verified, so they sign in without any
+email.
 
 **AI plans (optional).** Set `ANTHROPIC_API_KEY` on Render to turn on AI-written weekly plans and
 course-trait suggestions. Without it the app serves its rules-based plans and keyword-based
@@ -127,16 +166,19 @@ suggestions and everything else works. `AI_PLAN_DAILY_LIMIT` (default 20) caps t
 per day, and the count is kept in the database, so it survives restarts.
 
 **Demo account.** Render's free plan has no shell, so create the demo data from your own computer,
-pointed at the Neon database. From `backend/` in PowerShell, with the virtualenv active (use a strong password of your own;
-it is used for all five accounts, `pilot_consistent` and four others):
+pointed at the Neon database. From `backend/` in PowerShell, with the virtualenv active. Use a
+strong password of your own; it is used for all five accounts (`pilot_consistent` and four others).
+Replace the example values below with your own, quotes included, and type no angle brackets:
 
 ```powershell
 $env:DEBUG = "False"
-$env:SECRET_KEY = "any-long-random-value-here"
-$env:DATABASE_URL = "<the Neon connection string>"
-$env:PILOT_PASSWORD = "<a strong password>"
+$env:SECRET_KEY = "any-long-random-value-here-0123456789"
+$env:DATABASE_URL = "postgresql://neondb_owner:PASSWORD@ep-something-123456.us-west-2.aws.neon.tech/neondb?sslmode=require"
+$env:PILOT_PASSWORD = "Choose-A-Strong-Password-4471"
 python manage.py seed_pilot_data --allow-production
 ```
+
+The angle brackets that appear elsewhere in this guide (such as `<project>`) are placeholders only.
 
 Close the window afterwards so the database address and password do not stay in your shell.
 

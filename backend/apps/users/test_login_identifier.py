@@ -35,8 +35,9 @@ class LoginIdentifierTests(EmailFlowTestCase):
         self.assert_signed_in(self.post(TOKEN, username="Ada", password=PASSWORD))
         self.assert_signed_in(self.post(TOKEN, username="ada.lovelace@example.com", password=PASSWORD))
 
-    def test_the_username_itself_is_still_case_sensitive(self):
-        self.assertEqual(self.post(TOKEN, identifier="ada", password=PASSWORD).status_code, 401)
+    def test_a_username_matches_ignoring_case_when_only_one_account_has_it(self):
+        for identifier in ("ada", "ADA", " aDa "):
+            self.assert_signed_in(self.post(TOKEN, identifier=identifier, password=PASSWORD))
 
     def test_a_username_that_contains_an_at_sign_still_works(self):
         self.verified_user(username="ada@home", email="other@example.com")

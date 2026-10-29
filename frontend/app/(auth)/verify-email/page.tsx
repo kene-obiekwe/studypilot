@@ -13,6 +13,7 @@ import { setSession } from "@/lib/session";
 import styles from "../_components/auth.module.css";
 import { CodeInput } from "../_components/CodeInput";
 import { FormMessage, useFocusFirstProblem } from "../_components/FormMessage";
+import { JunkFolderHint } from "../_components/JunkFolderHint";
 import { ResendCodeButton, useResendCountdown } from "../_components/ResendCode";
 import { useSignedInRedirect } from "../_components/useSignedInRedirect";
 
@@ -118,6 +119,7 @@ function VerifyEmailForm() {
     <>
       <h1 className={styles.title}>Check your email</h1>
       <p className={styles.lede}>Enter the 6-digit code to confirm your address. It expires in 15 minutes.</p>
+      <JunkFolderHint />
 
       <form ref={formRef} className={styles.form} onSubmit={onSubmit}>
         {justRegistered && emailParam && (

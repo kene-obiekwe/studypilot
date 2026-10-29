@@ -11,6 +11,7 @@ import { authLink, CODE_LENGTH, safeNextPath } from "@/lib/auth-flow";
 import styles from "../_components/auth.module.css";
 import { CodeInput } from "../_components/CodeInput";
 import { FormMessage, useFocusFirstProblem } from "../_components/FormMessage";
+import { JunkFolderHint } from "../_components/JunkFolderHint";
 import { ResendCodeButton, useResendCountdown } from "../_components/ResendCode";
 import { useSignedInRedirect } from "../_components/useSignedInRedirect";
 
@@ -179,6 +180,7 @@ function ForgotPasswordFlow() {
     <>
       <h1 className={styles.title}>Enter your code</h1>
       <p className={styles.lede}>Choose a new password for {email.trim()}.</p>
+      <JunkFolderHint />
 
       <form ref={formRef} className={styles.form} onSubmit={(event) => void onSubmitReset(event)}>
         {message && <FormMessage tone="danger">{message}</FormMessage>}
