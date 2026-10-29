@@ -306,3 +306,43 @@ class CourseListTests(SavedPlanTestCase):
             plans = latest_plans(self.user, courses, week)
         with self.assertNumQueries(1):
             saved_plan_statuses(self.user, courses, plans)
+
+
+class PlannerSaveTests(SavedPlanTestCase):
+    """Changing a difficulty through the weekly planner outdates that course's written plan."""
+
+    def setUp(self):
+        super().setUp()
+        self.algebra = self.make_course("Algebra")
+        self.fake_client(
+            message(faithful_plan(self.output())), message(faithful_plan(self.output(self.algebra)))
+        )
+        self.clock.advance(minutes=5)
+        self.write()
+        self.write(self.algebra)
+        self.clock.advance(minutes=5)
+
+    def save_plan(self, calculus, algebra):
+        response = self.client.put(
+            "/api/planner/plans/2026-10-26/",
+            {
+                "courses": [{"name": "Calculus", "difficulty": calculus}, {"name": "Algebra", "difficulty": algebra}],
+                "total_hours": 8,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
+    def test_a_changed_difficulty_outdates_that_course_only(self):
+        self.save_plan(4, 5)
+        data = self.read()
+        self.assertEqual((data["outdated"], data["course_changed"], data["new_sessions"]), (True, True, 0))
+        other = self.read(self.algebra)
+        self.assertEqual((other["outdated"], other["course_changed"]), (False, False))
+        self.assertEqual(self.list_status()["Calculus"]["course_changed"], True)
+        self.assertEqual(self.list_status()["Algebra"]["outdated"], False)
+
+    def test_different_hours_with_the_same_difficulty_do_not(self):
+        self.save_plan(5, 5)
+        for course in (self.course, self.algebra):
+            self.assertFalse(self.read(course)["outdated"])

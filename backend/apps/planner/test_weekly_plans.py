@@ -413,3 +413,42 @@ class CourseHookTests(WeeklyPlanApiTestCase):
         self.assertEqual(StudyPlan.objects.filter(week_start=NEXT_MONDAY).count(), 2)
         self.assertEqual(StudyPlan.objects.filter(week_start=MONDAY).count(), 2)
         self.assertEqual(StudyPlan.objects.filter(week_start=MONDAY - timedelta(days=7)).count(), 1)
+
+
+class CourseSettingsSyncTests(WeeklyPlanApiTestCase):
+    """A plan save moves a course's updated_at only when its difficulty changes, not for hours alone."""
+
+    LATER = WEDNESDAY + timedelta(hours=2)
+
+    def save_update(self, courses, **hours):
+        with mock.patch("django.utils.timezone.now", return_value=self.LATER):
+            response = self.put("2026-10-26", courses, base_revision=1, **hours)
+        self.assertEqual(response.status_code, 200, response.data)
+
+    def fresh(self, name):
+        return Course.objects.get(user=self.user, name=name)
+
+    def test_a_changed_difficulty_moves_updated_at_for_that_course_only(self):
+        self.start_week()
+        before = self.fresh("B").weekly_target_hours
+        self.save_update([{"name": "A", "difficulty": 5}, {"name": "B", "difficulty": 3}], more_hours=10)
+        self.assertEqual((self.fresh("A").difficulty, self.fresh("A").updated_at), (5, self.LATER))
+        self.assertEqual(self.fresh("B").updated_at, WEDNESDAY)
+        self.assertNotEqual(self.fresh("B").weekly_target_hours, before)  # B's hours still saved
+
+    def test_new_hours_with_the_same_difficulty_leave_updated_at_alone(self):
+        self.start_week()
+        hours = {n: self.fresh(n).weekly_target_hours for n in ("A", "B")}
+        self.save_update([{"name": "A", "difficulty": 4}, {"name": "B", "difficulty": 3}], more_hours=10)
+        for name in ("A", "B"):
+            self.assertEqual(self.fresh(name).updated_at, WEDNESDAY)
+            self.assertNotEqual(self.fresh(name).weekly_target_hours, hours[name])
+
+    def test_a_new_course_is_created_as_before(self):
+        self.start_week()
+        self.course("C", 2)
+        self.save_update([{"name": "A", "difficulty": 4}, {"name": "C", "difficulty": 2}], more_hours=10)
+        self.assertEqual(self.fresh("C").updated_at, WEDNESDAY)
+        created = self.put("2026-11-02", [{"name": "Brand new", "difficulty": 3}], total_hours=4)
+        self.assertEqual(created.status_code, 200, created.data)
+        self.assertEqual(self.fresh("Brand new").difficulty, 3)

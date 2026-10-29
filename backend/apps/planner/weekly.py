@@ -390,7 +390,12 @@ def _store(user, week_start: date, plan_json: dict, current: StudyPlan | None, n
 
 
 def _sync_courses(user, entries: list[dict]) -> None:
-    """Create new course names and save each course's difficulty and planned hours, as planning always has."""
+    """Create new course names and save each course's difficulty and planned hours, as planning always has.
+
+    A changed difficulty is an edit to the course's settings, so it also moves `updated_at` (which
+    outdates the course's written weekly plan). Planned hours belong to the weekly plan, so
+    changing them alone leaves `updated_at` as it was.
+    """
     for entry in entries:
         fields = {"difficulty": entry["difficulty"], "weekly_target_hours": entry["planned_hours"]}
         course = Course.objects.filter(user=user, pk=entry["course_id"]).first() if entry["course_id"] else None
@@ -398,9 +403,12 @@ def _sync_courses(user, entries: list[dict]) -> None:
             course = Course.objects.create(user=user, name=entry["name"], **fields)
             entry["course_id"] = course.id
         else:
+            update_fields = list(fields)
+            if course.difficulty != fields["difficulty"]:
+                update_fields.append("updated_at")
             for field, value in fields.items():
                 setattr(course, field, value)
-            course.save(update_fields=list(fields))
+            course.save(update_fields=update_fields)
 
 
 def save_revision(
