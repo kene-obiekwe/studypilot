@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { CalendarDays, ExternalLink, Lightbulb, TrendingUp } from "lucide-react";
 
 import { Lockup } from "@/components/brand";
 import { ThemeToggle, UiRoot } from "@/components/ui";
 
+import { AccountDeletedNotice } from "./AccountDeletedNotice";
 import { AuthActions } from "./AuthActions";
 import { HeroVideo } from "./HeroVideo";
 import styles from "./landing.module.css";
@@ -84,6 +86,9 @@ export function LandingPage() {
       </header>
 
       <main id="main" className={styles.main}>
+        <Suspense fallback={null}>
+          <AccountDeletedNotice className={styles.flash} />
+        </Suspense>
         <section className={styles.hero} aria-labelledby="hero-title">
           <div className={styles.heroText}>
             <h1 id="hero-title" className={styles.headline}>

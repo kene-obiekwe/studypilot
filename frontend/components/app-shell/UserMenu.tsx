@@ -1,10 +1,13 @@
 "use client";
 
 import { Suspense, useId, useSyncExternalStore } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LogOut, Monitor, Moon, Sun } from "lucide-react";
+import { LogOut, Monitor, Moon, Sun, UserRound } from "lucide-react";
 
 import { Button, SegmentedControl } from "@/components/ui";
+import { cx } from "@/components/ui/cx";
+import uiStyles from "@/components/ui/ui.module.css";
 import { clearSession } from "@/lib/session";
 import { getServerPreference, readPreference, setPreference, subscribe, type ThemePreference } from "@/lib/theme";
 
@@ -33,6 +36,7 @@ export function UserMenu({ placement }: { placement: Placement }) {
           <MenuHeader />
         </Suspense>
         {placement === "topbar" && <CompactThemeChoice />}
+        <AccountLink menuId={menuId} />
         <SignOutButton />
       </div>
     </>
@@ -88,6 +92,22 @@ function CompactThemeChoice() {
       </span>
       <SegmentedControl label="Theme" options={THEME_OPTIONS} value={preference} onChange={setPreference} />
     </div>
+  );
+}
+
+/** Styled like the ghost Sign out button below it. Following it closes the menu. */
+function AccountLink({ menuId }: { menuId: string }) {
+  return (
+    <Link
+      href="/account"
+      className={cx(uiStyles.control, uiStyles.button, uiStyles.ghost, uiStyles.md, styles.menuSignOut)}
+      onClick={() => document.getElementById(menuId)?.hidePopover?.()}
+    >
+      <span className={uiStyles.buttonIcon} aria-hidden="true">
+        <UserRound size={16} />
+      </span>
+      Account
+    </Link>
   );
 }
 

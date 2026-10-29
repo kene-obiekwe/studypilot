@@ -46,6 +46,7 @@
 /* -- Shared layout --------------------------------------------------------------------- */
 
 .headerInner,
+.main > .flash,
 .main > .hero,
 .main > .section,
 .bandInner,
@@ -58,6 +59,7 @@
 
 @media (min-width: 720px) {
   .headerInner,
+  .main > .flash,
   .main > .hero,
   .main > .section,
   .bandInner,
@@ -68,6 +70,10 @@
 
 .main {
   flex: 1;
+}
+
+.flash {
+  padding-top: var(--sp-space-5);
 }
 
 .wordmark {
