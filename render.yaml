@@ -10,10 +10,14 @@ services:
     # Migrations run in the build, not at start: the free plan has no pre-deploy command, and a failed
     # migration here fails the build, so the new version never starts and the old one keeps serving.
     # Doing it at start would also repeat it on every wake from sleep and lengthen the cold start.
+    # The same goes for the housekeeping after it (free has no cron): expired refresh-token rows and
+    # unverified accounts older than 7 days are removed on each deploy.
     buildCommand: >-
       pip install -r requirements.txt
       && python manage.py collectstatic --noinput
       && python manage.py migrate --noinput
+      && python manage.py flushexpiredtokens
+      && python manage.py purge_unverified_accounts
       && python manage.py createcachetable
     startCommand: gunicorn config.wsgi -c gunicorn.conf.py
     healthCheckPath: /api/health/
