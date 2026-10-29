@@ -1,0 +1,5 @@
+Hi {{ username }},
+
+Your StudyPilot email was changed to {{ new_email|safe }}.
+
+If this wasn't you, reset your password.
