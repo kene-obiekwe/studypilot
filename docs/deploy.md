@@ -168,7 +168,12 @@ email.
 **AI plans (optional).** Set `ANTHROPIC_API_KEY` on Render to turn on AI-written weekly plans and
 course-trait suggestions. Without it the app serves its rules-based plans and keyword-based
 suggestions and everything else works. `AI_PLAN_DAILY_LIMIT` (default 20) caps the calls per user
-per day, and the count is kept in the database, so it survives restarts.
+per day, and the count is kept in the database, so it survives restarts. At the default model's
+published price (October 2026) a weekly plan costs about $0.0007 and a trait suggestion about
+$0.0001. When the model's answer fails the plan's checks, the app serves the rules-based plan and
+logs a line such as `AI plan unavailable, serving the rules-based result (number_missing; 2100
+input, 800 output tokens)`. Rejected answers are not cached, so the next request makes a new call.
+Searching Render's logs for `AI plan unavailable` shows how often this happens and what it costs.
 
 **Demo account.** Render's free plan has no shell, so create the demo data from your own computer,
 pointed at the Neon database. From `backend/` in PowerShell, with the virtualenv active. Use a

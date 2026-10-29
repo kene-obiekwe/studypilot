@@ -1,8 +1,9 @@
 """Weekly study plan for one course: AI-written when enabled, otherwise built from the rules.
 
 The model only rewrites the engine's chosen strategies. Its answer is accepted only if it keeps
-the same strategies in the same order, keeps every number the engine stated, adds no other
-numbers and stays within length limits; anything else falls back to the rules-only plan.
+the same strategies in the same order, keeps every number in each strategy's why (numbers that
+are only part of the course name aside), adds no other numbers and stays within length limits;
+anything else falls back to the rules-only plan.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from apps.common.ai import AIError, ai_enabled, allow_ai_call, call_structured, 
 
 from .models import GeneratedPlan
 
-PROMPT_VERSION = "plan-v1"
+PROMPT_VERSION = "plan-v2"
 PLAN_MAX_TOKENS = 4000
 MAX_INTRO_CHARS = 600
 MAX_TITLE_CHARS = 120
@@ -34,7 +35,8 @@ You receive the course's data as JSON inside <course_data> tags: the course's tr
 Rules:
 - Write exactly one item per given strategy, in the given order, using its exact strategy_id. Do not add, drop, merge or reorder strategies.
 - Each item explains its one strategy: what to do this week and why, based on that strategy's what, how and why. You may make it concrete with examples that suit the subject of the named course, such as the kinds of problems, readings or topics a student of that course would practise.
-- Keep every number exactly as given, written as digits. Do not introduce any other numbers, and do not round, convert or estimate.
+- Each strategy has required_numbers. Its item's title or body must include every one of them, written as digits exactly as given (for example "34", never "thirty-four" or a rounded value), and must say what each one refers to, as that strategy's why does.
+- Keep every number exactly as given, written as digits. Do not introduce any other numbers, and do not round, convert or estimate. This includes digits inside names, codes or formulas in your examples, so choose examples that contain no digits.
 - Keep the tone warm and practical, and address the student as "you".
 - Do not make medical, mental-health or wellbeing claims, and do not promise grades or outcomes.
 - intro: one to three sentences. Each title: at most ten words. Each body: at most 120 words of plain text, without markdown or lists."""
@@ -58,6 +60,12 @@ def _fact_numbers(facts: dict) -> set[str]:
             continue
         found |= numbers_in(f"{value:g}" if isinstance(value, float) else str(value))
     return found
+
+
+def required_numbers(rec: dict, course_name: str) -> set[str]:
+    """Numbers an item must keep: those in its why, except ones that are only part of the course name."""
+    why = rec["why"].replace(course_name, " ") if course_name else rec["why"]
+    return numbers_in(why)
 
 
 # -- input ---------------------------------------------------------------------------------
@@ -89,6 +97,7 @@ def plan_input(output: dict) -> dict:
                 "how": rec["how"],
                 "why": rec["why"],
                 "facts": rec["facts"],
+                "required_numbers": sorted(required_numbers(rec, course["name"]), key=float),
             }
             for rec in output["recommendations"]
         ],
@@ -173,9 +182,9 @@ def validate_plan(data: dict, output: dict) -> dict:
             raise AIError("bad_title")
         if not isinstance(body, str) or not body.strip() or len(body) > MAX_BODY_CHARS:
             raise AIError("bad_body")
-        required = numbers_in(rec["why"])
+        required = required_numbers(rec, output["course"]["name"])
         allowed = (
-            required
+            numbers_in(rec["why"])
             | numbers_in(rec["title"])
             | numbers_in(rec["what"])
             | numbers_in(" ".join(rec["how"]))
@@ -224,9 +233,13 @@ def build_plan(request, course, output: dict, monday: date) -> dict:
             schema=plan_schema(strategy_ids),
             max_tokens=PLAN_MAX_TOKENS,
         )
-        content = validate_plan(result.data, output)
     except AIError as error:
         log_fallback("plan", error)
+        return _response(SOURCE_RULES, monday, rules)
+    try:
+        content = validate_plan(result.data, output)
+    except AIError as error:
+        log_fallback("plan", error, tokens=(result.input_tokens, result.output_tokens))
         return _response(SOURCE_RULES, monday, rules)
 
     GeneratedPlan.objects.get_or_create(
