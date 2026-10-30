@@ -83,7 +83,10 @@ class UsernameChangeTests(AccountTestCase):
     def test_changes_the_username_and_returns_the_me_payload(self):
         response = self.patch(ME, username="kene_o")
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(response.data, {"id": self.user.id, "username": "kene_o", "email": OLD_EMAIL})
+        self.assertEqual(
+            response.data,
+            {"id": self.user.id, "username": "kene_o", "email": OLD_EMAIL, "time_zone": None, "time_zone_auto": True},
+        )
         self.assertEqual(self.reload().username, "kene_o")
 
     def test_changing_only_the_case_of_your_own_name_is_allowed(self):
@@ -215,7 +218,10 @@ class EmailChangeConfirmTests(AccountTestCase):
     def test_the_right_code_changes_the_email_and_tells_the_old_address(self):
         response = self.post(CONFIRM_EMAIL, code=self.code)
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(response.data, {"id": self.user.id, "username": "kene", "email": NEW_EMAIL})
+        self.assertEqual(
+            response.data,
+            {"id": self.user.id, "username": "kene", "email": NEW_EMAIL, "time_zone": None, "time_zone_auto": True},
+        )
         user = self.reload()
         self.assertEqual(user.email, NEW_EMAIL)
         self.assertTrue(is_verified(user))

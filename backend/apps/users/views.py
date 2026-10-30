@@ -6,7 +6,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenBlacklistView, TokenObtainPairView, TokenRefreshView
 
-from .models import OneTimeCode
+from .models import OneTimeCode, UserPreferences
 from .serializers import (
     EMAIL_REGISTERED_MESSAGE,
     USERNAME_TAKEN_MESSAGE,
@@ -18,6 +18,7 @@ from .serializers import (
     PasswordResetRequestSerializer,
     RegisterSerializer,
     ResendCodeSerializer,
+    TimeZoneSerializer,
     UsernameChangeSerializer,
     VerifiedTokenObtainPairSerializer,
     VerifyEmailSerializer,
@@ -173,7 +174,15 @@ class ThrottledTokenBlacklistView(TokenBlacklistView):
 
 
 def me_payload(user) -> dict:
-    return {"id": user.id, "username": user.username, "email": user.email}
+    # No row means the zone was never set: the API says null and the server falls back to settings.TIME_ZONE.
+    preferences = getattr(user, "preferences", None)
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "time_zone": (preferences.time_zone or None) if preferences else None,
+        "time_zone_auto": preferences.time_zone_auto if preferences else True,
+    }
 
 
 class MeView(APIView):
@@ -195,6 +204,29 @@ class MeView(APIView):
                 user.save(update_fields=["username"])
         except IntegrityError as exc:
             raise serializers.ValidationError({"username": [USERNAME_TAKEN_MESSAGE]}) from exc
+        return Response(me_payload(user))
+
+
+class TimeZoneView(APIView):
+    """Sets the zone that decides the user's days and weeks. Authenticated; no password, so it has its own throttle."""
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "time_zone"
+
+    def put(self, request):
+        serializer = TimeZoneSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        preferences, _ = UserPreferences.objects.update_or_create(
+            user=user,
+            defaults={
+                "time_zone": serializer.validated_data["time_zone"],
+                "time_zone_auto": serializer.validated_data["auto"],
+            },
+        )
+        # Drop what zone_for cached on this instance and show the new row in the payload.
+        user.preferences = preferences
+        user.__dict__.pop("_clock_zone", None)
         return Response(me_payload(user))
 
 

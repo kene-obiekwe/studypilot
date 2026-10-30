@@ -215,6 +215,7 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "auth": os.getenv("AUTH_THROTTLE_RATE", "").strip() or "10/minute",
         "email": os.getenv("EMAIL_THROTTLE_RATE", "").strip() or "5/hour",
+        "time_zone": os.getenv("TIME_ZONE_THROTTLE_RATE", "").strip() or "30/hour",
         # Counted only when a model call is about to be made (cache hits and rules-only plans are free).
         "ai_plan": f"{AI_PLAN_DAILY_LIMIT}/day",
     },
