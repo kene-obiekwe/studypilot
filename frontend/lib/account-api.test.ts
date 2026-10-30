@@ -6,6 +6,7 @@ import {
   confirmEmailChange,
   deleteAccount,
   requestEmailChange,
+  setTimeZone,
   signOut,
   updateUsername,
 } from "./api";
@@ -59,6 +60,23 @@ describe("account API", () => {
     serve(200, { id: 1, username: "Kene", email: "k@example.com" });
     await expect(updateUsername("Kene")).resolves.toEqual({ id: 1, username: "Kene", email: "k@example.com" });
     expect(sent).toEqual([{ path: "/users/me/", method: "PATCH", body: { username: "Kene" }, auth: "Bearer access-1" }]);
+  });
+
+  it("stores the time zone with PUT /users/me/time-zone/", async () => {
+    const me = { id: 1, username: "Kene", email: "k@example.com", time_zone: "Africa/Lagos", time_zone_auto: false };
+    serve(200, me);
+    await expect(setTimeZone("Africa/Lagos", false)).resolves.toEqual(me);
+    expect(sent).toEqual([
+      { path: "/users/me/time-zone/", method: "PUT", body: { time_zone: "Africa/Lagos", auto: false }, auth: "Bearer access-1" },
+    ]);
+  });
+
+  it("sends auto: true when the zone follows the device, and keeps a rejected name's field error", async () => {
+    serve(400, { time_zone: ["Unknown time zone."] });
+    const failure = await setTimeZone("Mars/Olympus", true).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ApiError);
+    expect((failure as ApiError).fieldErrors.time_zone).toEqual(["Unknown time zone."]);
+    expect(sent[0]).toMatchObject({ path: "/users/me/time-zone/", method: "PUT", body: { time_zone: "Mars/Olympus", auto: true } });
   });
 
   it("changes the password and keeps field errors", async () => {

@@ -666,7 +666,18 @@ export function loginUser(payload: LoginPayload): Promise<LoginResponse> {
   return request<LoginResponse>("/auth/token/", "POST", payload, { auth: false });
 }
 
-export type Me = { id: number; username: string; email: string };
+export type Me = {
+  id: number;
+  username: string;
+  email: string;
+  /**
+   * IANA zone name; null until one has ever been set (the server then decides days in UTC).
+   * Optional only so fixtures written before the field existed still compile; the API always sends it.
+   */
+  time_zone?: string | null;
+  /** True while the account follows the device's time zone. Optional for the same reason. */
+  time_zone_auto?: boolean;
+};
 
 /** The signed-in user. */
 export function getMe(): Promise<Me> {
@@ -819,7 +830,15 @@ export function updateUsername(username: string): Promise<Me> {
   return request<Me>("/users/me/", "PATCH", { username });
 }
 
-export type PasswordChangePayload = { current_password: string; new_password: string };
+/**
+ * Store the account's time zone. `auto: true` means it follows the device; picking a zone by hand
+ * sends `auto: false`. An unknown name is a 400 with `fieldErrors.time_zone`. Returns the updated user.
+ */
+export function setTimeZone(timeZone: string, auto: boolean): Promise<Me> {
+  return request<Me>("/users/me/time-zone/", "PUT", { time_zone: timeZone, auto });
+}
+
+export type PasswordChangePayload ={ current_password: string; new_password: string };
 
 /**
  * Set a new password. A wrong current password is a 400 with `fieldErrors.current_password`, a weak
