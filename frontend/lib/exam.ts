@@ -1,36 +1,30 @@
-/** Days until an exam, for the "Exam in N days" badge. Dates are local calendar dates. */
+/** Days until an exam, for the "Exam in N days" badge. Dates are calendar dates in the user's zone. */
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+import { daysBetween, resolveZone, todayKey } from "./zone";
 
-function parseDateOnly(value: string): Date | null {
+function isValidDateOnly(value: string): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) {
-    return null;
+    return false;
   }
   const [, year, month, day] = match;
-  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
   // Reject dates the constructor rolled over, such as 2027-02-31.
-  const valid = date.getFullYear() === Number(year) && date.getMonth() === Number(month) - 1 && date.getDate() === Number(day);
-  return valid ? date : null;
+  return date.getUTCFullYear() === Number(year) && date.getUTCMonth() === Number(month) - 1 && date.getUTCDate() === Number(day);
 }
 
-/** Whole days from today to `examDate` (YYYY-MM-DD): 0 is today, null when it has passed or is invalid. */
-export function daysUntilExam(examDate: string | null | undefined, now: Date): number | null {
-  if (!examDate) {
+/** Whole days from today (in `zone`, the browser's when omitted) to `examDate` (YYYY-MM-DD): 0 is today, null when it has passed or is invalid. */
+export function daysUntilExam(examDate: string | null | undefined, now: Date, zone?: string): number | null {
+  if (!examDate || !isValidDateOnly(examDate)) {
     return null;
   }
-  const exam = parseDateOnly(examDate);
-  if (!exam) {
-    return null;
-  }
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const days = Math.round((exam.getTime() - today.getTime()) / DAY_MS); // rounding absorbs clock changes
+  const days = daysBetween(todayKey(resolveZone(zone), now), examDate);
   return days < 0 ? null : days;
 }
 
 /** "Exam today", "Exam in 1 day", "Exam in 18 days", or null when there is nothing to show. */
-export function examLabel(examDate: string | null | undefined, now: Date): string | null {
-  const days = daysUntilExam(examDate, now);
+export function examLabel(examDate: string | null | undefined, now: Date, zone?: string): string | null {
+  const days = daysUntilExam(examDate, now, zone);
   if (days === null) {
     return null;
   }

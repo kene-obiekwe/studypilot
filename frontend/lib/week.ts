@@ -1,35 +1,30 @@
 /**
  * "This week" numbers for the sidebar meter and the home page.
  *
- * Everything here uses the browser's LOCAL time: the week runs from Monday 00:00 local to now,
- * and the plan for "this week" is the one whose week_start equals the local Monday's date.
- * Known limitation: the backend stamps StudyPlan.week_start with its own TIME_ZONE (UTC), so
- * for a user far from UTC a plan saved around Sunday/Monday midnight can carry the neighbouring
- * Monday for a few hours. The fix belongs server-side (per-user time zone).
+ * Days and weeks are decided in the user's zone (the optional trailing `zone`, the browser's when
+ * omitted) by comparing YYYY-MM-DD date keys: the week runs from the zone's Monday to now, and the
+ * plan for "this week" is the one whose week_start equals that Monday's key (see lib/zone.ts).
  */
 
 import type { PlanHistoryItem, SessionHistoryItem } from "./api";
+import { addDays, dateKeyIn, dayStartIn, mondayOf, resolveZone, todayKey, weekdayOf } from "./zone";
 
 export type WeekSummary = {
-  /** Local Monday as YYYY-MM-DD. */
+  /** The week's Monday as YYYY-MM-DD. */
   weekStart: string;
   plannedHours: number;
   loggedHours: number;
 };
 
-/** Monday 00:00 of the week containing `now`, local time. */
-export function startOfLocalWeek(now: Date): Date {
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const daysSinceMonday = (start.getDay() + 6) % 7; // getDay(): Sunday = 0
-  start.setDate(start.getDate() - daysSinceMonday);
-  return start;
+/** Monday 00:00 of the week containing `now`, in `zone`. */
+export function startOfLocalWeek(now: Date, zone?: string): Date {
+  const z = resolveZone(zone);
+  return dayStartIn(mondayOf(todayKey(z, now)), z);
 }
 
-/** YYYY-MM-DD of a date in local time (not toISOString, which is UTC). */
-export function localDateKey(date: Date): string {
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${day}`;
+/** YYYY-MM-DD of an instant in `zone` (not toISOString, which is UTC). */
+export function localDateKey(date: Date, zone?: string): string {
+  return dateKeyIn(date, resolveZone(zone));
 }
 
 /** A plan from /planner/plans/ (WeeklyPlan) or a plan in the stored shape (PlanHistoryItem: the version-1 shape kept for plans saved before 5.8b.1, or version 2). */
@@ -73,10 +68,9 @@ export function planEntries(plan: PlanLike | undefined): PlanEntry[] {
     }));
 }
 
-/** Monday of the local week `weeks` after (or before) the one containing `now`, as YYYY-MM-DD. */
-export function weekStartKey(now: Date, weeks = 0): string {
-  const monday = startOfLocalWeek(now);
-  return localDateKey(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 7 * weeks));
+/** Monday of the week `weeks` after (or before) the one containing `now`, in `zone`, as YYYY-MM-DD. */
+export function weekStartKey(now: Date, weeks = 0, zone?: string): string {
+  return addDays(mondayOf(todayKey(resolveZone(zone), now)), 7 * weeks);
 }
 
 /** The plan to use for the week starting `weekStart` (YYYY-MM-DD): its current revision, else its newest. */
@@ -92,56 +86,77 @@ export function currentPlanForWeek<T extends PlanLike>(plans: readonly T[], week
     )[0];
 }
 
-/** The current plan for this local week, if any. */
-export function currentPlanThisWeek<T extends PlanLike>(plans: readonly T[], now: Date): T | undefined {
-  return currentPlanForWeek(plans, weekStartKey(now));
+/** The current plan for this week, if any. */
+export function currentPlanThisWeek<T extends PlanLike>(plans: readonly T[], now: Date, zone?: string): T | undefined {
+  return currentPlanForWeek(plans, weekStartKey(now, 0, zone));
 }
 
 /** The week's total: a version-2 plan's total_hours, else (version 1) the sum of its allocations. 0 with no plan. */
-export function plannedHoursThisWeek(plans: readonly PlanLike[], now: Date): number {
-  const plan = currentPlanThisWeek(plans, now);
+export function plannedHoursThisWeek(plans: readonly PlanLike[], now: Date, zone?: string): number {
+  const plan = currentPlanThisWeek(plans, now, zone);
   if (!plan) return 0;
   const total = plan.plan_json.total_hours;
   if (finiteNonNegative(total)) return total;
   return planEntries(plan).reduce((sum, entry) => sum + entry.plannedHours, 0);
 }
 
-function sumHours(sessions: readonly SessionHistoryItem[], now: Date): number {
-  const from = startOfLocalWeek(now).getTime();
+/**
+ * A test for "logged this week so far": an instant (ms) counts when it is no later than `now` and
+ * its date in `zone` is on or after this week's Monday. Date keys are compared, not a Monday 00:00
+ * instant, so a 167 or 169 hour DST week needs no special case.
+ */
+export function weekSoFar(now: Date, zone?: string): (at: number) => boolean {
+  const z = resolveZone(zone);
+  const monday = mondayOf(todayKey(z, now));
   const to = now.getTime();
+  return (at) => Number.isFinite(at) && at <= to && dateKeyIn(at, z) >= monday;
+}
+
+function sumHours(sessions: readonly SessionHistoryItem[], now: Date, zone?: string): number {
+  const inWeek = weekSoFar(now, zone);
   const minutes = sessions.reduce((sum, session) => {
-    const at = Date.parse(session.created_at);
     const actual = Number(session.actual_minutes);
-    return at >= from && at <= to && Number.isFinite(actual) && actual > 0 ? sum + actual : sum;
+    return inWeek(Date.parse(session.created_at)) && Number.isFinite(actual) && actual > 0 ? sum + actual : sum;
   }, 0);
   return minutes / 60;
 }
 
 /**
- * Hours logged from local Monday 00:00 up to now. With a plan for this week in `plans`, only the
+ * Hours logged from this week's Monday up to now. With a plan for this week in `plans`, only the
  * courses in that plan count (logs on removed or never-planned courses stay in history but are not
  * counted); with no plan, everything counts.
  */
-export function loggedHoursThisWeek(sessions: readonly SessionHistoryItem[], now: Date, plans: readonly PlanLike[] = []): number {
-  const entries = planEntries(currentPlanThisWeek(plans, now));
-  if (entries.length === 0) return sumHours(sessions, now);
+export function loggedHoursThisWeek(
+  sessions: readonly SessionHistoryItem[],
+  now: Date,
+  plans: readonly PlanLike[] = [],
+  zone?: string,
+): number {
+  const entries = planEntries(currentPlanThisWeek(plans, now, zone));
+  if (entries.length === 0) return sumHours(sessions, now, zone);
   const names = new Set(entries.map((entry) => entry.name.trim().toLowerCase()));
   return sumHours(
     sessions.filter((session) => names.has((session.course_name ?? "").trim().toLowerCase())),
     now,
+    zone,
   );
 }
 
-export function summariseWeek(plans: readonly PlanLike[], sessions: readonly SessionHistoryItem[], now: Date): WeekSummary {
+export function summariseWeek(
+  plans: readonly PlanLike[],
+  sessions: readonly SessionHistoryItem[],
+  now: Date,
+  zone?: string,
+): WeekSummary {
   return {
-    weekStart: localDateKey(startOfLocalWeek(now)),
-    plannedHours: plannedHoursThisWeek(plans, now),
-    loggedHours: loggedHoursThisWeek(sessions, now, plans),
+    weekStart: weekStartKey(now, 0, zone),
+    plannedHours: plannedHoursThisWeek(plans, now, zone),
+    loggedHours: loggedHoursThisWeek(sessions, now, plans, zone),
   };
 }
 
 export type DaysLeft = {
-  /** Days left in the local week including today: 7 on Monday, 1 on Sunday. */
+  /** Days left in the week including today: 7 on Monday, 1 on Sunday. */
   count: number;
   /** "Wed–Sun"; a single day is just "Sun". */
   label: string;
@@ -149,8 +164,8 @@ export type DaysLeft = {
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-export function daysLeft(now: Date): DaysLeft {
-  const weekday = (now.getDay() + 6) % 7; // Monday = 0
+export function daysLeft(now: Date, zone?: string): DaysLeft {
+  const weekday = weekdayOf(todayKey(resolveZone(zone), now)); // Monday = 0
   const count = 7 - weekday;
   return { count, label: count === 1 ? "Sun" : `${DAY_NAMES[weekday]}–Sun` };
 }
@@ -169,14 +184,14 @@ export function meterText(summary: Pick<WeekSummary, "plannedHours" | "loggedHou
 
 const sameName = (a: string | undefined, b: string) => (a ?? "").trim().toLowerCase() === b.trim().toLowerCase();
 
-/** True when there is a plan for this local week. */
-export function hasPlanThisWeek(plans: readonly PlanLike[], now: Date): boolean {
-  return currentPlanThisWeek(plans, now) !== undefined;
+/** True when there is a plan for this week. */
+export function hasPlanThisWeek(plans: readonly PlanLike[], now: Date, zone?: string): boolean {
+  return currentPlanThisWeek(plans, now, zone) !== undefined;
 }
 
 /** True when next week already has a plan (made ahead on a Saturday or Sunday). */
-export function hasPlanNextWeek(plans: readonly PlanLike[], now: Date): boolean {
-  return currentPlanForWeek(plans, weekStartKey(now, 1)) !== undefined;
+export function hasPlanNextWeek(plans: readonly PlanLike[], now: Date, zone?: string): boolean {
+  return currentPlanForWeek(plans, weekStartKey(now, 1, zone)) !== undefined;
 }
 
 export type CourseWeekStatus = "in_plan" | "done" | "removed" | "not_in_plan";
@@ -207,11 +222,13 @@ export function courseHoursThisWeek(
   plans: readonly PlanLike[],
   sessions: readonly SessionHistoryItem[],
   now: Date,
+  zone?: string,
 ): CourseWeekHours {
-  const plan = currentPlanThisWeek(plans, now);
+  const plan = currentPlanThisWeek(plans, now, zone);
   const logged = sumHours(
     sessions.filter((session) => sameName(session.course_name, courseName)),
     now,
+    zone,
   );
   const entry = planEntries(plan).find((item) => sameName(item.name, courseName));
   if (entry) {
@@ -226,7 +243,7 @@ export function courseHoursThisWeek(
 export type StripSegment = { courseId: number | null; courseName: string; minutes: number };
 
 export type StripDay = {
-  /** YYYY-MM-DD, local. */
+  /** YYYY-MM-DD, in the week's zone. */
   date: string;
   /** "Mon" … "Sun". */
   label: string;
@@ -238,25 +255,24 @@ export type StripDay = {
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-/** Monday to Sunday of this local week, with the minutes logged each day split by course. */
+/** Monday to Sunday of this week, with the minutes logged each day split by course. */
 export function weekStrip(
   sessions: SessionHistoryItem[],
   courses: ReadonlyArray<{ id: number; name: string }>,
   now: Date,
+  zone?: string,
 ): StripDay[] {
-  const monday = startOfLocalWeek(now);
-  const today = localDateKey(now);
-  const days = DAY_LABELS.map((label, index) => {
-    const date = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + index);
-    return { date: localDateKey(date), label, totals: new Map<number | null, number>() };
-  });
+  const z = resolveZone(zone);
+  const today = todayKey(z, now);
+  const monday = mondayOf(today);
+  const days = DAY_LABELS.map((label, index) => ({ date: addDays(monday, index), label, totals: new Map<number | null, number>() }));
   const byDate = new Map(days.map((day) => [day.date, day]));
 
   for (const session of sessions) {
     const at = Date.parse(session.created_at);
     const minutes = Number(session.actual_minutes);
     if (!Number.isFinite(at) || !Number.isFinite(minutes) || minutes <= 0) continue;
-    const day = byDate.get(localDateKey(new Date(at)));
+    const day = byDate.get(dateKeyIn(at, z));
     if (!day) continue;
     const course = courses.find((item) => sameName(session.course_name, item.name));
     const key = course ? course.id : null;

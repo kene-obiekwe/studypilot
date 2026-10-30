@@ -7,7 +7,7 @@
  */
 
 import type { SessionHistoryItem } from "./api";
-import { currentPlanThisWeek, planEntries, startOfLocalWeek, type PlanLike } from "./week";
+import { currentPlanThisWeek, planEntries, weekSoFar, type PlanLike } from "./week";
 
 export type TimerState = {
   /** The signed-in user who started it; another account in the same browser ignores it. */
@@ -136,9 +136,11 @@ export function defaultPlannedMinutes(input: {
   plans: readonly PlanLike[];
   sessions: readonly SessionHistoryItem[];
   now: Date;
+  /** The zone that decides the week; the browser's when omitted. */
+  zone?: string;
 }): number {
-  const { courseName, weeklyTargetHours, plans, sessions, now } = input;
-  const entry = planEntries(currentPlanThisWeek(plans, now)).find((item) => sameCourse(item.name, courseName));
+  const { courseName, weeklyTargetHours, plans, sessions, now, zone } = input;
+  const entry = planEntries(currentPlanThisWeek(plans, now, zone)).find((item) => sameCourse(item.name, courseName));
 
   const block = entry?.focusBlockMinutes ?? DEFAULT_BLOCK_MINUTES;
 
@@ -146,11 +148,10 @@ export function defaultPlannedMinutes(input: {
   const weeklyHours = entry ? entry.plannedHours : Number(weeklyTargetHours ?? 0);
   let suggested = block;
   if (Number.isFinite(weeklyHours) && weeklyHours > 0) {
-    const from = startOfLocalWeek(now).getTime();
+    const inWeek = weekSoFar(now, zone);
     const logged = sessions.reduce((sum, session) => {
-      const at = Date.parse(session.created_at);
       const actual = Number(session.actual_minutes);
-      return sameCourse(session.course_name, courseName) && at >= from && at <= now.getTime() && actual > 0 ? sum + actual : sum;
+      return sameCourse(session.course_name, courseName) && inWeek(Date.parse(session.created_at)) && actual > 0 ? sum + actual : sum;
     }, 0);
     const remaining = weeklyHours * 60 - logged;
     if (remaining > 0 && remaining < block) {

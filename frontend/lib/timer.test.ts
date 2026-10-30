@@ -186,3 +186,27 @@ describe("defaultPlannedMinutes from a version-2 plan", () => {
     expect(defaultPlannedMinutes({ ...base, plans: [superseded, current], sessions: [session("A", at(2025, 10, 17), 9999)] })).toBe(50);
   });
 });
+
+describe("default planned minutes in an explicit zone", () => {
+  const LAGOS = "Africa/Lagos";
+  // Monday 2 Nov 00:45 in Lagos (UTC+1), still Sunday in UTC.
+  const NOW_LAGOS = new Date("2026-11-01T23:45:00Z");
+  const sessions = [session("Calculus", new Date("2026-11-01T23:10:00Z"), 90)]; // Monday 00:10 Lagos
+  const base = { courseName: "Calculus", sessions, now: NOW_LAGOS };
+
+  it("counts logs by the zone's week", () => {
+    const plans = [plan("2026-11-02", [{ course: "Calculus", allocated_hours: 2, focus_block_minutes: 50 }])];
+    expect(defaultPlannedMinutes({ ...base, plans, zone: LAGOS })).toBe(30); // 2 h planned, 90 min logged
+  });
+
+  it("does not use the plan of a week the zone has not reached", () => {
+    const plans = [plan("2026-11-02", [{ course: "Calculus", allocated_hours: 2, focus_block_minutes: 40 }])];
+    expect(defaultPlannedMinutes({ ...base, plans, zone: "UTC" })).toBe(50); // still the week of 26 Oct there
+  });
+
+  it("leaves out last week's log at Sunday 23:59 Lagos", () => {
+    const plans = [plan("2026-11-02", [{ course: "Calculus", allocated_hours: 2, focus_block_minutes: 50 }])];
+    const late = [session("Calculus", new Date("2026-11-01T22:59:00Z"), 90)];
+    expect(defaultPlannedMinutes({ ...base, plans, sessions: late, zone: LAGOS })).toBe(50);
+  });
+});
