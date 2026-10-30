@@ -598,8 +598,9 @@ export type CourseRecommendations = {
 };
 
 /**
- * Sessions logged for the course, edits to its settings, or changed strategy ratings (a "Show
- * again" counts) after the plan was written make it outdated.
+ * Sessions logged for the course, edits to its settings, or the plan's strategies no longer being
+ * the ones recommended now (a Not helpful rating that rests one, or a Show again that brings one
+ * back) make it outdated.
  */
 export type SavedPlanStatus = {
   written_at: string;
@@ -617,9 +618,13 @@ export type CourseRecommendationsResponse = {
   courses: CourseRecommendations[];
 };
 
-export type StrategyFeedbackResponse = StrategyFeedbackState & { shown_id: number };
+export type StrategyFeedbackResponse = StrategyFeedbackState & {
+  shown_id: number;
+  /** The course's saved plan status after this feedback; null with AI plans off or no plan saved this week. */
+  saved_plan: SavedPlanStatus | null;
+};
 
-export type ShowAgainResponse = { course_id: number; strategy_id: string; rating: null };
+export type ShowAgainResponse = { course_id: number; strategy_id: string; rating: null; saved_plan: SavedPlanStatus | null };
 
 /** This week's plan for a course. "ai" only when the write-up passed validation; otherwise rules-only. */
 export type CoursePlan = {

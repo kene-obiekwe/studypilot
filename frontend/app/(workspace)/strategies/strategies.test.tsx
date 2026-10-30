@@ -103,7 +103,11 @@ function response(aiPlanAvailable = false, saved: Saved = {}): CourseRecommendat
 }
 
 async function renderPage(aiPlanAvailable = false, saved: Saved = {}) {
-  vi.mocked(getCourseRecommendations).mockResolvedValue(response(aiPlanAvailable, saved));
+  // Like the server, a call for one course returns just that course.
+  vi.mocked(getCourseRecommendations).mockImplementation(async (courseId) => {
+    const all = response(aiPlanAvailable, saved);
+    return courseId === undefined ? all : { ...all, courses: all.courses.filter((entry) => entry.course.id === courseId) };
+  });
   const rendered = await render(<StrategiesPage />);
   await flush();
   await flush();
@@ -319,11 +323,14 @@ describe("Weekly plan controls", () => {
     [{ new_sessions: 0, course_changed: true }, "You've changed this course's settings since this plan was written"],
     [{ new_sessions: 3, course_changed: true }, "You've logged 3 sessions and changed this course's settings since this plan was written"],
     [{ new_sessions: 1, course_changed: true }, "You've logged 1 session and changed this course's settings since this plan was written"],
-    [{ new_sessions: 0, course_changed: false, strategies_changed: true }, "You've changed your strategy ratings since this plan was written"],
-    [{ new_sessions: 2, course_changed: false, strategies_changed: true }, "You've logged 2 sessions and changed your strategy ratings since this plan was written"],
+    [{ new_sessions: 0, course_changed: false, strategies_changed: true }, "Your strategies have changed since this plan was written"],
+    [
+      { new_sessions: 2, course_changed: false, strategies_changed: true },
+      "You've logged 2 sessions and your strategies have changed since this plan was written",
+    ],
     [
       { new_sessions: 2, course_changed: true, strategies_changed: true },
-      "You've logged 2 sessions, changed this course's settings and changed your strategy ratings since this plan was written",
+      "You've logged 2 sessions and changed this course's settings, and your strategies have changed since this plan was written",
     ],
   ])("an outdated plan offers Show and Update, with a note (%j)", async (change, note) => {
     const container = await renderPage(true, { 12: { ...current, outdated: true, ...change } });
@@ -510,7 +517,7 @@ describe("Resting strategies", () => {
   });
 
   it("Show again calls the API, refetches that course and puts the strategy back", async () => {
-    vi.mocked(showAgain).mockResolvedValue({ course_id: 11, strategy_id: "mock_exam", rating: null });
+    vi.mocked(showAgain).mockResolvedValue({ course_id: 11, strategy_id: "mock_exam", rating: null, saved_plan: null });
     const container = await renderResting([MOCK_EXAM, INTERLEAVING]);
     vi.mocked(getCourseRecommendations).mockResolvedValueOnce({
       ...response(),
@@ -531,7 +538,7 @@ describe("Resting strategies", () => {
   });
 
   it("moves focus to the course when the last resting strategy is shown again", async () => {
-    vi.mocked(showAgain).mockResolvedValue({ course_id: 11, strategy_id: "mock_exam", rating: null });
+    vi.mocked(showAgain).mockResolvedValue({ course_id: 11, strategy_id: "mock_exam", rating: null, saved_plan: null });
     const container = await renderResting([MOCK_EXAM]);
     vi.mocked(getCourseRecommendations).mockResolvedValueOnce({
       ...response(),
@@ -560,7 +567,7 @@ describe("Resting strategies", () => {
   });
 
   it("asks for a reload when Show again worked but the refresh did not", async () => {
-    vi.mocked(showAgain).mockResolvedValue({ course_id: 11, strategy_id: "mock_exam", rating: null });
+    vi.mocked(showAgain).mockResolvedValue({ course_id: 11, strategy_id: "mock_exam", rating: null, saved_plan: null });
     const container = await renderResting([MOCK_EXAM]);
     vi.mocked(getCourseRecommendations).mockRejectedValueOnce(new Error("Network down"));
 
@@ -595,8 +602,8 @@ describe("Ratings on a row", () => {
     [...row(container, title).querySelectorAll("button")].find((button) => button.textContent?.trim() === label)!;
 
   it("keeps a Not helpful row with a note that it will rest, and Helpful removes the note", async () => {
-    vi.mocked(sendStrategyFeedback).mockResolvedValueOnce({ shown_id: 2, rating: "not_helpful", tried: false });
-    vi.mocked(sendStrategyFeedback).mockResolvedValueOnce({ shown_id: 2, rating: "helpful", tried: false });
+    vi.mocked(sendStrategyFeedback).mockResolvedValueOnce({ shown_id: 2, rating: "not_helpful", tried: false, saved_plan: null });
+    vi.mocked(sendStrategyFeedback).mockResolvedValueOnce({ shown_id: 2, rating: "helpful", tried: false, saved_plan: null });
     const container = await renderPage();
     expect(row(container, "Strategy 2").textContent).not.toContain("This strategy will rest for 4 weeks.");
 
@@ -636,7 +643,7 @@ describe("Ratings on a row", () => {
 
 describe("Strategies page with resting strategies passes axe", () => {
   it("with the resting list, a Not helpful note and a helpful label", async () => {
-    vi.mocked(sendStrategyFeedback).mockResolvedValue({ shown_id: 2, rating: "not_helpful", tried: false });
+    vi.mocked(sendStrategyFeedback).mockResolvedValue({ shown_id: 2, rating: "not_helpful", tried: false, saved_plan: null });
     const container = await renderResting([MOCK_EXAM, INTERLEAVING], [rec(1, { feedback: { rating: "helpful", tried: false } }), rec(2)]);
     await click([...row(container, "Strategy 2").querySelectorAll("button")].find((button) => button.textContent?.trim() === "Not helpful")!);
     await flush();
@@ -645,6 +652,189 @@ describe("Strategies page with resting strategies passes axe", () => {
 
   it("with every strategy resting", async () => {
     const container = await renderResting([MOCK_EXAM], []);
+    expect(await violations(container)).toEqual([]);
+  });
+});
+
+describe("Plan status without a reload", () => {
+  const rate = (container: HTMLElement, title: string, label: string) =>
+    [...row(container, title).querySelectorAll("button")].find((button) => button.textContent?.trim() === label)!;
+  const changed = { ...current, outdated: true, strategies_changed: true };
+  const STRATEGIES_NOTE = "Your strategies have changed since this plan was written";
+  const noteOf = (container: HTMLElement, name: string) =>
+    section(container, name).querySelector('[class*="outdatedNote"]')?.textContent ?? "";
+
+  /** Algorithms (11) with a saved plan of the given status, resting the given strategies, AI plans on. */
+  async function renderWithPlan(status: SavedPlanStatus = current, resting: RestingStrategy[] = []) {
+    vi.mocked(getCourseRecommendations).mockResolvedValueOnce({
+      ...response(true),
+      courses: [course(11, "Algorithms", [rec(1), rec(2)], status, resting), course(12, "Physics", [rec(3)])],
+    });
+    const rendered = await render(<StrategiesPage />);
+    await flush();
+    await flush();
+    return rendered.container;
+  }
+
+  it("shows Update plan and the note right after Not helpful, with one page load", async () => {
+    vi.mocked(sendStrategyFeedback).mockResolvedValue({ shown_id: 2, rating: "not_helpful", tried: false, saved_plan: changed });
+    const container = await renderWithPlan();
+    expect(planButtons(container, "Algorithms")).toEqual(["Show weekly plan"]);
+
+    await click(rate(container, "Strategy 2", "Not helpful"));
+    await flush();
+
+    expect(planButtons(container, "Algorithms")).toEqual(["Show weekly plan", "Update plan"]);
+    expect(noteOf(container, "Algorithms")).toBe(STRATEGIES_NOTE);
+    expect(getCourseRecommendations).toHaveBeenCalledTimes(1);
+    expect(planButtons(container, "Physics")).toEqual(["Write my weekly plan"]);
+  });
+
+  it("does not show Update plan after Helpful", async () => {
+    vi.mocked(sendStrategyFeedback).mockResolvedValue({ shown_id: 2, rating: "helpful", tried: false, saved_plan: current });
+    const container = await renderWithPlan();
+
+    await click(rate(container, "Strategy 2", "Helpful"));
+    await flush();
+
+    expect(planButtons(container, "Algorithms")).toEqual(["Show weekly plan"]);
+    expect(noteOf(container, "Algorithms")).toBe("");
+  });
+
+  it("clears the note and the button when a later rating puts the plan back in line", async () => {
+    vi.mocked(sendStrategyFeedback).mockResolvedValueOnce({ shown_id: 2, rating: "not_helpful", tried: false, saved_plan: changed });
+    vi.mocked(sendStrategyFeedback).mockResolvedValueOnce({ shown_id: 2, rating: "helpful", tried: false, saved_plan: current });
+    const container = await renderWithPlan();
+
+    await click(rate(container, "Strategy 2", "Not helpful"));
+    await flush();
+    await click(rate(container, "Strategy 2", "Helpful"));
+    await flush();
+
+    expect(planButtons(container, "Algorithms")).toEqual(["Show weekly plan"]);
+    expect(noteOf(container, "Algorithms")).toBe("");
+  });
+
+  it("leaves the status alone when saving the rating fails", async () => {
+    vi.mocked(sendStrategyFeedback).mockRejectedValue(new Error("Network down"));
+    const container = await renderWithPlan();
+
+    await click(rate(container, "Strategy 2", "Not helpful"));
+    await flush();
+
+    expect(planButtons(container, "Algorithms")).toEqual(["Show weekly plan"]);
+    expect(noteOf(container, "Algorithms")).toBe("");
+  });
+
+  it("ignores the status that comes back with Tried it", async () => {
+    vi.mocked(sendStrategyFeedback).mockResolvedValue({ shown_id: 2, rating: null, tried: true, saved_plan: changed });
+    const container = await renderWithPlan();
+
+    await click(container.querySelector<HTMLInputElement>("#strategy-2-tried")!);
+    await flush();
+
+    expect(planButtons(container, "Algorithms")).toEqual(["Show weekly plan"]);
+  });
+
+  it("applies the status that comes back with Show again: Update disappears", async () => {
+    vi.mocked(showAgain).mockResolvedValue({ course_id: 11, strategy_id: "mock_exam", rating: null, saved_plan: current });
+    const container = await renderWithPlan(changed, [MOCK_EXAM]);
+    expect(planButtons(container, "Algorithms")).toEqual(["Show weekly plan", "Update plan"]);
+    vi.mocked(getCourseRecommendations).mockResolvedValueOnce({
+      ...response(true),
+      courses: [course(11, "Algorithms", [rec(1), rec(2), rec(9, { title: "Take a timed mock exam" })], changed, [])],
+    });
+
+    await click(showAgainButton(container, "Take a timed mock exam"));
+    await flush();
+
+    // The refetched course carries its own status; the response's is the one applied.
+    expect(planButtons(container, "Algorithms")).toEqual(["Show weekly plan"]);
+    expect(noteOf(container, "Algorithms")).toBe("");
+  });
+
+  it("applies the status that comes back with Show again: Update appears", async () => {
+    vi.mocked(showAgain).mockResolvedValue({ course_id: 11, strategy_id: "mock_exam", rating: null, saved_plan: changed });
+    const container = await renderWithPlan(current, [MOCK_EXAM]);
+    vi.mocked(getCourseRecommendations).mockResolvedValueOnce({
+      ...response(true),
+      courses: [course(11, "Algorithms", [rec(1), rec(2), rec(9)], current, [])],
+    });
+
+    await click(showAgainButton(container, "Take a timed mock exam"));
+    await flush();
+
+    expect(planButtons(container, "Algorithms")).toEqual(["Show weekly plan", "Update plan"]);
+    expect(noteOf(container, "Algorithms")).toBe(STRATEGIES_NOTE);
+  });
+
+  it("refetches the course after an update, so a Not helpful row moves to the resting list", async () => {
+    vi.mocked(sendStrategyFeedback).mockResolvedValue({ shown_id: 2, rating: "not_helpful", tried: false, saved_plan: changed });
+    vi.mocked(writeCoursePlan).mockResolvedValue(planResponse({ ...PLAN, intro: "A fresh plan." }, current));
+    const container = await renderWithPlan();
+    await click(rate(container, "Strategy 2", "Not helpful"));
+    await flush();
+    expect(container.querySelectorAll("li h3")).toHaveLength(3);
+    expect(restingLine(container, "Algorithms")).toBeUndefined();
+    vi.mocked(getCourseRecommendations).mockResolvedValueOnce({
+      ...response(true),
+      courses: [course(11, "Algorithms", [rec(1)], current, [INTERLEAVING])],
+    });
+
+    const update = buttonNamed(container, "Update plan")!;
+    update.focus();
+    await click(update);
+    await flush();
+    await flush();
+
+    expect(writeCoursePlan).toHaveBeenCalledWith(11);
+    expect(getCourseRecommendations).toHaveBeenLastCalledWith(11);
+    expect(getCourseRecommendations).toHaveBeenCalledTimes(2);
+    expect(section(container, "Algorithms").textContent).toContain("A fresh plan.");
+    expect([...section(container, "Algorithms").querySelectorAll("li h3")].map((item) => item.textContent)).toEqual(["Strategy 1"]);
+    expect(restingLine(container, "Algorithms")?.textContent).toBe("1 strategy resting");
+    expect(planButtons(container, "Algorithms")).toEqual(["Hide weekly plan"]);
+    // The Update button is gone; keyboard focus moves to the plan's own button instead of the page.
+    expect(document.activeElement).toBe(buttonNamed(container, "Hide weekly plan"));
+  });
+
+  it("refetches after writing a first plan, and not when the write fails", async () => {
+    vi.mocked(writeCoursePlan).mockRejectedValueOnce(new Error("Network down"));
+    vi.mocked(writeCoursePlan).mockResolvedValueOnce(planResponse(PLAN, current));
+    const container = await renderPage(true);
+
+    await click(buttonNamed(section(container, "Statistics"), "Write my weekly plan")!);
+    await flush();
+    expect(getCourseRecommendations).toHaveBeenCalledTimes(1);
+
+    vi.mocked(getCourseRecommendations).mockResolvedValueOnce({ ...response(true), courses: [course(13, "Statistics", [rec(5)], current)] });
+    await click(buttonNamed(section(container, "Statistics"), "Write my weekly plan")!);
+    await flush();
+    await flush();
+    expect(getCourseRecommendations).toHaveBeenCalledTimes(2);
+    expect(getCourseRecommendations).toHaveBeenLastCalledWith(13);
+  });
+
+  it("says so when the plan was written but the course could not be refreshed", async () => {
+    vi.mocked(writeCoursePlan).mockResolvedValue(planResponse(PLAN, current));
+    const container = await renderWithPlan(changed);
+    vi.mocked(getCourseRecommendations).mockRejectedValueOnce(new Error("Network down"));
+
+    await click(buttonNamed(container, "Update plan")!);
+    await flush();
+    await flush();
+
+    expect(section(container, "Algorithms").textContent).toContain(
+      "Plan written, but couldn't refresh this course's strategies: Network down. Reload the page to see them.",
+    );
+    expect(planButtons(container, "Algorithms")).toEqual(["Hide weekly plan"]);
+  });
+
+  it("passes axe with Update plan shown after a rating", async () => {
+    vi.mocked(sendStrategyFeedback).mockResolvedValue({ shown_id: 2, rating: "not_helpful", tried: false, saved_plan: changed });
+    const container = await renderWithPlan();
+    await click(rate(container, "Strategy 2", "Not helpful"));
+    await flush();
     expect(await violations(container)).toEqual([]);
   });
 });

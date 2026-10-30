@@ -42,18 +42,26 @@ function writtenOn(value: string): string {
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-/** What happened since the plan was written, in one sentence. Empty when the plan is up to date. */
+/**
+ * What happened since the plan was written, in one sentence. Empty when the plan is up to date.
+ * Things the user did read "You've logged ... and changed ..."; changed strategies follow as their own clause.
+ */
 export function outdatedNote(saved: SavedPlanStatus | null): string {
   if (!saved?.outdated) return "";
   const did: string[] = [];
   if (saved.new_sessions > 0) did.push(`logged ${saved.new_sessions} ${saved.new_sessions === 1 ? "session" : "sessions"}`);
   if (saved.course_changed) did.push("changed this course's settings");
-  if (saved.strategies_changed) did.push("changed your strategy ratings");
   // An outdated plan always has a reason; if the server sent none, say what is likeliest.
-  if (did.length === 0) did.push("logged new sessions");
-  const last = did.pop() as string;
-  const list = did.length > 0 ? `${did.join(", ")} and ${last}` : last;
-  return `You've ${list} since this plan was written`;
+  if (did.length === 0 && !saved.strategies_changed) did.push("logged new sessions");
+  let note = "";
+  if (did.length > 0) {
+    const last = did.pop() as string;
+    note = `You've ${did.length > 0 ? `${did.join(", ")} and ${last}` : last}`;
+  }
+  if (saved.strategies_changed) {
+    note = note ? `${note}${did.length > 0 ? "," : ""} and your strategies have changed` : "Your strategies have changed";
+  }
+  return `${note} since this plan was written`;
 }
 
 /**
@@ -101,6 +109,7 @@ export function WeeklyPlanButton({
         aria-expanded={aiPlan ? visible : undefined}
         loading={showing}
         disabled={writing}
+        data-plan-toggle=""
         onClick={aiPlan ? onToggle : onShow}
       >
         {visible ? "Hide weekly plan" : "Show weekly plan"}
@@ -126,18 +135,21 @@ export function useWeeklyPlan(courseId: number, initialSaved: SavedPlanStatus | 
   const [state, setState] = useState<PlanState>({ status: "idle" });
   const [saved, setSaved] = useState(initialSaved);
 
-  const run = async (action: "show" | "write") => {
+  /** Resolves true when the request worked, whatever plan came back. */
+  const run = async (action: "show" | "write"): Promise<boolean> => {
     setState({ status: "loading", action });
     try {
       const response = await (action === "write" ? writeCoursePlan(courseId) : getCoursePlan(courseId));
       setSaved(statusOf(response));
       setState(response.saved ? { status: "ready", plan: response.saved, open: true } : { status: "idle" });
+      return true;
     } catch (failure) {
       setState({ status: "error", message: (failure as Error).message });
+      return false;
     }
   };
   const toggle = () => setState((current) => (current.status === "ready" ? { ...current, open: !current.open } : current));
-  return { state, saved, write: () => run("write"), show: () => run("show"), toggle };
+  return { state, saved, write: () => run("write"), show: () => run("show"), toggle, applyStatus: setSaved };
 }
 
 export function WeeklyPlanPanel({

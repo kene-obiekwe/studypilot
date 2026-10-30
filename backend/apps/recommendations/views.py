@@ -11,7 +11,15 @@ from .engine import recommend
 from .engine.gather import gather_course_data, local_today, week_start
 from .engine.selection import current_ratings
 from .models import ShownStrategy
-from .plan import build_plan, latest_plans, plan_envelope, saved_plan_statuses, saved_response
+from .plan import (
+    build_plan,
+    course_saved_status,
+    latest_plans,
+    plan_envelope,
+    saved_plan_statuses,
+    saved_response,
+    strategy_ids,
+)
 from .serializers import ShowAgainRequestSerializer, StrategyFeedbackRequestSerializer
 from .shown import clear_rating, feedback_state, log_shown, record_feedback
 
@@ -36,9 +44,6 @@ class CourseRecommendationsView(APIView):
         monday = week_start(local_today(now))
         courses = list(courses)
         ai_plan_available = ai_enabled()
-        statuses = {}
-        if ai_plan_available:
-            statuses = saved_plan_statuses(request.user, courses, latest_plans(request.user, courses, monday))
         results = []
         with transaction.atomic():
             for course in courses:
@@ -56,9 +61,16 @@ class CourseRecommendationsView(APIView):
                     row = shown[rec["strategy_id"]]
                     rec["shown_id"] = row.id
                     rec["feedback"] = states[row.id]
-                # Whether this week's AI plan was written and what changed since; null with none.
-                output["saved_plan"] = statuses.get(course.id)
                 results.append(output)
+
+        # Whether this week's AI plan was written and what changed since; null with none.
+        statuses = {}
+        if ai_plan_available:
+            plans = latest_plans(request.user, courses, monday)
+            current = {output["course"]["id"]: strategy_ids(output) for output in results}
+            statuses = saved_plan_statuses(request.user, courses, plans, current)
+        for course, output in zip(courses, results):
+            output["saved_plan"] = statuses.get(course.id)
 
         return Response(
             {
@@ -78,7 +90,10 @@ class StrategyFeedbackView(APIView):
         shown = ShownStrategy.objects.filter(pk=serializer.validated_data["shown_id"], user=request.user).first()
         if shown is None:
             raise NotFound("Strategy not found.")
-        return Response(record_feedback(shown, serializer.validated_data["value"]))
+        state = record_feedback(shown, serializer.validated_data["value"])
+        # The plan status after this rating, so the page can offer "Update plan" without a reload.
+        saved_plan = course_saved_status(request.user, shown.course, timezone.now()) if shown.course else None
+        return Response({**state, "saved_plan": saved_plan})
 
 
 class ShowAgainView(APIView):
@@ -91,7 +106,8 @@ class ShowAgainView(APIView):
         strategy_id = serializer.validated_data["strategy_id"]
         if course is None or not clear_rating(request.user, course, strategy_id):
             raise NotFound("Rating not found.")
-        return Response({"course_id": course.id, "strategy_id": strategy_id, "rating": None})
+        saved_plan = course_saved_status(request.user, course, timezone.now())
+        return Response({"course_id": course.id, "strategy_id": strategy_id, "rating": None, "saved_plan": saved_plan})
 
 
 class CoursePlanView(APIView):
@@ -121,9 +137,11 @@ class CoursePlanView(APIView):
         if not ai_enabled():
             return Response(self._rules(request, course, now, monday))
         plans = latest_plans(request.user, [course], monday)
-        status = saved_plan_statuses(request.user, [course], plans)[course.id]
-        saved = saved_response(plans[course.id], monday) if course.id in plans else None
-        return Response(plan_envelope(saved, status, monday))
+        if course.id not in plans:
+            return Response(plan_envelope(None, None, monday))
+        output = recommend(gather_course_data(request.user, course, now))
+        status = saved_plan_statuses(request.user, [course], plans, {course.id: strategy_ids(output)})[course.id]
+        return Response(plan_envelope(saved_response(plans[course.id], monday), status, monday))
 
     def post(self, request, pk):
         course = self._course(request, pk)
@@ -133,11 +151,12 @@ class CoursePlanView(APIView):
             return Response(self._rules(request, course, now, monday))
 
         plans = latest_plans(request.user, [course], monday)
-        status = saved_plan_statuses(request.user, [course], plans)[course.id]
+        output = recommend(gather_course_data(request.user, course, now))
+        current = {course.id: strategy_ids(output)}
+        status = saved_plan_statuses(request.user, [course], plans, current)[course.id]
         if status is not None and not status["outdated"]:
             return Response(plan_envelope(saved_response(plans[course.id], monday), status, monday))
 
-        output = recommend(gather_course_data(request.user, course, now))
         written = build_plan(request, course, output, monday)
         plans = latest_plans(request.user, [course], monday)
-        return Response(plan_envelope(written, saved_plan_statuses(request.user, [course], plans)[course.id], monday))
+        return Response(plan_envelope(written, saved_plan_statuses(request.user, [course], plans, current)[course.id], monday))

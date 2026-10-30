@@ -111,7 +111,7 @@ def record_feedback(shown: ShownStrategy, value: str, now: datetime | None = Non
 def clear_rating(user, course: Course, strategy_id: str, now: datetime | None = None) -> bool:
     """"Show again": the rating stops counting. False when there was none.
 
-    The row is kept, with cleared_at set, so its updated_at still outdates a saved AI plan.
+    The row is kept, with cleared_at set.
     """
     now = now or timezone.now()
     return (
