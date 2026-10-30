@@ -15,7 +15,7 @@ import type {
 } from "@/lib/api";
 import { courseKey } from "@/lib/courses";
 import { courseHoursThisWeek, formatHours, loggedHoursThisWeek, planEntries, weekStartKey, type PlanLike } from "@/lib/week";
-import { resolveZone, todayKey, weekdayOf } from "@/lib/zone";
+import { dateKeyIn, resolveZone, todayKey, weekdayOf } from "@/lib/zone";
 
 export const MIN_HOURS = 1;
 export const MAX_HOURS = 168;
@@ -53,9 +53,14 @@ export function targetWeekStart(now: Date, target: WeekTarget, zone?: string): s
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** "Wed 28 Oct" for a YYYY-MM-DD date (read as a local date, not UTC). */
-export function dayLabel(key: string): string {
-  const [year, month, day] = key.slice(0, 10).split("-").map(Number);
+/**
+ * "Wed 28 Oct" for a YYYY-MM-DD date (a calendar date, shown as it is). A timestamp such as
+ * `created_at` is a moment, so it is turned into its date in `zone` (the browser's when omitted) first.
+ */
+export function dayLabel(key: string, zone?: string): string {
+  const moment = key.length > 10 ? new Date(key) : null;
+  const dateKey = moment && !Number.isNaN(moment.getTime()) ? dateKeyIn(moment, resolveZone(zone)) : key.slice(0, 10);
+  const [year, month, day] = dateKey.split("-").map(Number);
   const date = new Date(year, month - 1, day);
   if (Number.isNaN(date.getTime())) return key;
   return `${DAY_NAMES[date.getDay()]} ${date.getDate()} ${MONTH_NAMES[date.getMonth()]}`;
@@ -296,7 +301,7 @@ export function weekCard(plan: WeeklyPlan, sessions: readonly SessionHistoryItem
     removed,
     complete: total > 0 && rows.length > 0 && rows.every((row) => row.status !== "in_plan"),
     updates: Math.max(0, plan.revision_count - 1),
-    lastUpdated: dayLabel(plan.plan_json.made_on ?? plan.created_at),
+    lastUpdated: dayLabel(plan.plan_json.made_on ?? plan.created_at, zone),
   };
 }
 

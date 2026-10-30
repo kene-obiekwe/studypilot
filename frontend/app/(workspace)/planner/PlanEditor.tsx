@@ -56,6 +56,8 @@ type PlanEditorProps = {
   courses: Course[];
   sessions: SessionHistoryItem[];
   now: Date;
+  /** The zone that decides the week; the browser's when omitted. */
+  zone?: string;
   /** Pre-fills a first plan; nothing is saved until the preview is confirmed. */
   draft: PlanDraft | null;
   colorStyle: (courseName: string) => CSSProperties | undefined;
@@ -77,6 +79,7 @@ export function PlanEditor({
   courses,
   sessions,
   now,
+  zone,
   draft,
   colorStyle,
   onSaved,
@@ -110,9 +113,9 @@ export function PlanEditor({
 
   const mode = baseRevision === null ? "first" : "update";
   const next = target === "next";
-  const counted = next ? 0 : loggedOnRows(rows, sessions, now);
+  const counted = next ? 0 : loggedOnRows(rows, sessions, now, zone);
   const hoursValue = hours ?? hoursInput(defaultMoreHours(chosen, counted));
-  const days = daysLeft(now);
+  const days = daysLeft(now, zone);
 
   const updateRow = (key: string, patch: Partial<PlannerRow>) =>
     setRows((current) => current.map((row) => (row.key === key ? { ...row, ...patch } : row)));

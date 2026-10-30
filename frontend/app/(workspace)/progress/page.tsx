@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import { ClipboardCheck } from "lucide-react";
 
 import { PageAction } from "@/components/app-shell";
+import { useTimeZone } from "@/components/app-shell/useTimeZone";
 import { Button, EmptyState, Notice, ProgressBar, Skeleton, Stat } from "@/components/ui";
 
 import { hoursFromMinutes, summariseCourses } from "./_lib/course-summary";
@@ -25,6 +26,7 @@ export default function ProgressOverviewPage() {
   const router = useRouter();
   const { plans, sessions, analytics, isLoading, error, refresh } = useProgress();
   const { colorStyle } = useSavedCourses();
+  const zone = useTimeZone();
   const summaries = useMemo(() => summariseCourses(sessions), [sessions]);
 
   const recent = sessions.slice(0, RECENT_SESSIONS);
@@ -142,7 +144,7 @@ export default function ProgressOverviewPage() {
                       {item.course_name}
                     </p>
                     <p className={styles.rowMeta}>
-                      {shortDate(item.created_at)} · {item.actual_minutes} of {item.planned_minutes} min
+                      {shortDate(item.created_at, zone)} · {item.actual_minutes} of {item.planned_minutes} min
                       {typeof item.predicted_adherence === "number" ? ` · forecast ${percentText(item.predicted_adherence)}` : ""}
                     </p>
                   </div>
@@ -168,7 +170,7 @@ export default function ProgressOverviewPage() {
         ) : error && plans.length === 0 ? (
           <p className={styles.muted}>Your plans are unavailable right now.</p>
         ) : (
-          <ThisWeekPlan plans={plans} now={new Date()} colorStyle={colorStyle} />
+          <ThisWeekPlan plans={plans} now={new Date()} zone={zone} colorStyle={colorStyle} />
         )}
       </section>
     </div>

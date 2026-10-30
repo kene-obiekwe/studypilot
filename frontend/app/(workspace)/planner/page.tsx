@@ -4,6 +4,7 @@ import Link from "next/link";
 import { startTransition, Suspense, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarRange } from "lucide-react";
 
+import { useTimeZone } from "@/components/app-shell/useTimeZone";
 import { Button, EmptyState, Notice, Skeleton } from "@/components/ui";
 import {
   getPlan,
@@ -44,6 +45,8 @@ import styles from "./planner.module.css";
 type PlannerData = {
   /** When the data was loaded: "today" for the whole view. */
   now: Date;
+  /** The zone `now` was read in: the week and the plan fetched for it follow this zone. */
+  zone: string;
   courses: Course[];
   plans: WeeklyPlan[];
   sessions: SessionHistoryItem[];
@@ -54,10 +57,10 @@ type PlannerData = {
 type Loaded = PlannerData | { error: string };
 
 /** Never rejects; a failure renders as a Notice with a retry. */
-function loadPlanner(): Promise<Loaded> {
+function loadPlanner(zone: string): Promise<Loaded> {
   const now = new Date();
-  return Promise.all([listCourses(), listPlans(), getSessionHistory(), getPlan(weekStartKey(now), { revisions: true })]).then(
-    ([courses, plans, history, thisWeek]) => ({ now, courses, plans, sessions: history.items, thisWeek }),
+  return Promise.all([listCourses(), listPlans(), getSessionHistory(), getPlan(weekStartKey(now, 0, zone), { revisions: true })]).then(
+    ([courses, plans, history, thisWeek]) => ({ now, zone, courses, plans, sessions: history.items, thisWeek }),
     (failure: Error) => ({ error: failure.message }),
   );
 }
@@ -65,8 +68,17 @@ function loadPlanner(): Promise<Loaded> {
 export default function PlannerPage() {
   // Fetched once per page view (a lazy initialiser read with use(), not an effect); a reload swaps
   // the promise inside a transition, so the page keeps showing the old numbers until the new ones arrive.
-  const [promise, setPromise] = useState(loadPlanner);
-  const reload = useCallback(() => startTransition(() => setPromise(loadPlanner())), []);
+  // The zone is the account's once the shell has loaded it; until then the last-known or the browser's,
+  // and a change after the load fetches again for the right week.
+  const zone = useTimeZone();
+  const [promise, setPromise] = useState(() => loadPlanner(zone));
+  const loadedZone = useRef(zone);
+  const reload = useCallback(() => startTransition(() => setPromise(loadPlanner(loadedZone.current))), []);
+  useEffect(() => {
+    if (loadedZone.current === zone) return;
+    loadedZone.current = zone;
+    reload();
+  }, [zone, reload]);
   return (
     <div className={styles.page}>
       <Suspense
@@ -99,8 +111,8 @@ function Planner({ promise, onReload }: { promise: Promise<Loaded>; onReload: ()
 }
 
 function PlannerView({ data, onReload }: { data: PlannerData; onReload: () => void }) {
-  const { now, courses, plans, sessions } = data;
-  const [chosenTarget, setChosenTarget] = useState<WeekTarget>(() => defaultTarget(now));
+  const { now, zone, courses, plans, sessions } = data;
+  const [chosenTarget, setChosenTarget] = useState<WeekTarget>(() => defaultTarget(now, zone));
   const [editing, setEditing] = useState(false);
   // Bumped whenever the form starts afresh (another week, a draft, opened again), to remount it.
   const [session, setSession] = useState(0);
@@ -120,17 +132,17 @@ function PlannerView({ data, onReload }: { data: PlannerData; onReload: () => vo
   };
 
   // A week planned ahead only on Saturday and Sunday; a reload on Monday falls back to this week.
-  const target: WeekTarget = canPlanAhead(now) ? chosenTarget : "this";
-  const thisKey = weekStartKey(now);
-  const nextKey = weekStartKey(now, 1);
+  const target: WeekTarget = canPlanAhead(now, zone) ? chosenTarget : "this";
+  const thisKey = weekStartKey(now, 0, zone);
+  const nextKey = weekStartKey(now, 1, zone);
   const thisPlan = data.thisWeek ?? currentPlanForWeek(plans, thisKey) ?? null;
   const nextPlan = currentPlanForWeek(plans, nextKey) ?? null;
   const targetPlan = target === "next" ? nextPlan : thisPlan;
   const formOpen = editing || targetPlan === null;
-  const sunday = isSunday(now);
+  const sunday = isSunday(now, zone);
 
   // "Start from last week's plan": for next week, this week's plan is the one before it.
-  const previousPlan = target === "next" ? thisPlan : (currentPlanForWeek(plans, weekStartKey(now, -1)) ?? null);
+  const previousPlan = target === "next" ? thisPlan : (currentPlanForWeek(plans, weekStartKey(now, -1, zone)) ?? null);
   const draftOffer = targetPlan === null && draft === null && previousPlan ? draftFromPlan(previousPlan, courses) : null;
 
   const deleted = data.thisWeek ? deletedCourses(data.thisWeek) : null;
@@ -149,7 +161,7 @@ function PlannerView({ data, onReload }: { data: PlannerData; onReload: () => vo
   const close = () => {
     setEditing(false);
     setDraft(null);
-    if (!isSunday(now)) setChosenTarget("this");
+    if (!isSunday(now, zone)) setChosenTarget("this");
     setSession((count) => count + 1);
   };
 
@@ -191,8 +203,8 @@ function PlannerView({ data, onReload }: { data: PlannerData; onReload: () => vo
 
       {thisPlan && (
         <ThisWeekCard
-          card={weekCard(thisPlan, sessions, now)}
-          days={daysLeft(now)}
+          card={weekCard(thisPlan, sessions, now, zone)}
+          days={daysLeft(now, zone)}
           colorStyle={colorStyle}
           onUpdate={formOpen && target === "this" ? undefined : () => open("this")}
         />
@@ -202,7 +214,7 @@ function PlannerView({ data, onReload }: { data: PlannerData; onReload: () => vo
         <NextWeekCard plan={nextPlan} colorStyle={colorStyle} onEdit={formOpen && target === "next" ? undefined : () => open("next")} />
       )}
 
-      {isSaturday(now) && !nextPlan && target === "this" && (
+      {isSaturday(now, zone) && !nextPlan && target === "this" && (
         <p className={styles.aheadLink}>
           <Button variant="ghost" size="sm" onClick={() => open("next")}>
             Plan next week
@@ -247,11 +259,12 @@ function PlannerView({ data, onReload }: { data: PlannerData; onReload: () => vo
           <PlanEditor
             key={`${target}:${session}`}
             target={target}
-            weekStart={targetWeekStart(now, target)}
+            weekStart={targetWeekStart(now, target, zone)}
             plan={targetPlan}
             courses={courses}
             sessions={sessions}
             now={now}
+            zone={zone}
             draft={draft}
             colorStyle={colorStyle}
             onSaved={onSaved}

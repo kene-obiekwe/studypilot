@@ -21,6 +21,7 @@ export function CourseCard({
   topRecommendation,
   timer,
   now,
+  zone,
   onStart,
   onStop,
 }: {
@@ -33,10 +34,12 @@ export function CourseCard({
   /** The running timer, whichever course it is for. */
   timer: TimerState | null;
   now: Date;
+  /** The zone that decides today for the exam badge; the browser's when omitted. */
+  zone?: string;
   onStart: () => void;
   onStop: () => void;
 }) {
-  const exam = examLabel(course.exam_date, now);
+  const exam = examLabel(course.exam_date, now, zone);
   const headingId = `course-card-${course.id}`;
   const running = timer?.courseId === course.id ? timer : null;
 

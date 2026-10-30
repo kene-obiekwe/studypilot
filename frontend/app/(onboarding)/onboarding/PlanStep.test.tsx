@@ -57,7 +57,7 @@ function button(container: HTMLElement, text: string): HTMLButtonElement {
   return found as HTMLButtonElement;
 }
 
-async function step(now: Date, handlers: { onSaved?: () => void; onContinue?: () => void } = {}) {
+async function step(now: Date, handlers: { onSaved?: () => void; onContinue?: () => void } = {}, zone?: string) {
   const { container } = await render(
     <PlanStep
       courses={COURSES}
@@ -65,6 +65,7 @@ async function step(now: Date, handlers: { onSaved?: () => void; onContinue?: ()
       onSaved={handlers.onSaved ?? (() => undefined)}
       onContinue={handlers.onContinue ?? (() => undefined)}
       now={now}
+      zone={zone}
     />,
   );
   return container;
@@ -110,6 +111,23 @@ describe("PlanStep", () => {
     await click(button(container, "Make my plan"));
     expect(vi.mocked(savePlan).mock.calls[0][0]).toBe("2026-11-02");
     expect(container.textContent).toContain("Your plan for next week");
+  });
+
+  it("decides Sunday in the given zone, not the machine's", async () => {
+    vi.mocked(savePlan).mockResolvedValue(saved("2026-11-02"));
+    // 23:30 UTC on Sunday 1 Nov is already Monday 2 Nov in Lagos and still Sunday in Los Angeles.
+    const instant = new Date("2026-11-01T23:30:00Z");
+    const lagos = await step(instant, {}, "Africa/Lagos");
+    expect(lagos.querySelector('[role="radiogroup"]')).toBeNull();
+    await click(button(lagos, "Make my plan"));
+    expect(vi.mocked(savePlan).mock.calls[0][0]).toBe("2026-11-02");
+    cleanup();
+
+    vi.mocked(savePlan).mockClear();
+    const angeles = await step(instant, {}, "America/Los_Angeles");
+    expect(angeles.querySelector('[role="radiogroup"]')).not.toBeNull();
+    await click(button(angeles, "Make my plan"));
+    expect(vi.mocked(savePlan).mock.calls[0][0]).toBe("2026-11-02");
   });
 
   it("on a Sunday can plan the week that ends today", async () => {

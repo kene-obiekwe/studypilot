@@ -4,6 +4,7 @@ import { startTransition, Suspense, use, useId, useState, type ReactNode } from 
 import { BookOpen, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { PageAction } from "@/components/app-shell";
+import { useTimeZone } from "@/components/app-shell/useTimeZone";
 import { Badge, Button, Dialog, EmptyState, Notice, Skeleton } from "@/components/ui";
 import {
   createCourse,
@@ -121,6 +122,7 @@ function CourseList({
   const loaded = use(promise);
   const courses = "courses" in loaded ? loaded.courses : NO_COURSES;
   const { colorFor } = useCourseColors(courses);
+  const zone = useTimeZone();
 
   if ("error" in loaded) {
     return (
@@ -158,7 +160,7 @@ function CourseList({
       {addAction}
       <ul className={styles.list}>
         {courses.map((course) => {
-          const exam = examLabel(course.exam_date, now);
+          const exam = examLabel(course.exam_date, now, zone);
           const traits = describeTraits(course);
           const hasTraits = traits !== "No traits set yet";
           return (

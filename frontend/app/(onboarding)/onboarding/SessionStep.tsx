@@ -28,10 +28,12 @@ type Props = {
   courses: Course[];
   plans: readonly PlanLike[];
   sessions: SessionHistoryItem[];
+  /** The zone that decides the week; the browser's when omitted. */
+  zone?: string;
 };
 
 /** Step 3: time a session now, or log one that already happened. Either way the user ends up on /home. */
-export function SessionStep({ me, courses, plans, sessions }: Props) {
+export function SessionStep({ me, courses, plans, sessions, zone }: Props) {
   const router = useRouter();
   const formId = useId();
   const runningTimer = timerForUser(useStoredTimer(), me?.id ?? null);
@@ -43,6 +45,7 @@ export function SessionStep({ me, courses, plans, sessions }: Props) {
       plans,
       sessions,
       now: new Date(),
+      zone,
     });
 
   const [courseId, setCourseId] = useState(courses[0].id);

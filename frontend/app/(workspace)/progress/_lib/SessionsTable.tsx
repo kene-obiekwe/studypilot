@@ -3,6 +3,7 @@
 import { useId, useMemo, useState, type CSSProperties } from "react";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 
+import { useTimeZone } from "@/components/app-shell/useTimeZone";
 import { Button, Select } from "@/components/ui";
 import type { SessionHistoryItem } from "@/lib/api";
 
@@ -46,6 +47,7 @@ function SortIcon({ state, columnKey }: { state: SortState; columnKey: SortKey }
  * does the same job.
  */
 export function SessionsTable({ sessions, colorStyle, pageSize = SESSIONS_PAGE_SIZE }: SessionsTableProps) {
+  const zone = useTimeZone();
   const [sort, setSort] = useState<SortState>(DEFAULT_SORT);
   const { visible, done, showMore, statusRef } = useShowMore(sessions.length, pageSize);
   const sortSelectId = useId();
@@ -98,7 +100,7 @@ export function SessionsTable({ sessions, colorStyle, pageSize = SESSIONS_PAGE_S
           <tbody>
             {shown.map((item) => (
               <tr key={item.id}>
-                <td data-label="Date">{shortDate(item.created_at)}</td>
+                <td data-label="Date">{shortDate(item.created_at, zone)}</td>
                 <td data-label="Course">
                   <span className={styles.courseCell}>
                     <span className={styles.dot} style={colorStyle?.(item.course_name)} aria-hidden="true" />

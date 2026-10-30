@@ -10,6 +10,7 @@ import { formatHours, weekStartKey } from "@/lib/week";
 import {
   findCourseByName,
   hoursText,
+  isSunday,
   MAX_HOURS,
   MIN_HOURS,
   rowsFromCourses,
@@ -30,6 +31,8 @@ type Props = {
   onContinue: () => void;
   /** The current time; tests pass a fixed one. */
   now?: Date;
+  /** The zone that decides the week; the browser's when omitted. */
+  zone?: string;
 };
 
 type WeekChoice = "this" | "next";
@@ -49,12 +52,12 @@ function shortDay(key: string): string {
  * week is a choice (this week ends today), defaulting to next week. A week that already has a plan
  * (saved from another tab) is left as it is.
  */
-export function PlanStep({ courses, colorFor, onSaved, onContinue, now: nowProp }: Props) {
+export function PlanStep({ courses, colorFor, onSaved, onContinue, now: nowProp, zone }: Props) {
   const id = useId();
   // Fixed for the life of the step, so the week doesn't change under the user at midnight.
   const [now] = useState(() => nowProp ?? new Date());
-  const isSunday = now.getDay() === 0;
-  const [week, setWeek] = useState<WeekChoice>(isSunday ? "next" : "this");
+  const sunday = isSunday(now, zone);
+  const [week, setWeek] = useState<WeekChoice>(sunday ? "next" : "this");
   const [exists, setExists] = useState(false);
   const [hours, setHours] = useState(DEFAULT_PLAN_HOURS);
   const [rows, setRows] = useState<PlannerRow[]>(() => rowsFromCourses(courses));
@@ -86,7 +89,7 @@ export function PlanStep({ courses, colorFor, onSaved, onContinue, now: nowProp 
     }
     setBusy(true);
     try {
-      const plan = await savePlan(weekStartKey(now, week === "next" ? 1 : 0), {
+      const plan = await savePlan(weekStartKey(now, week === "next" ? 1 : 0, zone), {
         courses: rows.map((row) => ({ name: row.name.trim(), difficulty: row.difficulty })),
         total_hours: total,
         base_revision: null,
@@ -124,14 +127,14 @@ export function PlanStep({ courses, colorFor, onSaved, onContinue, now: nowProp 
   return (
     <div className={styles.step}>
       <form className={styles.form} onSubmit={(event) => void submit(event)} noValidate>
-        {isSunday && !result && (
+        {sunday && !result && (
           <SegmentedControl<WeekChoice>
             label="Which week?"
             value={week}
             onChange={setWeek}
             options={[
               { value: "this", label: "This week (ends today)" },
-              { value: "next", label: `Next week (starts ${shortDay(weekStartKey(now, 1))})` },
+              { value: "next", label: `Next week (starts ${shortDay(weekStartKey(now, 1, zone))})` },
             ]}
           />
         )}

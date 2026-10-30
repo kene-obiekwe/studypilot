@@ -8,8 +8,8 @@ export type TopStrategy = { course: CourseRecommendations["course"]; rec: Course
  * lower priority number = more important), courses ordered by the nearest exam; any slots left
  * are filled by priority across all courses. So one course can't take all three.
  */
-export function pickTopStrategies(courses: CourseRecommendations[], now: Date, limit = 3): TopStrategy[] {
-  const examRank = (entry: CourseRecommendations) => daysUntilExam(entry.course.exam_date, now) ?? Number.POSITIVE_INFINITY;
+export function pickTopStrategies(courses: CourseRecommendations[], now: Date, zone?: string, limit = 3): TopStrategy[] {
+  const examRank = (entry: CourseRecommendations) => daysUntilExam(entry.course.exam_date, now, zone) ?? Number.POSITIVE_INFINITY;
   const ordered = courses
     .map((entry, index) => ({ entry, index }))
     .filter(({ entry }) => entry.recommendations.length > 0)

@@ -12,6 +12,8 @@ import styles from "./progress.module.css";
 type Props = {
   plans: ReadonlyArray<WeeklyPlan>;
   now: Date;
+  /** The zone that decides which week is this one; the browser's when omitted. */
+  zone?: string;
   colorStyle?: (courseName: string) => CSSProperties | undefined;
 };
 
@@ -19,9 +21,9 @@ type Props = {
  * This week's plan, not the newest one (that is next week's once it exists). A line below says when
  * next week's plan is already made.
  */
-export function ThisWeekPlan({ plans, now, colorStyle }: Props) {
-  const thisWeek = currentPlanForWeek(plans, weekStartKey(now));
-  const nextWeek = currentPlanForWeek(plans, weekStartKey(now, 1));
+export function ThisWeekPlan({ plans, now, zone, colorStyle }: Props) {
+  const thisWeek = currentPlanForWeek(plans, weekStartKey(now, 0, zone));
+  const nextWeek = currentPlanForWeek(plans, weekStartKey(now, 1, zone));
   const nextWeekLine = nextWeek && (
     <p className={styles.muted}>
       Next week&rsquo;s plan: {hoursText(planTotal(nextWeek))}, starts {dayLabel(nextWeek.week_start)}

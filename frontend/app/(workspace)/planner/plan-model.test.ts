@@ -162,6 +162,10 @@ describe("weeks", () => {
   it("words dates and days left", () => {
     expect(dayLabel("2026-11-02")).toBe("Mon 2 Nov");
     expect(dayLabel("2026-10-28T09:00:00Z")).toBe("Wed 28 Oct");
+    // A timestamp is a moment: its date is the one in the zone. A date key is shown as it is.
+    expect(dayLabel("2026-10-28T23:30:00Z", "Africa/Lagos")).toBe("Thu 29 Oct");
+    expect(dayLabel("2026-10-28T23:30:00Z", "America/Los_Angeles")).toBe("Wed 28 Oct");
+    expect(dayLabel("2026-11-02", "Pacific/Kiritimati")).toBe("Mon 2 Nov");
     expect(daysLeftText({ count: 5, label: "Wed–Sun" })).toBe("5 days left this week, Wed–Sun");
     expect(daysLeftText({ count: 1, label: "Sun" })).toBe("1 day left this week, Sun");
   });
