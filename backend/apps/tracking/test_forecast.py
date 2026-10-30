@@ -5,6 +5,7 @@ from datetime import timezone as dt_timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
+from zoneinfo import ZoneInfo
 
 import numpy as np
 from django.conf import settings
@@ -13,6 +14,7 @@ from django.test import SimpleTestCase, override_settings
 from rest_framework.test import APITestCase
 
 from apps.planner.models import Course
+from apps.users.models import UserPreferences
 
 from . import inference
 from .inference import LoadedModel, SessionPoint
@@ -131,16 +133,16 @@ class WeeklyFeatureBuilderTests(SimpleTestCase):
         self.assertEqual(row["adh_mean3"], 1.0)
         self.assertEqual(row["weeks_history"], 2.0)
 
-    @override_settings(TIME_ZONE="Africa/Lagos")
-    def test_log_dates_use_settings_time_zone(self):
-        # 23:30 UTC on Sunday is 00:30 Monday in Lagos (UTC+1).
+    def test_session_points_take_a_zone(self):
+        # 23:30 UTC on Sunday is 00:30 Monday in Lagos (UTC+1); with no zone it is settings.TIME_ZONE (UTC).
         log = SimpleNamespace(
             created_at=datetime(2026, 1, 4, 23, 30, tzinfo=dt_timezone.utc),
             planned_minutes=60,
             actual_minutes=60,
             focus_score=0.5,
         )
-        self.assertEqual(inference.session_points([log])[0].day, date(2026, 1, 5))
+        self.assertEqual(inference.session_points([log], ZoneInfo("Africa/Lagos"))[0].day, date(2026, 1, 5))
+        self.assertEqual(inference.session_points([log])[0].day, date(2026, 1, 4))
 
     @mock.patch.object(inference, "get_model", return_value=None)
     def test_unavailable_model_reports_status(self, _):
@@ -237,3 +239,20 @@ class TrackingForecastApiTests(APITestCase):
         self.assertEqual(log.adherence_score, 1.0)
         self.assertIsNone(log.predicted_adherence)
         self.assertEqual(log.model_version, inference.STATUS_INSUFFICIENT_HISTORY)
+
+
+class ForecastCourseZoneTests(APITestCase):
+    def test_forecast_course_uses_the_users_zone(self):
+        user = User.objects.create_user(username="lagos", password="TestPass123!")
+        UserPreferences.objects.create(user=user, time_zone="Africa/Lagos")
+        log = StudySessionLog.objects.create(
+            user=user, course_name="CSC 401", planned_minutes=60, actual_minutes=60, adherence_score=1.0
+        )
+        StudySessionLog.objects.filter(pk=log.pk).update(created_at=datetime(2026, 1, 4, 23, 30, tzinfo=dt_timezone.utc))
+        now = datetime(2026, 1, 11, 23, 30, tzinfo=dt_timezone.utc)  # Monday 12 Jan 00:30 in Lagos
+        with mock.patch.object(inference, "forecast_from_points", return_value=None) as forecast:
+            inference.forecast_course(User.objects.get(pk=user.pk), "CSC 401", now=now)
+            inference.forecast_course(user, "CSC 401", now=now, zone=ZoneInfo("UTC"))
+        (lagos_points, lagos_today), (utc_points, utc_today) = (call.args for call in forecast.call_args_list)
+        self.assertEqual(([p.day for p in lagos_points], lagos_today), ([date(2026, 1, 5)], date(2026, 1, 12)))
+        self.assertEqual(([p.day for p in utc_points], utc_today), ([date(2026, 1, 4)], date(2026, 1, 11)))

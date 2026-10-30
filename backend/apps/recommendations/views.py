@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.common.ai import ai_enabled
+from apps.common.clock import zone_for
 from apps.planner.models import Course
 
 from .engine import recommend
@@ -41,13 +42,14 @@ class CourseRecommendationsView(APIView):
                 raise NotFound("Course not found.")
 
         now = timezone.now()
-        monday = week_start(local_today(now))
+        zone = zone_for(request.user)
+        monday = week_start(local_today(now, zone))
         courses = list(courses)
         ai_plan_available = ai_enabled()
         results = []
         with transaction.atomic():
             for course in courses:
-                data = gather_course_data(request.user, course, now)
+                data = gather_course_data(request.user, course, now, zone)
                 output = recommend(data)
                 # Resting strategies are not in the recommendations, so they are not logged as shown.
                 shown = log_shown(request.user, course, output["recommendations"], monday, now)
@@ -90,9 +92,12 @@ class StrategyFeedbackView(APIView):
         shown = ShownStrategy.objects.filter(pk=serializer.validated_data["shown_id"], user=request.user).first()
         if shown is None:
             raise NotFound("Strategy not found.")
-        state = record_feedback(shown, serializer.validated_data["value"])
+        zone = zone_for(request.user)
+        state = record_feedback(shown, serializer.validated_data["value"], zone=zone)
         # The plan status after this rating, so the page can offer "Update plan" without a reload.
-        saved_plan = course_saved_status(request.user, shown.course, timezone.now()) if shown.course else None
+        saved_plan = (
+            course_saved_status(request.user, shown.course, timezone.now(), zone) if shown.course else None
+        )
         return Response({**state, "saved_plan": saved_plan})
 
 
@@ -106,7 +111,7 @@ class ShowAgainView(APIView):
         strategy_id = serializer.validated_data["strategy_id"]
         if course is None or not clear_rating(request.user, course, strategy_id):
             raise NotFound("Rating not found.")
-        saved_plan = course_saved_status(request.user, course, timezone.now())
+        saved_plan = course_saved_status(request.user, course, timezone.now(), zone_for(request.user))
         return Response({"course_id": course.id, "strategy_id": strategy_id, "rating": None, "saved_plan": saved_plan})
 
 
@@ -126,32 +131,34 @@ class CoursePlanView(APIView):
             raise NotFound("Course not found.")
         return course
 
-    def _rules(self, request, course, now, monday):
-        output = recommend(gather_course_data(request.user, course, now))
+    def _rules(self, request, course, now, monday, zone):
+        output = recommend(gather_course_data(request.user, course, now, zone))
         return plan_envelope(build_plan(request, course, output, monday), None, monday)
 
     def get(self, request, pk):
         course = self._course(request, pk)
         now = timezone.now()
-        monday = week_start(local_today(now))
+        zone = zone_for(request.user)
+        monday = week_start(local_today(now, zone))
         if not ai_enabled():
-            return Response(self._rules(request, course, now, monday))
+            return Response(self._rules(request, course, now, monday, zone))
         plans = latest_plans(request.user, [course], monday)
         if course.id not in plans:
             return Response(plan_envelope(None, None, monday))
-        output = recommend(gather_course_data(request.user, course, now))
+        output = recommend(gather_course_data(request.user, course, now, zone))
         status = saved_plan_statuses(request.user, [course], plans, {course.id: strategy_ids(output)})[course.id]
         return Response(plan_envelope(saved_response(plans[course.id], monday), status, monday))
 
     def post(self, request, pk):
         course = self._course(request, pk)
         now = timezone.now()
-        monday = week_start(local_today(now))
+        zone = zone_for(request.user)
+        monday = week_start(local_today(now, zone))
         if not ai_enabled():
-            return Response(self._rules(request, course, now, monday))
+            return Response(self._rules(request, course, now, monday, zone))
 
         plans = latest_plans(request.user, [course], monday)
-        output = recommend(gather_course_data(request.user, course, now))
+        output = recommend(gather_course_data(request.user, course, now, zone))
         current = {course.id: strategy_ids(output)}
         status = saved_plan_statuses(request.user, [course], plans, current)[course.id]
         if status is not None and not status["outdated"]:

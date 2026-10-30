@@ -29,6 +29,7 @@ from .weekly import (
     server_today,
     validate_week_start,
 )
+from apps.common.clock import zone_for
 from apps.tracking.models import StudySessionLog
 
 CONFLICT_DETAIL = {
@@ -86,7 +87,8 @@ class WeeklyPlanPreviewView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         week = data["week_start"]
-        _check_plannable(week, server_today())
+        zone = zone_for(request.user)
+        _check_plannable(week, server_today(zone=zone))
         current = current_plan(request.user, week)
         base = data["base_revision"]
         if base is None and current is not None:
@@ -101,6 +103,7 @@ class WeeklyPlanPreviewView(APIView):
                 total_hours=data.get("total_hours"),
                 more_hours=data.get("more_hours"),
                 previous=current,
+                zone=zone,
             )
         except PlanInputError as error:
             raise ValidationError({error.field: [error.message]})
@@ -124,7 +127,7 @@ class WeeklyPlanDetailView(APIView):
         if current is None:
             raise NotFound("No plan for this week.")
         body = _serialize(request.user, [current])[0]
-        body["days_left"] = days_left(week, server_today())
+        body["days_left"] = days_left(week, server_today(zone=zone_for(request.user)))
         if request.query_params.get("revisions") in ("1", "true"):
             older = StudyPlan.objects.filter(user=request.user, week_start=week, is_current=False).order_by("revision")
             body["revisions"] = _serialize(request.user, list(older))
@@ -132,7 +135,8 @@ class WeeklyPlanDetailView(APIView):
 
     def put(self, request, week_start: str):
         week = _parse_week_start(week_start)
-        _check_plannable(week, server_today())
+        zone = zone_for(request.user)
+        _check_plannable(week, server_today(zone=zone))
         serializer = WeeklyPlanRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
@@ -144,6 +148,7 @@ class WeeklyPlanDetailView(APIView):
                 base_revision=data["base_revision"],
                 total_hours=data.get("total_hours"),
                 more_hours=data.get("more_hours"),
+                zone=zone,
             )
         except PlanConflict as error:
             return _conflict(error)
@@ -192,11 +197,11 @@ class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
                 StudySessionLog.objects.filter(user=course.user, course_name__iexact=old_name).update(
                     course_name=course.name
                 )
-                rename_course_in_plans(course, old_name)
+                rename_course_in_plans(course, old_name, zone=zone_for(self.request.user))
 
     def perform_destroy(self, instance):
         with transaction.atomic():
-            drop_course_from_plans(instance)
+            drop_course_from_plans(instance, zone=zone_for(self.request.user))
             instance.delete()
 
 

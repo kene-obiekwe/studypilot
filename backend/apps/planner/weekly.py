@@ -1,8 +1,8 @@
 """This week's plan: one current revision per user and week, built with the catch-up split.
 
-A week runs Monday to Sunday and is named by its Monday (week_start). Days and weeks here use
-settings.TIME_ZONE (UTC); the client names the week it means (its local Monday), which is accepted
-within a week of the server's (see validate_week_start).
+A week runs Monday to Sunday and is named by its Monday (week_start). Days and weeks here are the
+user's: Monday 00:00 to the next Monday 00:00 in their time zone (apps.common.clock; UTC until one is
+set). The client names the week it means, which must be this week or next (see validate_week_start).
 
 plan_json version 2, per revision:
     version, mode ("first" | "update" | "course_deleted"), made_on, total_hours, more_hours,
@@ -22,13 +22,16 @@ Logs belong to a course by name, so a course removed and added back gets its log
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from django.db import IntegrityError, transaction
 from django.db.models import Avg, FloatField, Value
 from django.db.models.functions import Greatest, Least
 from django.utils import timezone
 
+from apps.common import clock
+from apps.common.clock import monday_of, zone_for
 from apps.tracking.inference import STATUS_OK, forecast_course
 from apps.tracking.models import StudySessionLog
 
@@ -69,24 +72,24 @@ class PlanInputError(Exception):
 # -- Weeks -------------------------------------------------------------------------------------
 
 
-def server_today(now: datetime | None = None) -> date:
-    return timezone.localtime(now or timezone.now(), timezone.get_default_timezone()).date()
-
-
-def monday_of(day: date) -> date:
-    return day - timedelta(days=day.weekday())
+def server_today(now: datetime | None = None, zone: ZoneInfo | None = None) -> date:
+    """Today in `zone` (settings.TIME_ZONE when not given)."""
+    return clock.today(zone or clock.default_zone(), now)
 
 
 def validate_week_start(week_start: date, today: date) -> str | None:
     """None when the client may plan this week; otherwise the reason it can't.
 
-    It must be a Monday within 7 days of the server's Monday (so a client a few hours either side
-    of UTC names its own week) and no later than next week.
+    `today` is the user's. The week must be this week or next week, with a day's slack either side
+    of today so a stale tab in another zone or a skewed clock can still save. Last week is
+    accepted only in the first day of a week.
     """
     if week_start.weekday() != 0:
         return "week_start must be a Monday."
-    server_monday = monday_of(today)
-    if not server_monday - timedelta(days=7) <= week_start <= server_monday + timedelta(days=7):
+    allowed = set()
+    for day in (today - timedelta(days=1), today, today + timedelta(days=1)):
+        allowed.update((monday_of(day), monday_of(day) + timedelta(days=7)))
+    if week_start not in allowed:
         return "You can plan this week or next week only."
     return None
 
@@ -99,15 +102,14 @@ def days_left(week_start: date, today: date) -> int:
     return max(0, (end - today).days + 1)
 
 
-def week_bounds(week_start: date) -> tuple[datetime, datetime]:
-    tz = timezone.get_default_timezone()
-    start = timezone.make_aware(datetime.combine(week_start, time.min), tz)
-    return start, start + timedelta(days=7)
+def week_bounds(week_start: date, zone: ZoneInfo | None = None) -> tuple[datetime, datetime]:
+    """Monday 00:00 to the next Monday 00:00 in `zone` (settings.TIME_ZONE when not given)."""
+    return clock.week_bounds(week_start, zone or clock.default_zone())
 
 
-def logged_hours_by_name(user, week_start: date, now: datetime) -> dict[str, float]:
-    """Hours logged in the week up to now, keyed by casefolded course name."""
-    start, end = week_bounds(week_start)
+def logged_hours_by_name(user, week_start: date, now: datetime, zone: ZoneInfo | None = None) -> dict[str, float]:
+    """Hours logged in the week up to now, keyed by casefolded course name. The week is in `zone`, else the user's."""
+    start, end = week_bounds(week_start, zone or zone_for(user))
     totals: dict[str, float] = {}
     logs = StudySessionLog.objects.filter(user=user, created_at__gte=start, created_at__lt=end, created_at__lte=now)
     for name, minutes in logs.values_list("course_name", "actual_minutes"):
@@ -120,7 +122,7 @@ def logged_hours_by_name(user, week_start: date, now: datetime) -> dict[str, flo
 # -- Adherence adjustments (as the planner has always weighted courses) -------------------------
 
 
-def adherence_adjustments(user, names: list[str], now: datetime) -> dict[str, dict]:
+def adherence_adjustments(user, names: list[str], now: datetime, zone: ZoneInfo | None = None) -> dict[str, dict]:
     """Per course name: the forecast, else the 30-day observed mean, else no adjustment."""
     adjustments: dict[str, dict] = {}
     for name in names:
@@ -132,7 +134,7 @@ def adherence_adjustments(user, names: list[str], now: datetime) -> dict[str, di
             # Logs written before adherence was capped at log time can exceed 1.
             avg_adherence=Avg(Least(Greatest("adherence_score", ZERO), ONE))
         )["avg_adherence"]
-        forecast = forecast_course(user, name, now=now)
+        forecast = forecast_course(user, name, now=now, zone=zone)
         forecast_value = forecast.predicted_adherence if forecast.status == STATUS_OK else None
         adjustments[name] = resolve_adjustment(forecast_value, mean)
     return adjustments
@@ -282,17 +284,20 @@ def build_revision(
     more_hours: float | None = None,
     previous: StudyPlan | None,
     now: datetime | None = None,
+    zone: ZoneInfo | None = None,
 ) -> Revision:
     """Compute (without saving) the next revision of a week's plan.
 
     Give total_hours for a first plan (more = total - counted, never below 0: `clamped` when the
-    total was below the hours already counted) or more_hours for an update.
+    total was below the hours already counted) or more_hours for an update. Days are in `zone`,
+    else the user's.
     """
     now = now or timezone.now()
-    today = server_today(now)
+    zone = zone or zone_for(user)
+    today = server_today(now, zone)
     entered_today = min(max(today, week_start), week_start + timedelta(days=6))
     requested = canonical_courses(user, courses)
-    logged = logged_hours_by_name(user, week_start, now)
+    logged = logged_hours_by_name(user, week_start, now, zone)
     counted = sum(logged.get(course["name"].casefold(), 0.0) for course in requested)
 
     clamped = False
@@ -306,7 +311,7 @@ def build_revision(
         field = "total_hours" if total_hours is not None else "more_hours"
         raise PlanInputError(field, f"A week can hold at most {MAX_WEEK_HOURS} hours, including the hours already done.")
 
-    adjustments = adherence_adjustments(user, [course["name"] for course in requested], now)
+    adjustments = adherence_adjustments(user, [course["name"] for course in requested], now, zone)
     split_input = [
         {
             "name": course["name"],
@@ -420,6 +425,7 @@ def save_revision(
     total_hours: float | None = None,
     more_hours: float | None = None,
     now: datetime | None = None,
+    zone: ZoneInfo | None = None,
 ) -> tuple[StudyPlan, Revision]:
     """Save the week's first plan or its next revision.
 
@@ -435,7 +441,14 @@ def save_revision(
             if base_revision is not None and (current is None or current.revision != base_revision):
                 raise PlanConflict("plan_changed", current)
             revision = build_revision(
-                user, week_start, courses, total_hours=total_hours, more_hours=more_hours, previous=current, now=now
+                user,
+                week_start,
+                courses,
+                total_hours=total_hours,
+                more_hours=more_hours,
+                previous=current,
+                now=now,
+                zone=zone,
             )
             _sync_courses(user, revision.plan_json["courses"])
             plan = _store(user, week_start, revision.plan_json, current, now)
@@ -457,13 +470,15 @@ def _same_course(entry: dict, course: Course, name: str) -> bool:
     return entry.get("course_id") == course.id or str(entry.get("name", "")).casefold() == name.casefold()
 
 
-def rename_course_in_plans(course: Course, old_name: str, now: datetime | None = None) -> None:
+def rename_course_in_plans(
+    course: Course, old_name: str, now: datetime | None = None, zone: ZoneInfo | None = None
+) -> None:
     """Follow a rename in this week's and next week's current plans (in place: not a new revision).
 
     The rename also moves the course's logs, so without this the plan would point at a name that
     no longer has any logs or course.
     """
-    today = server_today(now)
+    today = server_today(now, zone or zone_for(course.user))
     for plan in _open_plans(course.user, today):
         data = plan.plan_json or {}
         v2 = data.get("version") == PLAN_VERSION
@@ -484,21 +499,22 @@ def rename_course_in_plans(course: Course, old_name: str, now: datetime | None =
             plan.save(update_fields=["plan_json", "updated_at"])
 
 
-def drop_course_from_plans(course: Course, now: datetime | None = None) -> None:
+def drop_course_from_plans(course: Course, now: datetime | None = None, zone: ZoneInfo | None = None) -> None:
     """A course is being deleted: revise this week's and next week's plans without it.
 
     Every other course keeps its planned hours (no re-split: that happens only when the user
     updates the plan). The course moves to `removed`, with the hours logged on it this week.
     """
     now = now or timezone.now()
-    today = server_today(now)
+    zone = zone or zone_for(course.user)
+    today = server_today(now, zone)
     for plan in _open_plans(course.user, today):
         entries = plan_entries(plan)
         kept = [entry for entry in entries if not _same_course(entry, course, course.name)]
         if len(kept) == len(entries):
             continue
         dropped = next(entry for entry in entries if _same_course(entry, course, course.name))
-        logged = logged_hours_by_name(course.user, plan.week_start, now)
+        logged = logged_hours_by_name(course.user, plan.week_start, now, zone)
         removed = [item for item in plan_removed(plan) if not _same_course(item, course, course.name)]
         removed.append(
             {

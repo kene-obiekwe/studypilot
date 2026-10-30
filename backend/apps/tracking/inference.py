@@ -17,6 +17,7 @@ from functools import lru_cache
 from pathlib import Path
 from statistics import mean
 from typing import Any, Iterable
+from zoneinfo import ZoneInfo
 
 import joblib
 import numpy as np
@@ -25,6 +26,8 @@ import sklearn
 from django.conf import settings
 from django.utils import timezone
 from sklearn.exceptions import InconsistentVersionWarning
+
+from apps.common import clock
 
 logger = logging.getLogger(__name__)
 
@@ -85,12 +88,12 @@ class ForecastResult:
 # -- weekly history and features (no model, no ORM) ----------------------------
 
 
-def session_points(logs: Iterable[Any]) -> list[SessionPoint]:
-    """Convert StudySessionLog-like objects to dated points in settings.TIME_ZONE."""
-    tz = timezone.get_default_timezone()
+def session_points(logs: Iterable[Any], zone: ZoneInfo | None = None) -> list[SessionPoint]:
+    """Convert StudySessionLog-like objects to points dated in `zone` (settings.TIME_ZONE when not given)."""
+    zone = zone or clock.default_zone()
     return [
         SessionPoint(
-            day=timezone.localtime(log.created_at, tz).date(),
+            day=clock.local_date(log.created_at, zone),
             planned_minutes=int(log.planned_minutes),
             actual_minutes=int(log.actual_minutes),
             focus_score=float(log.focus_score),
@@ -246,13 +249,15 @@ def forecast_from_points(points: list[SessionPoint], today: date) -> ForecastRes
     return ForecastResult(STATUS_OK, prediction, version, weeks_history, features)
 
 
-def forecast_course(user, course_name: str, now: datetime | None = None) -> ForecastResult:
-    """Forecast `course_name`'s adherence for the week containing `now`."""
+def forecast_course(
+    user, course_name: str, now: datetime | None = None, zone: ZoneInfo | None = None
+) -> ForecastResult:
+    """Forecast `course_name`'s adherence for the week containing `now`, with days in `zone` (else the user's)."""
     from .models import StudySessionLog
 
     now = now or timezone.now()
+    zone = zone or clock.zone_for(user)
     logs = StudySessionLog.objects.filter(
         user=user, course_name__iexact=course_name, created_at__lte=now
     ).only("created_at", "planned_minutes", "actual_minutes", "focus_score")
-    today = timezone.localtime(now, timezone.get_default_timezone()).date()
-    return forecast_from_points(session_points(logs), today)
+    return forecast_from_points(session_points(logs, zone), clock.today(zone, now))
