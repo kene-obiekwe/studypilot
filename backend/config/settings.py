@@ -205,7 +205,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # How many reverse proxies sit in front of the app. Unset, DRF uses the whole X-Forwarded-For value as the
 # throttle ident, so a client can dodge the throttles by sending a made-up header. Behind Render set it
-# and check it with the steps in docs/deploy.md: a value that is too low makes users share one throttle bucket.
+# and check it with the steps in docs/deploy.md. Too low keys the throttle on a proxy's address, which changes per
+# request behind Render, so the limit stops working; too high trusts an entry the client supplied.
 _num_proxies = os.getenv("NUM_PROXIES", "").strip()
 NUM_PROXIES = int(_num_proxies) if _num_proxies else None
 
