@@ -3,9 +3,9 @@
 This report documents the evaluation of the adherence model used in the study planner. It has two parts:
 
 1. **Current model: next-week adherence forecast (October 2026).** The model the application loads today.
-2. **Historical evaluation: dissertation-era model (v1/v2).** The earlier same-week model and its leakage audit, kept for the record and superseded by part 1.
+2. **Historical evaluation: the first version of the model (v1/v2).** The earlier same-week model and its leakage audit, kept for the record and superseded by part 1.
 
-Task B (strategy recommendation) is a rule-based engine and is not covered here; see `docs/ai-methodology.md` §7.
+The strategy recommendations are rule-based and not evaluated here; see [The recommendation engine](../README.md#the-recommendation-engine) in the README. A learned recommender would need in-app strategy-outcome data, because OULAD and similar external datasets carry no validated strategy labels.
 
 ## Current model: next-week adherence forecast (October 2026)
 
@@ -156,13 +156,13 @@ Implemented in `backend/apps/tracking/inference.py` and `backend/apps/planner/vi
 6. **One test presentation, one population.** The test set is a single OULAD presentation (2014J) from a UK distance-learning population. Transfer to Nigerian undergraduates is untested until in-app logs accumulate.
 7. **The target is bimodal.** About half of the targets are exactly 1, so errors cluster at the ends of the range and MAE and RMSE reward different behaviour.
 
-## Historical evaluation: dissertation-era model (v1/v2), superseded
+## Historical evaluation: the first version of the model (v1/v2), superseded
 
 > **Superseded.** Everything under this heading describes the earlier same-week adherence model, which the next-week forecast above replaced in October 2026. Its target could be rebuilt from its own inputs (§6.3 below describes the shared click-stream dependence), so the figures here, including MAE 0.0291, RMSE 0.0709 and R² 0.957, do not measure forecasting ability and must not be cited as the current result. The artifact and paths named below (`oulad_adherence_model.joblib`, `MODEL_VERSION`, `training_dataset.csv`) belong to that model and are no longer used by the application. The scripts named below (`build_oulad_canonical.py`, `train_oulad_models.py`) have since been rewritten for the forecast and no longer behave as described here.
 
 ### 1. Scope
 
-Only Task A (adherence prediction, regression) is covered here. Task B (strategy recommendation) operates as a rule-based engine in the production system; its evaluation contract is documented in `docs/ai-methodology.md` §7 and is deferred until in-app strategy-label data is available.
+Only the adherence prediction (regression) is covered here. The strategy recommendations are rule-based and not evaluated here; see [The recommendation engine](../README.md#the-recommendation-engine) in the README. A learned recommender would need in-app strategy-outcome data, because OULAD and similar external datasets carry no validated strategy labels.
 
 ### 2. Data Source and Construction
 
@@ -189,7 +189,7 @@ Training script: `backend/ml/train_oulad_models.py`.
 
 ### 3. Methodological Discovery: Target Leakage in v1 Construction
 
-During the Chapter 4 audit, an audit of the v1 OULAD canonical pipeline revealed a target-leakage issue:
+An audit of the v1 OULAD canonical pipeline revealed a target-leakage issue:
 
 - `adherence_score` was defined as `total_clicks / expected_clicks` (the engagement_ratio).
 - `completion_rate` was defined as `mean_assessment_score / 100` when assessment data was available; otherwise it fell back to the same `engagement_ratio`.
@@ -293,7 +293,7 @@ With the leakage removed, `completion_rate` is NaN for ~76% of rows and the impu
 
 #### 6.3 Residual Correlation Between Click-Based Features and Adherence
 
-A defence-honest disclosure: `focus_score`, `planned_minutes`, and `adherence_score` are all derived from the same OULAD click stream:
+An honest disclosure: `focus_score`, `planned_minutes`, and `adherence_score` are all derived from the same OULAD click stream:
 
 - `focus_score = clip(total_clicks / active_days, 0, p90) / p90`
 - `planned_minutes = expected_clicks / clicks_per_minute` (cohort median per window)

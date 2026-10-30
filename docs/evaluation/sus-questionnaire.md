@@ -9,7 +9,7 @@ The instrument is the standard **System Usability Scale** (Brooke, 1986) of ten 
 - **Form title:** StudyPilot AI — Usability Evaluation
 - **Form description:**
 
-> Thank you for taking part in this evaluation. You have just used StudyPilot AI, a personalised study planning and learning recommendation web application. This short questionnaire takes about three minutes and helps measure how usable the system is. There are no right or wrong answers. Your responses are anonymous and will only be reported as aggregate statistics in the final year project report.
+> Thank you for taking part in this evaluation. You have just used StudyPilot AI, a personalised study planning and learning recommendation web application. This short questionnaire takes about three minutes and helps measure how usable the system is. There are no right or wrong answers. Your responses are anonymous and will only be reported as aggregate statistics.
 
 - **Collect email addresses:** Off
 - **Limit to one response:** Off
@@ -17,7 +17,7 @@ The instrument is the standard **System Usability Scale** (Brooke, 1986) of ten 
 
 ## Section 1 — Background (2 short questions)
 
-These let you describe the participant sample in §4.3.2 without identifying any individual.
+These let you describe the participant sample without identifying any individual.
 
 ### Question 1
 
@@ -109,6 +109,6 @@ Once at least ten participants have completed the form:
 1. Open the form, choose **Responses → View in Sheets**.
 2. In the resulting Google Sheet choose **File → Download → Comma-separated values (.csv)**.
 3. Save the file as `sus-responses.csv` in `docs/evaluation/data/`.
-4. Run `python docs/evaluation/score_sus.py docs/evaluation/data/sus-responses.csv` to generate per-participant scores, summary statistics, and the histogram figure used in §4.3.3.
+4. Run `python docs/evaluation/score_sus.py docs/evaluation/data/sus-responses.csv` to generate per-participant scores, summary statistics, and the histogram figure.
 
 The analysis script expects the ten SUS items to appear in the order above. Do not reorder or rename the questions in the form after the first response is collected; doing so would break the column mapping.

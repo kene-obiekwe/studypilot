@@ -3,11 +3,11 @@
 This folder contains the scripts, schema notes, tests and (git-ignored) outputs for the AI lifecycle of the study planner:
 
 1. Build a weekly adherence panel from the Open University Learning Analytics Dataset (OULAD).
-2. Train and evaluate the next-week adherence forecast (Task A, regression).
+2. Train and evaluate the next-week adherence forecast (regression).
 3. Export the model for backend inference via `apps.tracking.inference`.
 4. Capture runtime training snapshots from app logs as in-app data accumulates.
 
-The model forecasts a learner's adherence for the coming week from the weeks before it. The planner uses the forecast to scale each course's allocation. Task B (strategy recommendation) is a rule-based engine in `apps.recommendations.services`; see `docs/ai-methodology.md` §1 and `schema.md` §Governance.
+The model forecasts a learner's adherence for the coming week from the weeks before it. The planner uses the forecast to scale each course's allocation. The strategy recommender is separate and rule-based, not a trained model: rule-based diagnostics over a course's traits, session logs and forecast feed strategy selection in `apps/recommendations/engine/`, with an optional AI write-up on top. See [The recommendation engine](../../README.md#the-recommendation-engine) in the root README and `schema.md` §Governance and Reporting Rules.
 
 The evaluation of the current model, including its limitations, is in `docs/evaluation-report.md`. The earlier same-week model is documented there under the historical heading and is no longer used.
 

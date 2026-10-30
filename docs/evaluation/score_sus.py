@@ -6,7 +6,7 @@ Usage:
 Outputs (next to the CSV, in the same directory):
     sus-scores.csv          -- per-participant scores (raw + converted + total)
     sus-summary.json        -- mean, median, std, n, grade interpretation
-    sus-histogram.png       -- distribution of SUS scores (for §4.3.3)
+    sus-histogram.png       -- distribution of SUS scores
 
 The script assumes the ten SUS items appear in the CSV in the standard order
 documented in docs/evaluation/sus-questionnaire.md. Two background questions
