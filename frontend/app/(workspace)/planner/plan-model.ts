@@ -136,12 +136,15 @@ export function findCourseByName<T extends { id: number; name: string }>(courses
   return courses.find((course) => courseKey(course.name) === key);
 }
 
-/** The plan's courses as rows, with the difficulty the plan used (else the saved one). */
+/**
+ * The plan's courses as rows. A course that is still saved brings its current difficulty (the one
+ * edited on /courses); the plan's own copy is used only for a course that is no longer saved.
+ */
 export function rowsFromPlan(plan: PlanLike, courses: ReadonlyArray<Course>): PlannerRow[] {
   const difficulties = new Map((plan.plan_json.courses ?? []).map((entry) => [courseKey(entry.name ?? ""), entry.difficulty]));
   return planEntries(plan).map((entry, index) => {
     const saved = findCourseByName(courses, entry.name);
-    const difficulty = difficulties.get(courseKey(entry.name)) ?? saved?.difficulty ?? DEFAULT_DIFFICULTY;
+    const difficulty = saved?.difficulty ?? difficulties.get(courseKey(entry.name)) ?? DEFAULT_DIFFICULTY;
     return {
       key: saved ? `course-${saved.id}` : `plan-${index}`,
       courseId: saved?.id ?? null,
@@ -354,6 +357,37 @@ export function deletedCoursesText({ names, hoursLeft }: DeletedCourses): string
   }
   const hours = hoursLeft === null ? "hours" : hoursText(hoursLeft);
   return `You removed ${list} from your courses, so ${several ? "their" : "its"} ${hours} left this week were dropped. Update the plan to share them out.`;
+}
+
+// -- A difficulty changed on /courses ------------------------------------------------------------
+
+/** A course whose saved difficulty is no longer the one this week's plan split the hours with. */
+export type DifficultyChange = { name: string; now: number; used: number };
+
+const isDifficulty = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+
+/**
+ * Courses still in the plan whose saved difficulty differs from the plan's copy. An entry is matched
+ * to its course by id, else by name; entries without a numeric difficulty (version-1 plans) and
+ * courses that no longer exist are skipped.
+ */
+export function difficultyChanges(plan: PlanLike, courses: ReadonlyArray<Course>): DifficultyChange[] {
+  const changes: DifficultyChange[] = [];
+  for (const entry of plan.plan_json.courses ?? []) {
+    if (typeof entry.name !== "string" || !isDifficulty(entry.difficulty)) continue;
+    const saved =
+      (entry.course_id == null ? undefined : courses.find((course) => course.id === entry.course_id)) ?? findCourseByName(courses, entry.name);
+    if (saved && saved.difficulty !== entry.difficulty) changes.push({ name: saved.name, now: saved.difficulty, used: entry.difficulty });
+  }
+  return changes;
+}
+
+export function difficultyChangedText(changes: readonly DifficultyChange[]): string {
+  if (changes.length === 1) {
+    const [{ name, now, used }] = changes;
+    return `${name} is now difficulty ${now}; this week's plan used ${used}. Update the plan to re-split your remaining hours.`;
+  }
+  return `Difficulty changed for ${joinNames(changes.map((change) => change.name))} since this week's plan was made. Update the plan to re-split your remaining hours.`;
 }
 
 // -- Preview -------------------------------------------------------------------------------------

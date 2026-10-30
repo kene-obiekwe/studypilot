@@ -14,6 +14,8 @@ import {
   defaultTarget,
   deletedCourses,
   deletedCoursesText,
+  difficultyChangedText,
+  difficultyChanges,
   draftFromPlan,
   draftSummary,
   findCourseByName,
@@ -207,11 +209,19 @@ describe("course rows", () => {
     ]);
   });
 
-  it("takes a plan's courses with the plan's difficulty and the saved course's id", () => {
+  it("takes a plan's courses with the saved course's id and its current difficulty", () => {
     const rows = rowsFromPlan(START, [course(1, "A", 5), course(2, "B", 1)]);
     expect(rows).toEqual([
-      { key: "course-1", courseId: 1, name: "A", difficulty: 4 },
-      { key: "course-2", courseId: 2, name: "B", difficulty: 2 },
+      { key: "course-1", courseId: 1, name: "A", difficulty: 5 },
+      { key: "course-2", courseId: 2, name: "B", difficulty: 1 },
+    ]);
+  });
+
+  it("keeps the plan's difficulty for a course that is no longer saved", () => {
+    const rows = rowsFromPlan(START, [course(1, "A", 5)]);
+    expect(rows).toEqual([
+      { key: "course-1", courseId: 1, name: "A", difficulty: 5 },
+      { key: "plan-1", courseId: null, name: "B", difficulty: 2 },
     ]);
   });
 
@@ -236,6 +246,62 @@ describe("last week's plan as a draft", () => {
 
   it("is null when none of its courses exist any more", () => {
     expect(draftFromPlan(lastWeek, [course(7, "Other", 3)])).toBeNull();
+  });
+
+  it("fills each row with the course's current difficulty, not the one last week used", () => {
+    const draft = draftFromPlan(lastWeek, [course(1, "A", 5), course(2, "B", 1)]);
+    expect(draft?.rows.map((item) => item.difficulty)).toEqual([5, 1]);
+  });
+});
+
+describe("a difficulty changed on /courses", () => {
+  const used = plan(1, [entry("Calculus", 6, { course_id: 1, difficulty: 3 }), entry("Statistics", 4, { course_id: 2, difficulty: 2 })]);
+
+  it("is empty while the saved difficulties match the plan", () => {
+    expect(difficultyChanges(used, [course(1, "Calculus", 3), course(2, "Statistics", 2)])).toEqual([]);
+  });
+
+  it("lists the courses whose saved difficulty differs", () => {
+    expect(difficultyChanges(used, [course(1, "Calculus", 5), course(2, "Statistics", 2)])).toEqual([
+      { name: "Calculus", now: 5, used: 3 },
+    ]);
+  });
+
+  it("matches by course id first, so a rename still counts", () => {
+    expect(difficultyChanges(used, [course(1, "Calculus 3", 4), course(2, "Statistics", 2)])).toEqual([
+      { name: "Calculus 3", now: 4, used: 3 },
+    ]);
+  });
+
+  it("falls back to the name when the entry has no course id", () => {
+    const named = plan(1, [entry("calculus ", 6, { difficulty: 3 })]);
+    expect(difficultyChanges(named, [course(9, "Calculus", 1)])).toEqual([{ name: "Calculus", now: 1, used: 3 }]);
+  });
+
+  it("skips entries without a numeric difficulty, courses that no longer exist and removed courses", () => {
+    const old = plan(1, [entry("Calculus", 6, { difficulty: undefined as unknown as number }), entry("Gone", 2, { difficulty: 2 })], {
+      removed: [{ course_id: 3, name: "Dropped", removed_on: "2026-10-27", logged_hours: 0 }],
+    });
+    expect(difficultyChanges(old, [course(1, "Calculus", 5), course(3, "Dropped", 5)])).toEqual([]);
+  });
+
+  it("is gone once the update carries the new difficulty", () => {
+    const updated = plan(2, [entry("Calculus", 6, { course_id: 1, difficulty: 5 }), entry("Statistics", 4, { course_id: 2, difficulty: 2 })]);
+    const saved = [course(1, "Calculus", 5), course(2, "Statistics", 2)];
+    expect(difficultyChanges(used, saved)).toHaveLength(1);
+    expect(difficultyChanges(updated, saved)).toEqual([]);
+  });
+
+  it("words one course and several", () => {
+    expect(difficultyChangedText([{ name: "Calculus", now: 5, used: 3 }])).toBe(
+      "Calculus is now difficulty 5; this week's plan used 3. Update the plan to re-split your remaining hours.",
+    );
+    expect(
+      difficultyChangedText([
+        { name: "Calculus", now: 5, used: 3 },
+        { name: "Statistics", now: 1, used: 2 },
+      ]),
+    ).toBe("Difficulty changed for Calculus and Statistics since this week's plan was made. Update the plan to re-split your remaining hours.");
   });
 });
 

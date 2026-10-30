@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
 import { Button, Checkbox, Field, Input, Notice, SegmentedControl, Select } from "@/components/ui";
@@ -214,6 +215,11 @@ export function CourseForm({ formId, course, onSubmit, suggest = suggestCourseTr
           onChange={(value) => change({ difficulty: Number(value) }, "difficulty")}
         />
         <p className={styles.hint}>1 is easy, 5 is hard.</p>
+        {course && form.difficulty !== course.difficulty && (
+          <Notice tone="info">
+            This week&apos;s plan keeps its hours until you update it in <Link href="/planner">Planner</Link>.
+          </Notice>
+        )}
         {errors.difficulty && <p className={styles.error}>{errors.difficulty}</p>}
       </div>
 
