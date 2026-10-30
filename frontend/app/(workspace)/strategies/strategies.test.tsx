@@ -18,12 +18,14 @@ vi.mock("@/lib/api", () => ({
   sendStrategyFeedback: vi.fn(),
   getCoursePlan: vi.fn(),
   writeCoursePlan: vi.fn(),
+  showAgain: vi.fn(),
 }));
 
 import {
   getCoursePlan,
   getCourseRecommendations,
   sendStrategyFeedback,
+  showAgain,
   writeCoursePlan,
   type CourseEvidence,
   type CoursePlan,
@@ -31,6 +33,7 @@ import {
   type CourseRecommendation,
   type CourseRecommendations,
   type CourseRecommendationsResponse,
+  type RestingStrategy,
   type SavedPlanStatus,
 } from "@/lib/api";
 import { cleanup, click, flush, render } from "@/test/dom";
@@ -62,6 +65,7 @@ function course(
   name: string,
   recommendations: CourseRecommendation[],
   savedPlan: SavedPlanStatus | null = null,
+  resting: RestingStrategy[] = [],
 ): CourseRecommendations {
   return {
     course: {
@@ -75,11 +79,12 @@ function course(
     },
     evidence: { basis: "history", summary: "Based on 4 sessions over 4 weeks" } as CourseEvidence,
     recommendations,
+    resting,
     saved_plan: savedPlan,
   };
 }
 
-const current: SavedPlanStatus = { written_at: "2026-10-27T09:30:00+00:00", outdated: false, new_sessions: 0, course_changed: false };
+const current: SavedPlanStatus = { written_at: "2026-10-27T09:30:00+00:00", outdated: false, new_sessions: 0, course_changed: false, strategies_changed: false };
 
 /** Saved-plan status by course id: 11 Algorithms, 12 Physics, 13 Statistics. */
 type Saved = Record<number, SavedPlanStatus>;
@@ -151,6 +156,7 @@ function planResponse(saved: CoursePlan | null, status: SavedPlanStatus | null =
     outdated: status?.outdated ?? false,
     new_sessions: status?.new_sessions ?? 0,
     course_changed: status?.course_changed ?? false,
+    strategies_changed: status?.strategies_changed ?? false,
     week_start: "2026-10-26",
   };
 }
@@ -167,6 +173,7 @@ afterEach(() => {
   vi.mocked(sendStrategyFeedback).mockReset();
   vi.mocked(getCoursePlan).mockReset();
   vi.mocked(writeCoursePlan).mockReset();
+  vi.mocked(showAgain).mockReset();
 });
 
 describe("Strategies page", () => {
@@ -312,6 +319,12 @@ describe("Weekly plan controls", () => {
     [{ new_sessions: 0, course_changed: true }, "You've changed this course's settings since this plan was written"],
     [{ new_sessions: 3, course_changed: true }, "You've logged 3 sessions and changed this course's settings since this plan was written"],
     [{ new_sessions: 1, course_changed: true }, "You've logged 1 session and changed this course's settings since this plan was written"],
+    [{ new_sessions: 0, course_changed: false, strategies_changed: true }, "You've changed your strategy ratings since this plan was written"],
+    [{ new_sessions: 2, course_changed: false, strategies_changed: true }, "You've logged 2 sessions and changed your strategy ratings since this plan was written"],
+    [
+      { new_sessions: 2, course_changed: true, strategies_changed: true },
+      "You've logged 2 sessions, changed this course's settings and changed your strategy ratings since this plan was written",
+    ],
   ])("an outdated plan offers Show and Update, with a note (%j)", async (change, note) => {
     const container = await renderPage(true, { 12: { ...current, outdated: true, ...change } });
     expect(planButtons(container, "Physics")).toEqual(["Show weekly plan", "Update plan"]);
@@ -444,6 +457,194 @@ describe("Strategies page passes axe", () => {
 
     await click(buttonNamed(section(container, "Physics"), "Show weekly plan")!);
     await flush();
+    expect(await violations(container)).toEqual([]);
+  });
+});
+
+const MOCK_EXAM: RestingStrategy = { strategy_id: "mock_exam", title: "Take a timed mock exam", until: "2026-11-18" };
+const INTERLEAVING: RestingStrategy = { strategy_id: "interleaving", title: "Mix up problem types", until: "2026-11-25" };
+
+/** The page with Algorithms (11) resting the given strategies and showing the given rows. */
+async function renderResting(resting: RestingStrategy[], recs = [rec(1), rec(2)]) {
+  vi.mocked(getCourseRecommendations).mockResolvedValueOnce({
+    ...response(),
+    courses: [course(11, "Algorithms", recs, null, resting), course(12, "Physics", [rec(3)])],
+  });
+  const rendered = await render(<StrategiesPage />);
+  await flush();
+  await flush();
+  return rendered.container;
+}
+
+function restingLine(container: HTMLElement, name: string): HTMLElement | undefined {
+  return [...section(container, name).querySelectorAll<HTMLElement>("summary")].find((item) => /resting$/.test(item.textContent ?? ""));
+}
+
+function showAgainButton(container: HTMLElement, title: string): HTMLButtonElement {
+  const button = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (item) => item.getAttribute("aria-label") === `Show ${title} again`,
+  );
+  if (!button) throw new Error(`No Show again for "${title}"`);
+  return button;
+}
+
+describe("Resting strategies", () => {
+  it("says how many are resting, with each name, the day it may return and a Show again button", async () => {
+    const container = await renderResting([MOCK_EXAM, INTERLEAVING]);
+    expect(restingLine(container, "Algorithms")?.textContent).toBe("2 strategies resting");
+    const list = section(container, "Algorithms").querySelector('ul[aria-label="Resting strategies for Algorithms"]')!;
+    expect([...list.querySelectorAll("li")].map((item) => item.textContent)).toEqual([
+      "Take a timed mock exam until 18 Nov 2026Show again",
+      "Mix up problem types until 25 Nov 2026Show again",
+    ]);
+    expect(section(container, "Algorithms").textContent).toContain(
+      "Some techniques feel hard while they work, testing yourself especially, so it's worth giving them another go.",
+    );
+    expect(showAgainButton(container, "Take a timed mock exam").textContent).toBe("Show again");
+  });
+
+  it("says '1 strategy resting' for one, and shows no line where nothing rests", async () => {
+    const container = await renderResting([MOCK_EXAM]);
+    expect(restingLine(container, "Algorithms")?.textContent).toBe("1 strategy resting");
+    expect(restingLine(container, "Physics")).toBeUndefined();
+  });
+
+  it("Show again calls the API, refetches that course and puts the strategy back", async () => {
+    vi.mocked(showAgain).mockResolvedValue({ course_id: 11, strategy_id: "mock_exam", rating: null });
+    const container = await renderResting([MOCK_EXAM, INTERLEAVING]);
+    vi.mocked(getCourseRecommendations).mockResolvedValueOnce({
+      ...response(),
+      courses: [course(11, "Algorithms", [rec(1), rec(2), rec(9, { title: "Take a timed mock exam" })], null, [INTERLEAVING])],
+    });
+    const summary = restingLine(container, "Algorithms")!;
+
+    await click(showAgainButton(container, "Take a timed mock exam"));
+    await flush();
+
+    expect(showAgain).toHaveBeenCalledWith(11, "mock_exam");
+    expect(getCourseRecommendations).toHaveBeenLastCalledWith(11);
+    expect(row(container, "Take a timed mock exam")).toBeTruthy();
+    expect(restingLine(container, "Algorithms")?.textContent).toBe("1 strategy resting");
+    expect(section(container, "Algorithms").textContent).not.toContain("until 18 Nov 2026");
+    // Keyboard focus stays in the resting area instead of falling back to the page.
+    expect(document.activeElement).toBe(summary);
+  });
+
+  it("moves focus to the course when the last resting strategy is shown again", async () => {
+    vi.mocked(showAgain).mockResolvedValue({ course_id: 11, strategy_id: "mock_exam", rating: null });
+    const container = await renderResting([MOCK_EXAM]);
+    vi.mocked(getCourseRecommendations).mockResolvedValueOnce({
+      ...response(),
+      courses: [course(11, "Algorithms", [rec(1), rec(2), rec(9)], null, [])],
+    });
+
+    await click(showAgainButton(container, "Take a timed mock exam"));
+    await flush();
+
+    expect(restingLine(container, "Algorithms")).toBeUndefined();
+    expect(document.activeElement).toBe(section(container, "Algorithms").querySelector("[id$='-strategies']"));
+    expect(section(container, "Algorithms").querySelectorAll("li h3")).toHaveLength(3);
+  });
+
+  it("puts the strategy back in the list and says so when Show again fails", async () => {
+    vi.mocked(showAgain).mockRejectedValue(new Error("Network down"));
+    const container = await renderResting([MOCK_EXAM]);
+
+    await click(showAgainButton(container, "Take a timed mock exam"));
+    await flush();
+
+    expect(getCourseRecommendations).toHaveBeenCalledTimes(1);
+    expect(restingLine(container, "Algorithms")?.textContent).toBe("1 strategy resting");
+    expect(showAgainButton(container, "Take a timed mock exam")).toBeTruthy();
+    expect(section(container, "Algorithms").textContent).toContain("Couldn't show that again: Network down");
+  });
+
+  it("asks for a reload when Show again worked but the refresh did not", async () => {
+    vi.mocked(showAgain).mockResolvedValue({ course_id: 11, strategy_id: "mock_exam", rating: null });
+    const container = await renderResting([MOCK_EXAM]);
+    vi.mocked(getCourseRecommendations).mockRejectedValueOnce(new Error("Network down"));
+
+    await click(showAgainButton(container, "Take a timed mock exam"));
+    await flush();
+
+    expect(section(container, "Algorithms").textContent).toContain("Shown again, but couldn't refresh this course: Network down");
+    expect(restingLine(container, "Algorithms")).toBeUndefined();
+  });
+
+  it("keeps a course with every strategy resting, with its line and a short message", async () => {
+    const container = await renderResting([MOCK_EXAM, INTERLEAVING], []);
+    const text = section(container, "Algorithms").textContent!;
+    expect(text).toContain("0 strategies");
+    expect(text).toContain("Every strategy that fits this course is resting for now.");
+    expect(section(container, "Algorithms").querySelector('ul[aria-label="Strategies for Algorithms"]')).toBeNull();
+    expect(restingLine(container, "Algorithms")?.textContent).toBe("2 strategies resting");
+    expect(container.querySelectorAll("li h3")).toHaveLength(1);
+  });
+
+  it("still says there are no strategies when no course has any or any resting", async () => {
+    vi.mocked(getCourseRecommendations).mockResolvedValue({ ...response(), courses: [course(11, "Algorithms", [])] });
+    const rendered = await render(<StrategiesPage />);
+    await flush();
+    await flush();
+    expect(rendered.container.textContent).toContain("No strategies for your courses yet.");
+  });
+});
+
+describe("Ratings on a row", () => {
+  const rate = (container: HTMLElement, title: string, label: string) =>
+    [...row(container, title).querySelectorAll("button")].find((button) => button.textContent?.trim() === label)!;
+
+  it("keeps a Not helpful row with a note that it will rest, and Helpful removes the note", async () => {
+    vi.mocked(sendStrategyFeedback).mockResolvedValueOnce({ shown_id: 2, rating: "not_helpful", tried: false });
+    vi.mocked(sendStrategyFeedback).mockResolvedValueOnce({ shown_id: 2, rating: "helpful", tried: false });
+    const container = await renderPage();
+    expect(row(container, "Strategy 2").textContent).not.toContain("This strategy will rest for 4 weeks.");
+
+    await click(rate(container, "Strategy 2", "Not helpful"));
+    await flush();
+    expect(row(container, "Strategy 2").textContent).toContain("This strategy will rest for 4 weeks.");
+    expect(row(container, "Strategy 2").querySelector('[role="status"]')?.textContent).toBe("This strategy will rest for 4 weeks.");
+    expect(rate(container, "Strategy 2", "Not helpful").getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelectorAll("li h3")).toHaveLength(5);
+
+    await click(rate(container, "Strategy 2", "Helpful"));
+    await flush();
+    expect(row(container, "Strategy 2").textContent).not.toContain("This strategy will rest for 4 weeks.");
+    expect(row(container, "Strategy 2").textContent).toContain("You found this helpful");
+  });
+
+  it("says 'You found this helpful' for a rating that came from an earlier week", async () => {
+    vi.mocked(getCourseRecommendations).mockResolvedValue({
+      ...response(),
+      courses: [course(11, "Algorithms", [rec(1, { feedback: { rating: "helpful", tried: false } }), rec(2)])],
+    });
+    const rendered = await render(<StrategiesPage />);
+    await flush();
+    await flush();
+    expect(row(rendered.container, "Strategy 1").textContent).toContain("You found this helpful");
+    expect(row(rendered.container, "Strategy 2").textContent).not.toContain("You found this helpful");
+  });
+
+  it("drops the note again when saving Not helpful fails", async () => {
+    vi.mocked(sendStrategyFeedback).mockRejectedValue(new Error("Network down"));
+    const container = await renderPage();
+    await click(rate(container, "Strategy 2", "Not helpful"));
+    await flush();
+    expect(row(container, "Strategy 2").textContent).not.toContain("This strategy will rest for 4 weeks.");
+  });
+});
+
+describe("Strategies page with resting strategies passes axe", () => {
+  it("with the resting list, a Not helpful note and a helpful label", async () => {
+    vi.mocked(sendStrategyFeedback).mockResolvedValue({ shown_id: 2, rating: "not_helpful", tried: false });
+    const container = await renderResting([MOCK_EXAM, INTERLEAVING], [rec(1, { feedback: { rating: "helpful", tried: false } }), rec(2)]);
+    await click([...row(container, "Strategy 2").querySelectorAll("button")].find((button) => button.textContent?.trim() === "Not helpful")!);
+    await flush();
+    expect(await violations(container)).toEqual([]);
+  });
+
+  it("with every strategy resting", async () => {
+    const container = await renderResting([MOCK_EXAM], []);
     expect(await violations(container)).toEqual([]);
   });
 });

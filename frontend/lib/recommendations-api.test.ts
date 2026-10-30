@@ -4,6 +4,7 @@ import {
   ApiError,
   getCourseRecommendations,
   sendStrategyFeedback,
+  showAgain,
   type CourseRecommendationsResponse,
 } from "./api";
 import { setSession } from "./session";
@@ -69,7 +70,8 @@ const RESPONSE: CourseRecommendationsResponse = {
           feedback: { rating: null, tried: false },
         },
       ],
-      saved_plan: { written_at: "2026-10-22T09:30:00+00:00", outdated: true, new_sessions: 2, course_changed: false },
+      resting: [{ strategy_id: "mock_exam", title: "Take a timed mock exam", until: "2026-11-18" }],
+      saved_plan: { written_at: "2026-10-22T09:30:00+00:00", outdated: true, new_sessions: 2, course_changed: false, strategies_changed: true },
     },
   ],
 };
@@ -166,5 +168,36 @@ describe("strategy feedback client", () => {
     serve(() => ok({ detail: "Strategy not found." }, 404));
     const error = await sendStrategyFeedback(41, "helpful").catch((e: unknown) => e);
     expect((error as ApiError).status).toBe(404);
+  });
+});
+
+describe("show again client", () => {
+  it("posts the course and strategy and returns the cleared state", async () => {
+    serve(() => ok({ course_id: 7, strategy_id: "mock_exam", rating: null }));
+    await expect(showAgain(7, "mock_exam")).resolves.toEqual({ course_id: 7, strategy_id: "mock_exam", rating: null });
+    expect(sent).toEqual([
+      {
+        path: "/recommendations/show-again/",
+        search: "",
+        method: "POST",
+        body: JSON.stringify({ course_id: 7, strategy_id: "mock_exam" }),
+        auth: "Bearer access-token",
+      },
+    ]);
+  });
+
+  it("surfaces a course or rating that is not there as a 404", async () => {
+    serve(() => ok({ detail: "Rating not found." }, 404));
+    const error = await showAgain(7, "mock_exam").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).status).toBe(404);
+    expect((error as ApiError).message).toBe("Rating not found.");
+  });
+
+  it("reads resting strategies and the strategies_changed flag from the recommendations", async () => {
+    serve(() => ok(RESPONSE));
+    const [first] = (await getCourseRecommendations()).courses;
+    expect(first.resting).toEqual([{ strategy_id: "mock_exam", title: "Take a timed mock exam", until: "2026-11-18" }]);
+    expect(first.saved_plan?.strategies_changed).toBe(true);
   });
 });

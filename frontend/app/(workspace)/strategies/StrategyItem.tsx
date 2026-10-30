@@ -10,7 +10,7 @@ import {
   type StrategyFeedbackState,
   type StrategyFeedbackValue,
 } from "@/lib/api";
-import { applyOptimistic, rollback, settle, shouldSend } from "@/lib/strategy-feedback";
+import { REST_NOTE, applyOptimistic, rollback, settle, shouldSend } from "@/lib/strategy-feedback";
 
 import styles from "./strategies.module.css";
 
@@ -18,6 +18,8 @@ import styles from "./strategies.module.css";
  * One strategy in a course's checklist, with optimistic "tried" and helpful / not helpful feedback.
  * The row stays compact: title, the "From your data" badge when the data chose it, and the
  * controls. What to do, why, the steps and the source sit behind one "Why and how" disclosure.
+ * A helpful rating persists across weeks and is said in words. A Not helpful row stays until the
+ * page is reloaded, so the rating can still be switched, with a note that the strategy will rest.
  */
 export function StrategyItem({ rec }: { rec: CourseRecommendation }) {
   const [feedback, setFeedback] = useState<StrategyFeedbackState>(rec.feedback);
@@ -46,6 +48,12 @@ export function StrategyItem({ rec }: { rec: CourseRecommendation }) {
         </h3>
         {/* Only data-backed picks are marked; the rest come from the course settings or library. */}
         {rec.basis === "history" && <Badge tone="accent">From your data</Badge>}
+        {feedback.rating === "helpful" && (
+          <span className={styles.helpfulNote}>
+            <ThumbsUp size={12} aria-hidden="true" />
+            You found this helpful
+          </span>
+        )}
       </div>
 
       <Disclosure summary="Why and how" className={styles.details}>
@@ -84,6 +92,11 @@ export function StrategyItem({ rec }: { rec: CourseRecommendation }) {
           </RatingButton>
         </div>
       </div>
+
+      {/* Always mounted, so a screen reader announces the note when it appears. */}
+      <p className={styles.restNote} role="status">
+        {feedback.rating === "not_helpful" ? REST_NOTE : ""}
+      </p>
 
       {error && (
         <div className={styles.error}>

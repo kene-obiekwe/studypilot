@@ -32,6 +32,7 @@ function statusOf(response: CoursePlanResponse): SavedPlanStatus | null {
     outdated: response.outdated,
     new_sessions: response.new_sessions,
     course_changed: response.course_changed,
+    strategies_changed: response.strategies_changed,
   };
 }
 
@@ -44,10 +45,15 @@ function writtenOn(value: string): string {
 /** What happened since the plan was written, in one sentence. Empty when the plan is up to date. */
 export function outdatedNote(saved: SavedPlanStatus | null): string {
   if (!saved?.outdated) return "";
-  const sessions = `logged ${saved.new_sessions} ${saved.new_sessions === 1 ? "session" : "sessions"}`;
-  const settings = "changed this course's settings";
-  const did = saved.new_sessions > 0 && saved.course_changed ? `${sessions} and ${settings}` : saved.course_changed ? settings : sessions;
-  return `You've ${did} since this plan was written`;
+  const did: string[] = [];
+  if (saved.new_sessions > 0) did.push(`logged ${saved.new_sessions} ${saved.new_sessions === 1 ? "session" : "sessions"}`);
+  if (saved.course_changed) did.push("changed this course's settings");
+  if (saved.strategies_changed) did.push("changed your strategy ratings");
+  // An outdated plan always has a reason; if the server sent none, say what is likeliest.
+  if (did.length === 0) did.push("logged new sessions");
+  const last = did.pop() as string;
+  const list = did.length > 0 ? `${did.join(", ")} and ${last}` : last;
+  return `You've ${list} since this plan was written`;
 }
 
 /**
