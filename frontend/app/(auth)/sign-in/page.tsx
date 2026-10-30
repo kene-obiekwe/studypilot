@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useRef, useState, type FormEvent } from "react";
 
+import { syncTimeZoneAfterSignIn } from "@/components/app-shell/zone-sync";
 import { Button, Field, Input, Notice, PasswordInput } from "@/components/ui";
 import { isEmailNotVerified, loginUser } from "@/lib/api";
 import { authLink, safeNextPath } from "@/lib/auth-flow";
@@ -53,6 +54,7 @@ function SignInForm() {
     try {
       const tokens = await loginUser({ identifier: identifier.trim(), password });
       setSession(tokens);
+      void syncTimeZoneAfterSignIn();
       setShowPassword(false);
       router.replace(target);
     } catch (error) {

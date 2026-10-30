@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { Me } from "./api";
 import {
   addDays,
   browserZone,
@@ -221,7 +222,8 @@ describe("effectiveZone", () => {
     rememberZone(NEW_YORK);
     expect(effectiveZone()).toBe(NEW_YORK);
     expect(effectiveZone(null)).toBe(NEW_YORK);
-    expect(effectiveZone({})).toBe(NEW_YORK);
+    // An account from a backend that predates the field has no time_zone key at all.
+    expect(effectiveZone({} as Pick<Me, "time_zone">)).toBe(NEW_YORK);
   });
 
   it("ignores a remembered zone Intl no longer accepts", () => {

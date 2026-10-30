@@ -32,7 +32,7 @@ afterEach(() => {
 
 describe("UserMenu", () => {
   it("has an Account link above Sign out, and following it closes the menu", async () => {
-    vi.mocked(getMe).mockResolvedValue({ id: 1, username: "kene", email: "kene@example.com" });
+    vi.mocked(getMe).mockResolvedValue({ id: 1, username: "kene", email: "kene@example.com", time_zone: null, time_zone_auto: false });
     vi.mocked(listPlans).mockResolvedValue([]);
     vi.mocked(getSessionHistory).mockResolvedValue({ items: [] });
     const { container } = await render(
@@ -56,7 +56,7 @@ describe("UserMenu", () => {
   });
 
   it("signs out through the API and goes home without waiting for the server", async () => {
-    vi.mocked(getMe).mockResolvedValue({ id: 1, username: "kene", email: "kene@example.com" });
+    vi.mocked(getMe).mockResolvedValue({ id: 1, username: "kene", email: "kene@example.com", time_zone: null, time_zone_auto: false });
     vi.mocked(listPlans).mockResolvedValue([]);
     vi.mocked(getSessionHistory).mockResolvedValue({ items: [] });
     vi.mocked(signOut).mockReturnValue(new Promise(() => {})); // never settles
