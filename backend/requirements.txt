@@ -12,3 +12,4 @@ gunicorn==23.0.0
 whitenoise==6.7.0
 dj-database-url==2.2.0
 anthropic==2.3.0
+sentry-sdk[django]==2.73.0

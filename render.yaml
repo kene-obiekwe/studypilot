@@ -81,3 +81,8 @@ services:
       # Seconds before a stuck mail connection is abandoned.
       - key: EMAIL_TIMEOUT
         value: "10"
+      # Error tracking (see docs/deploy.md). Leave the DSN out to keep it off; Render does not create a blank secret, so add it with Add variable.
+      - key: SENTRY_DSN
+        sync: false
+      - key: SENTRY_ENVIRONMENT
+        value: production
