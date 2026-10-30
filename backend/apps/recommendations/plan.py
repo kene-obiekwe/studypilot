@@ -20,7 +20,9 @@ from django.utils import timezone
 from apps.common.ai import AIError, ai_enabled, allow_ai_call, call_structured, log_fallback
 from apps.tracking.models import StudySessionLog
 
-from .models import GeneratedPlan, StrategyRating
+from .engine import recommend
+from .engine.gather import gather_course_data, local_today, week_start
+from .models import GeneratedPlan
 
 PROMPT_VERSION = "plan-v2"
 PLAN_MAX_TOKENS = 4000
@@ -224,22 +226,27 @@ def latest_plans(user, courses, monday: date) -> dict[int, GeneratedPlan]:
     return latest
 
 
-def saved_plan_statuses(user, courses, plans: dict[int, GeneratedPlan]) -> dict[int, dict | None]:
-    """Per course: when its saved plan was written and whether sessions or settings changed since.
+def strategy_ids(output: dict) -> list[str]:
+    """The strategies the engine currently recommends for a course."""
+    return [rec["strategy_id"] for rec in output["recommendations"]]
 
-    A plan is outdated by study sessions logged for the course (matched by name, ignoring case, as
-    the engine does), by editing the course, or by changing or clearing a strategy rating for it
-    ("Show again" counts), after the plan was written. The exam countdown and pacing moving on
-    with the calendar do not. Three queries however many courses there are.
+
+def saved_plan_statuses(
+    user, courses, plans: dict[int, GeneratedPlan], current: dict[int, list[str]]
+) -> dict[int, dict | None]:
+    """Per course: when its saved plan was written and what changed since.
+
+    `current` maps each course id to the strategy ids recommended for it now. A plan is outdated by
+    study sessions logged for the course (matched by name, ignoring case, as the engine does), by
+    editing the course, or when the strategies in the plan are no longer the ones recommended now
+    (a rating that rests a strategy, or "Show again" bringing one back after the plan was written
+    without it). Rating a strategy helpful does not by itself, and neither do the exam countdown
+    and pacing moving on with the calendar, unless that swaps a strategy. One query however many
+    courses there are.
     """
     logged: dict[str, list[datetime]] = {}
-    rated: dict[int, list[datetime]] = {}
     if plans:
         since = min(row.created_at for row in plans.values())
-        for course_id, updated_at in StrategyRating.objects.filter(
-            user=user, course__in=courses, updated_at__gt=since
-        ).values_list("course_id", "updated_at"):
-            rated.setdefault(course_id, []).append(updated_at)
         for name, created_at in StudySessionLog.objects.filter(user=user, created_at__gt=since).values_list(
             "course_name", "created_at"
         ):
@@ -253,7 +260,8 @@ def saved_plan_statuses(user, courses, plans: dict[int, GeneratedPlan]) -> dict[
             continue
         new_sessions = sum(1 for created_at in logged.get(course.name.casefold(), ()) if created_at > row.created_at)
         course_changed = course.updated_at > row.created_at
-        strategies_changed = any(updated_at > row.created_at for updated_at in rated.get(course.id, ()))
+        planned = {item["strategy_id"] for item in row.content.get("items", [])}
+        strategies_changed = planned != set(current[course.id])
         statuses[course.id] = {
             "written_at": row.created_at.isoformat(),
             "outdated": new_sessions > 0 or course_changed or strategies_changed,
@@ -262,6 +270,17 @@ def saved_plan_statuses(user, courses, plans: dict[int, GeneratedPlan]) -> dict[
             "strategies_changed": strategies_changed,
         }
     return statuses
+
+
+def course_saved_status(user, course, now: datetime) -> dict | None:
+    """The status of this week's saved plan for one course; None with AI plans off or none saved."""
+    if not ai_enabled():
+        return None
+    plans = latest_plans(user, [course], week_start(local_today(now)))
+    if course.id not in plans:
+        return None
+    output = recommend(gather_course_data(user, course, now))
+    return saved_plan_statuses(user, [course], plans, {course.id: strategy_ids(output)})[course.id]
 
 
 NO_PLAN_STATUS = {

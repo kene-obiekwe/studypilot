@@ -10,7 +10,7 @@ from unittest import mock
 
 from django.apps import apps as django_apps
 from django.contrib.auth.models import User
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
@@ -22,7 +22,7 @@ from .engine.diagnostics import RatingInfo
 from .engine.gather import gather_course_data, local_today
 from .engine.library import LIBRARY
 from .engine.selection import REST_DAYS, current_ratings, technique_order
-from .models import ShownStrategy, StrategyFeedback, StrategyRating
+from .models import GeneratedPlan, ShownStrategy, StrategyFeedback, StrategyRating
 from .shown import clear_rating, record_feedback
 from .test_engine import TODAY, course, data, ids, session
 from .test_saved_plan import SavedPlanTestCase
@@ -263,7 +263,7 @@ class RecordFeedbackTests(RecommendationFeedbackBase):
         shown_id = self.rec(strategy_id)["shown_id"]
         self.course.delete()
         response = self.client.post(FEEDBACK_URL, {"shown_id": shown_id, "value": "helpful"}, format="json")
-        self.assertEqual(response.data, {"shown_id": shown_id, "rating": "helpful", "tried": False})
+        self.assertEqual(response.data, {"shown_id": shown_id, "rating": "helpful", "tried": False, "saved_plan": None})
         self.assertFalse(StrategyRating.objects.exists())
 
 
@@ -354,7 +354,9 @@ class ShowAgainTests(RecommendationFeedbackBase):
 
         response = self.post(self.course.id, target)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data, {"course_id": self.course.id, "strategy_id": target, "rating": None})
+        self.assertEqual(
+            response.data, {"course_id": self.course.id, "strategy_id": target, "rating": None, "saved_plan": None}
+        )
         listing = self.listing()
         self.assertEqual(listing["resting"], [])
         self.assertEqual(self.rec(target, listing)["feedback"]["rating"], None)
@@ -396,6 +398,8 @@ class ShowAgainTests(RecommendationFeedbackBase):
 
 
 class StrategiesChangedTests(SavedPlanTestCase):
+    """The plan is outdated when its strategies are no longer the ones recommended now."""
+
     def setUp(self):
         super().setUp()
         self.write_first_plan()
@@ -404,50 +408,96 @@ class StrategiesChangedTests(SavedPlanTestCase):
         listing = self.client.get(LIST_URL).data["courses"][0]
         return listing["recommendations"][0]
 
-    def rate(self, value):
+    def rate_response(self, value):
         rec = self.rating_target()
         response = self.client.post(FEEDBACK_URL, {"shown_id": rec["shown_id"], "value": value}, format="json")
         self.assertEqual(response.status_code, 200, response.data)
-        return rec["strategy_id"]
+        return rec["strategy_id"], response
+
+    def rate(self, value):
+        return self.rate_response(value)[0]
+
+    def show_again(self, strategy_id):
+        response = self.client.post(SHOW_AGAIN_URL, {"course_id": self.course.id, "strategy_id": strategy_id}, format="json")
+        self.assertEqual(response.status_code, 200)
+        return response
+
+    def flags(self, data):
+        return data["outdated"], data["strategies_changed"], data["new_sessions"], data["course_changed"]
 
     def test_a_fresh_plan_has_no_strategy_changes(self):
         data = self.read()
         self.assertEqual((data["outdated"], data["strategies_changed"]), (False, False))
 
-    def test_rating_a_strategy_outdates_the_plan_only_for_that_strategy_change(self):
+    def test_helpful_does_not_outdate_the_plan(self):
         self.rate("helpful")
-        data = self.read()
-        self.assertEqual(
-            (data["outdated"], data["strategies_changed"], data["new_sessions"], data["course_changed"]),
-            (True, True, 0, False),
-        )
+        self.assertEqual(self.flags(self.read()), (False, False, 0, False))
+        self.assertFalse(self.list_status()["Calculus"]["strategies_changed"])
+
+    def test_tried_it_does_not_outdate_the_plan(self):
+        self.rate("tried")
+        self.assertFalse(self.read()["outdated"])
+
+    def test_not_helpful_outdates_the_plan_for_that_reason_alone(self):
+        self.rate("not_helpful")
+        self.assertEqual(self.flags(self.read()), (True, True, 0, False))
         self.assertTrue(self.list_status()["Calculus"]["strategies_changed"])
 
-    def test_show_again_counts_too(self):
+    def test_show_again_after_the_plan_was_written_while_resting_outdates_it(self):
         strategy_id = self.rate("not_helpful")
         self.write_after_change()
         self.assertFalse(self.read()["outdated"])
-        self.clock.advance(minutes=5)
-        response = self.client.post(SHOW_AGAIN_URL, {"course_id": self.course.id, "strategy_id": strategy_id}, format="json")
-        self.assertEqual(response.status_code, 200)
-        data = self.read()
-        self.assertEqual((data["outdated"], data["strategies_changed"]), (True, True))
+        self.show_again(strategy_id)
+        self.assertEqual(self.flags(self.read()), (True, True, 0, False))
+
+    def test_resting_and_showing_again_before_updating_is_not_outdated(self):
+        strategy_id = self.rate("not_helpful")
+        self.assertTrue(self.read()["outdated"])
+        self.show_again(strategy_id)
+        self.assertEqual(self.flags(self.read()), (False, False, 0, False))
+        self.assertFalse(self.list_status()["Calculus"]["outdated"])
 
     def test_writing_the_plan_again_clears_it(self):
-        self.rate("helpful")
+        self.rate("not_helpful")
         self.write_after_change()
         data = self.read()
         self.assertEqual((data["outdated"], data["strategies_changed"]), (False, False))
 
-    def test_an_unchanged_repeat_rating_does_not(self):
-        self.rate("helpful")
-        self.write_after_change()
-        self.clock.advance(minutes=5)
-        self.rate("helpful")
-        self.assertFalse(self.read()["outdated"])
-
     def test_the_status_of_a_plan_with_no_changes_has_the_field(self):
         self.assertIn("strategies_changed", self.read())
+
+    def test_the_rating_response_carries_the_plan_status(self):
+        _, helpful = self.rate_response("helpful")
+        self.assertEqual(helpful.data["saved_plan"], self.list_status()["Calculus"])
+        self.assertFalse(helpful.data["saved_plan"]["outdated"])
+        _, resting = self.rate_response("not_helpful")
+        self.assertEqual(resting.data["saved_plan"], self.list_status()["Calculus"])
+        self.assertTrue(resting.data["saved_plan"]["strategies_changed"])
+
+    def test_the_show_again_response_carries_the_plan_status(self):
+        strategy_id = self.rate("not_helpful")
+        response = self.show_again(strategy_id)
+        self.assertEqual(response.data["saved_plan"], self.list_status()["Calculus"])
+        self.assertFalse(response.data["saved_plan"]["outdated"])
+
+    def test_the_responses_have_no_plan_status_when_none_is_saved(self):
+        GeneratedPlan.objects.all().delete()
+        strategy_id, response = self.rate_response("not_helpful")
+        self.assertIsNone(response.data["saved_plan"])
+        self.assertIsNone(self.show_again(strategy_id).data["saved_plan"])
+
+    @override_settings(AI_PLAN_ENABLED=False)
+    def test_the_responses_have_no_plan_status_with_ai_plans_off(self):
+        strategy_id, response = self.rate_response("not_helpful")
+        self.assertIsNone(response.data["saved_plan"])
+        self.assertIsNone(self.show_again(strategy_id).data["saved_plan"])
+
+    def test_feedback_on_a_deleted_course_has_no_plan_status(self):
+        rec = self.rating_target()
+        self.course.delete()
+        response = self.client.post(FEEDBACK_URL, {"shown_id": rec["shown_id"], "value": "helpful"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data["saved_plan"])
 
     def write_after_change(self):
         self.queue_next_plan()

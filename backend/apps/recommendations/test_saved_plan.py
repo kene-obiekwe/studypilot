@@ -5,11 +5,16 @@ from datetime import timezone as dt_timezone
 from unittest import mock
 
 from django.core.cache import cache
+from django.db import connection
 from django.test import override_settings
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
+from apps.planner.models import Course
+
+from .engine.gather import local_today
 from .models import GeneratedPlan
-from .plan import latest_plans, saved_plan_statuses
+from .plan import latest_plans, saved_plan_statuses, strategy_ids
 from .test_ai_plan import PlanTestCase, faithful_plan, message
 from .test_course_recommendations import log
 
@@ -161,6 +166,22 @@ class OutdatedTests(SavedPlanTestCase):
         self.assertIsNotNone(data["saved"])
         self.assertFalse(self.list_status()["Calculus"]["outdated"])
 
+    def test_an_exam_entering_the_window_swaps_a_strategy_and_outdates_the_plan(self):
+        # update() leaves updated_at alone, so only the calendar moves the exam into the 21-day window.
+        Course.objects.filter(pk=self.course.pk).update(exam_date=local_today() + timedelta(days=22))
+        self.course.refresh_from_db()
+        self.write_first_plan()
+        written = {item["strategy_id"] for item in GeneratedPlan.objects.get().content["items"]}
+        self.assertFalse(self.read()["outdated"])
+        self.clock.advance(days=1)
+        self.assertNotEqual(written, set(strategy_ids(self.output())))
+        data = self.read()
+        self.assertEqual(
+            (data["outdated"], data["strategies_changed"], data["new_sessions"], data["course_changed"]),
+            (True, True, 0, False),
+        )
+        self.assertTrue(self.list_status()["Calculus"]["strategies_changed"])
+
     def test_a_new_week_starts_without_a_plan(self):
         self.write_first_plan()
         self.clock.advance(days=7)
@@ -300,14 +321,33 @@ class CourseListTests(SavedPlanTestCase):
     def test_null_with_ai_off(self):
         self.assertEqual(self.list_status(), {"Calculus": None})
 
-    def test_statuses_take_two_queries_after_the_plans_however_many_courses(self):
+    def test_statuses_take_one_query_after_the_plans_however_many_courses(self):
         courses = [self.course, self.make_course("Algebra"), self.make_course("History")]
         self.write_first_plan()
         week = GeneratedPlan.objects.get().week_start
         with self.assertNumQueries(1):
             plans = latest_plans(self.user, courses, week)
-        with self.assertNumQueries(2):  # ratings and sessions
-            saved_plan_statuses(self.user, courses, plans)
+        current = {course.id: strategy_ids(self.output(course)) for course in courses}
+        with self.assertNumQueries(1):  # sessions
+            saved_plan_statuses(self.user, courses, plans, current)
+
+    def test_the_list_adds_two_queries_for_the_statuses_however_many_courses(self):
+        courses = [self.course, self.make_course("Algebra"), self.make_course("History")]
+        self.fake_client(*(message(faithful_plan(self.output(course))) for course in courses))
+        for course in courses:
+            self.write(course)
+        self.clock.advance(minutes=5)
+
+        def list_queries():
+            with CaptureQueriesContext(connection) as queries:
+                self.assertEqual(self.client.get(LIST_URL).status_code, 200)
+            return len(queries)
+
+        list_queries()  # the first listing logs the shown strategies
+        with_plans = list_queries()
+        with override_settings(AI_PLAN_ENABLED=False):
+            without = list_queries()
+        self.assertEqual(with_plans - without, 2)  # the newest plans and the sessions since
 
 
 class PlannerSaveTests(SavedPlanTestCase):

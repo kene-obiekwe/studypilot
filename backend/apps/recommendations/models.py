@@ -55,8 +55,8 @@ class StrategyRating(models.Model):
     """The user's opinion of a strategy for a course. It persists across weeks, unlike ShownStrategy.
 
     A not_helpful rating rests the strategy for REST_DAYS (see engine/selection.py). "Show again"
-    clears the rating instead of deleting the row, so `updated_at` still moves and a saved AI plan
-    written before it counts as outdated.
+    clears the rating instead of deleting the row. Ratings do not outdate a saved AI plan by
+    themselves: the plan is outdated when its strategies differ from the ones recommended now.
     """
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="strategy_ratings")

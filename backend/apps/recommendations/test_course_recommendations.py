@@ -189,9 +189,15 @@ class StrategyFeedbackApiTests(APITestCase):
         shown_id = self.shown_id()
         response = self.send(shown_id, "helpful")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data, {"shown_id": shown_id, "rating": "helpful", "tried": False})
-        self.assertEqual(self.send(shown_id, "tried").data, {"shown_id": shown_id, "rating": "helpful", "tried": True})
-        self.assertEqual(self.send(shown_id, "not_helpful").data, {"shown_id": shown_id, "rating": "not_helpful", "tried": True})
+        self.assertEqual(response.data, {"shown_id": shown_id, "rating": "helpful", "tried": False, "saved_plan": None})
+        self.assertEqual(
+            self.send(shown_id, "tried").data,
+            {"shown_id": shown_id, "rating": "helpful", "tried": True, "saved_plan": None},
+        )
+        self.assertEqual(
+            self.send(shown_id, "not_helpful").data,
+            {"shown_id": shown_id, "rating": "not_helpful", "tried": True, "saved_plan": None},
+        )
         self.assertEqual(
             sorted(StrategyFeedback.objects.filter(shown_id=shown_id).values_list("value", flat=True)),
             ["not_helpful", "tried"],
