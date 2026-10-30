@@ -28,6 +28,8 @@ import {
   defaultTarget,
   deletedCourses,
   deletedCoursesText,
+  difficultyChangedText,
+  difficultyChanges,
   draftFromPlan,
   draftSummary,
   isSaturday,
@@ -132,6 +134,9 @@ function PlannerView({ data, onReload }: { data: PlannerData; onReload: () => vo
   const draftOffer = targetPlan === null && draft === null && previousPlan ? draftFromPlan(previousPlan, courses) : null;
 
   const deleted = data.thisWeek ? deletedCourses(data.thisWeek) : null;
+  // Shown only while the this-week card offers Update, so the notice and the button go together.
+  const offersUpdate = thisPlan !== null && !(formOpen && target === "this");
+  const changedDifficulty = offersUpdate ? difficultyChanges(thisPlan, courses) : [];
 
   const open = (week: WeekTarget) => {
     setChosenTarget(week);
@@ -182,6 +187,7 @@ function PlannerView({ data, onReload }: { data: PlannerData; onReload: () => vo
       )}
 
       {deleted && <Notice tone="warning">{deletedCoursesText(deleted)}</Notice>}
+      {changedDifficulty.length > 0 && <Notice tone="warning">{difficultyChangedText(changedDifficulty)}</Notice>}
 
       {thisPlan && (
         <ThisWeekCard

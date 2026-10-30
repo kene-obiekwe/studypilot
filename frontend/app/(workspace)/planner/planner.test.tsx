@@ -303,6 +303,23 @@ describe("Planner, this week's plan", () => {
     expect(text(container)).toContain("Already done this week: 4 h on courses in the plan.");
   });
 
+  it("says a difficulty changed on /courses, fills the update form from the course, and clears once updated", async () => {
+    serve({ plans: [START], courses: [course(1, "A", 5), course(2, "B", 2), course(3, "C", 2)] });
+    const container = await renderPage();
+    const notice = "A is now difficulty 5; this week's plan used 4. Update the plan to re-split your remaining hours.";
+    expect(text(container)).toContain(notice);
+
+    await click(button(container, "Update this week's plan"));
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="Difficulty of A"]')!.value).toBe("5");
+    expect(text(container)).not.toContain(notice);
+    cleanup();
+
+    // The saved update carries the new difficulty, so a fresh load has nothing to say.
+    const updated = plan(2, [entry("A", 7, { course_id: 1, difficulty: 5 }), entry("B", 3, { course_id: 2, difficulty: 2 })]);
+    serve({ plans: [updated], courses: [course(1, "A", 5), course(2, "B", 2), course(3, "C", 2)] });
+    expect(text(await renderPage())).not.toContain("difficulty 5; this week's plan used");
+  });
+
   it("example 1: previews Course · Done · New plan · Left this week", async () => {
     serve({ plans: [START] });
     const container = await renderPage();
@@ -531,8 +548,9 @@ describe("Planner, Monday with no plan", () => {
     await click(button(container, "Start from last week's plan (12 h, 3 courses)"));
 
     expect((byLabel(container, "How many hours can you study this week?") as HTMLInputElement).value).toBe("12");
-    expect(container.querySelector<HTMLSelectElement>('select[aria-label="Difficulty of A"]')?.value).toBe("5");
-    expect(container.querySelector<HTMLSelectElement>('select[aria-label="Difficulty of C"]')?.value).toBe("1");
+    // Difficulty comes from the saved courses (A 4, C 2), not from the 5 and 1 last week used.
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="Difficulty of A"]')?.value).toBe("4");
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="Difficulty of C"]')?.value).toBe("2");
     expect(text(container)).toContain("Nothing is saved until you check the preview and save it.");
     expect(buttonNamed(container, "Start from last week's plan (12 h, 3 courses)")).toBeUndefined();
     expect(previewPlan).not.toHaveBeenCalled();

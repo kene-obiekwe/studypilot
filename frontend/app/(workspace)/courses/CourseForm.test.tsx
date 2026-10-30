@@ -264,6 +264,22 @@ describe("CourseForm: editing", () => {
     expect((byLabel(container, "Exam date") as HTMLInputElement).value).toBe("2027-01-20");
   });
 
+  it("says the plan keeps its hours once difficulty changes, and drops the note when it is put back", async () => {
+    const { container } = await mount({ course: SAVED });
+    expect(text(container)).not.toContain("keeps its hours");
+    await click(radio(container, "Difficulty", "5"));
+    expect(text(container)).toContain("This week's plan keeps its hours until you update it in Planner.");
+    expect(container.querySelector("a")?.getAttribute("href")).toBe("/planner");
+    await click(radio(container, "Difficulty", "4"));
+    expect(text(container)).not.toContain("keeps its hours");
+  });
+
+  it("gives no plan note when adding a course", async () => {
+    const { container } = await mount();
+    await click(radio(container, "Difficulty", "5"));
+    expect(text(container)).not.toContain("keeps its hours");
+  });
+
   it("does not look the name up again until it changes", async () => {
     const { container, suggest } = await mount({ course: SAVED });
     await blur(nameInput(container));
