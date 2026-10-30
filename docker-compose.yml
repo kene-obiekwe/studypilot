@@ -3,7 +3,7 @@ version: "3.9"
 services:
   db:
     image: postgres:16
-    container_name: fyp_postgres
+    container_name: studypilot_postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: fyp_db
