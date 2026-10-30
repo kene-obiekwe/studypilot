@@ -19,7 +19,7 @@ This document is the protocol used during the in-person SUS evaluation. Read the
 
 ## Briefing script (read aloud)
 
-> Thank you for agreeing to take part. You will spend about ten minutes using a web application called StudyPilot AI. It is the system I built for my final year project. It helps students plan study sessions, receive learning strategy suggestions, and track how well they follow their plans.
+> Thank you for agreeing to take part. You will spend about ten minutes using a web application called StudyPilot AI. It is a system I built. It helps students plan study sessions, receive learning strategy suggestions, and track how well they follow their plans.
 >
 > I am not testing you. I am testing the system. There are no right or wrong answers, and you cannot break anything. If you get stuck I will still ask you to try once more before I step in, because that is the most useful information for me. After you finish using the system you will complete a short questionnaire on this phone. The questionnaire is anonymous. Do you have any questions before we begin?
 
@@ -81,4 +81,4 @@ For each participant note:
 2. Any moment where they asked for help (and what you said in response).
 3. Any spontaneous comments about the system, positive or negative.
 
-These observations are not used in the SUS calculation but support the qualitative discussion in §4.3.4 of the dissertation.
+These observations are not used in the SUS calculation but support the qualitative discussion of the results.

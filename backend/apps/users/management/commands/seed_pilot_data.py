@@ -1,5 +1,5 @@
 """
-Seed deterministic pilot demo data for Chapter 4 screenshots and end-to-end demos.
+Seed deterministic pilot demo data for screenshots and end-to-end demos.
 
 Creates five pilot users with distinct adherence/focus profiles, three courses each,
 one study plan and roughly 18 session logs spread over the last 28 days. Timestamps are backdated so the planner's 30-day
@@ -164,7 +164,7 @@ def _bounded_normal(rng: random.Random, mean: float, jitter: float) -> float:
 
 
 class Command(BaseCommand):
-    help = "Seed deterministic pilot demo data for Chapter 4 screenshots and end-to-end demos."
+    help = "Seed deterministic pilot demo data for screenshots and end-to-end demos."
 
     def add_arguments(self, parser) -> None:
         parser.add_argument(
