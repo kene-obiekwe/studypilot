@@ -9,10 +9,11 @@ from apps.planner.models import Course
 
 from .engine import recommend
 from .engine.gather import gather_course_data, local_today, week_start
+from .engine.selection import current_ratings
 from .models import ShownStrategy
 from .plan import build_plan, latest_plans, plan_envelope, saved_plan_statuses, saved_response
-from .serializers import StrategyFeedbackRequestSerializer
-from .shown import feedback_state, log_shown, record_feedback
+from .serializers import ShowAgainRequestSerializer, StrategyFeedbackRequestSerializer
+from .shown import clear_rating, feedback_state, log_shown, record_feedback
 
 
 
@@ -41,9 +42,16 @@ class CourseRecommendationsView(APIView):
         results = []
         with transaction.atomic():
             for course in courses:
-                output = recommend(gather_course_data(request.user, course, now))
+                data = gather_course_data(request.user, course, now)
+                output = recommend(data)
+                # Resting strategies are not in the recommendations, so they are not logged as shown.
                 shown = log_shown(request.user, course, output["recommendations"], monday, now)
-                states = feedback_state([row.id for row in shown.values()])
+                # The rating persists across weeks (StrategyRating); tried is this week's row only.
+                ratings = current_ratings(data)
+                states = feedback_state(
+                    [row.id for row in shown.values()],
+                    {row.id: ratings.get(strategy_id) for strategy_id, row in shown.items()},
+                )
                 for rec in output["recommendations"]:
                     row = shown[rec["strategy_id"]]
                     rec["shown_id"] = row.id
@@ -71,6 +79,19 @@ class StrategyFeedbackView(APIView):
         if shown is None:
             raise NotFound("Strategy not found.")
         return Response(record_feedback(shown, serializer.validated_data["value"]))
+
+
+class ShowAgainView(APIView):
+    """Undo a rating, so a strategy marked not helpful can be recommended again."""
+
+    def post(self, request):
+        serializer = ShowAgainRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        course = Course.objects.filter(pk=serializer.validated_data["course_id"], user=request.user).first()
+        strategy_id = serializer.validated_data["strategy_id"]
+        if course is None or not clear_rating(request.user, course, strategy_id):
+            raise NotFound("Rating not found.")
+        return Response({"course_id": course.id, "strategy_id": strategy_id, "rating": None})
 
 
 class CoursePlanView(APIView):

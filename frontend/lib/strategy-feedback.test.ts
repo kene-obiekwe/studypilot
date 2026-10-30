@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { applyOptimistic, fieldOf, rollback, settle, shouldSend } from "./strategy-feedback";
+import {
+  REST_NOTE,
+  applyOptimistic,
+  fieldOf,
+  restUntilLabel,
+  restingLine,
+  rollback,
+  settle,
+  shouldSend,
+  withoutResting,
+} from "./strategy-feedback";
 
 const fresh = { rating: null, tried: false } as const;
 
@@ -36,5 +46,33 @@ describe("strategy feedback", () => {
     const shown = { rating: "not_helpful" as const, tried: true };
     expect(rollback(shown, "not_helpful", before)).toEqual({ rating: null, tried: true });
     expect(rollback(shown, "tried", before)).toEqual({ rating: "not_helpful", tried: false });
+  });
+});
+
+describe("resting helpers", () => {
+  it("counts what is resting", () => {
+    expect(restingLine(1)).toBe("1 strategy resting");
+    expect(restingLine(2)).toBe("2 strategies resting");
+    expect(restingLine(0)).toBe("0 strategies resting");
+  });
+
+  it("writes the day a strategy returns in UK order", () => {
+    expect(restUntilLabel("2026-11-18")).toBe("18 Nov 2026");
+    expect(restUntilLabel("2026-01-05")).toBe("5 Jan 2026");
+    expect(restUntilLabel("not a date")).toBe("not a date");
+  });
+
+  it("removes one strategy for the optimistic Show again, without touching the original", () => {
+    const resting = [
+      { strategy_id: "a", title: "A", until: "2026-11-18" },
+      { strategy_id: "b", title: "B", until: "2026-11-19" },
+    ];
+    expect(withoutResting(resting, "a")).toEqual([resting[1]]);
+    expect(withoutResting(resting, "zzz")).toEqual(resting);
+    expect(resting).toHaveLength(2);
+  });
+
+  it("tells the user a Not helpful strategy rests for four weeks", () => {
+    expect(REST_NOTE).toBe("This strategy will rest for 4 weeks.");
   });
 });

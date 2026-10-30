@@ -572,6 +572,13 @@ export type CourseEvidence = {
   diagnostics: string[];
 };
 
+/** A strategy the user marked not helpful, resting for this course until `until` (an ISO date). */
+export type RestingStrategy = {
+  strategy_id: string;
+  title: string;
+  until: string;
+};
+
 export type CourseRecommendations = {
   course: {
     id: number;
@@ -584,16 +591,22 @@ export type CourseRecommendations = {
   };
   evidence: CourseEvidence;
   recommendations: CourseRecommendation[];
+  /** Strategies resting for this course after a "Not helpful"; they are not in `recommendations`. */
+  resting: RestingStrategy[];
   /** This week's written plan and what changed since; null when none was written this week. */
   saved_plan: SavedPlanStatus | null;
 };
 
-/** Sessions logged for the course or edits to its settings after the plan was written make it outdated. */
+/**
+ * Sessions logged for the course, edits to its settings, or changed strategy ratings (a "Show
+ * again" counts) after the plan was written make it outdated.
+ */
 export type SavedPlanStatus = {
   written_at: string;
   outdated: boolean;
   new_sessions: number;
   course_changed: boolean;
+  strategies_changed: boolean;
 };
 
 export type CourseRecommendationsResponse = {
@@ -605,6 +618,8 @@ export type CourseRecommendationsResponse = {
 };
 
 export type StrategyFeedbackResponse = StrategyFeedbackState & { shown_id: number };
+
+export type ShowAgainResponse = { course_id: number; strategy_id: string; rating: null };
 
 /** This week's plan for a course. "ai" only when the write-up passed validation; otherwise rules-only. */
 export type CoursePlan = {
@@ -629,6 +644,7 @@ export type CoursePlanResponse = {
   outdated: boolean;
   new_sessions: number;
   course_changed: boolean;
+  strategies_changed: boolean;
   week_start: string;
 };
 
@@ -752,6 +768,11 @@ export function suggestCourseTraits(name: string): Promise<TraitSuggestion> {
 /** "helpful" and "not_helpful" replace each other; "tried" is independent. */
 export function sendStrategyFeedback(shownId: number, value: StrategyFeedbackValue): Promise<StrategyFeedbackResponse> {
   return request<StrategyFeedbackResponse>("/recommendations/feedback/", "POST", { shown_id: shownId, value });
+}
+
+/** Undo a rating, so a strategy that is resting for the course can be recommended again. */
+export function showAgain(courseId: number, strategyId: string): Promise<ShowAgainResponse> {
+  return request<ShowAgainResponse>("/recommendations/show-again/", "POST", { course_id: courseId, strategy_id: strategyId });
 }
 
 /**

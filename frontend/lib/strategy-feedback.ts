@@ -4,7 +4,12 @@
  * a "tried" request and a rating request in flight at once never overwrite each other.
  */
 
-import type { StrategyFeedbackState, StrategyFeedbackValue } from "./api";
+import type { RestingStrategy, StrategyFeedbackState, StrategyFeedbackValue } from "./api";
+
+/** Shown on a row marked Not helpful: the server rests the strategy for 28 days from the next reload. */
+export const REST_NOTE = "This strategy will rest for 4 weeks.";
+export const REST_EXPLANATION =
+  "Some techniques feel hard while they work, testing yourself especially, so it's worth giving them another go.";
 
 export type FeedbackField = "tried" | "rating";
 
@@ -38,4 +43,20 @@ export function rollback(
   before: StrategyFeedbackState,
 ): StrategyFeedbackState {
   return fieldOf(value) === "tried" ? { ...state, tried: before.tried } : { ...state, rating: before.rating };
+}
+
+/** "1 strategy resting" / "3 strategies resting". */
+export function restingLine(count: number): string {
+  return `${count} ${count === 1 ? "strategy" : "strategies"} resting`;
+}
+
+/** "18 Nov 2026" from an ISO date: UK order whatever the browser's locale, like the rest of the app. */
+export function restUntilLabel(until: string): string {
+  const date = new Date(`${until}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? until : date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** The resting list without one strategy: the optimistic step of "Show again". */
+export function withoutResting(resting: RestingStrategy[], strategyId: string): RestingStrategy[] {
+  return resting.filter((entry) => entry.strategy_id !== strategyId);
 }

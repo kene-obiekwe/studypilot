@@ -159,6 +159,7 @@
     "head"
     "details"
     "controls"
+    "note"
     "error";
   gap: var(--sp-space-2);
   padding: var(--sp-space-3) var(--sp-space-4);
@@ -170,6 +171,7 @@
     grid-template-areas:
       "head controls"
       "details controls"
+      "note note"
       "error error";
     column-gap: var(--sp-space-6);
     row-gap: var(--sp-space-1);
@@ -179,6 +181,18 @@
 
 .error {
   grid-area: error;
+}
+
+/* Under the head and controls: "This strategy will rest for 4 weeks." Empty until Not helpful. */
+.restNote {
+  grid-area: note;
+  margin: 0;
+  color: var(--sp-ink-soft);
+  font-size: var(--sp-text-sm);
+}
+
+.restNote:empty {
+  display: none;
 }
 
 .item + .item {
@@ -195,6 +209,61 @@
 
 .details {
   grid-area: details;
+}
+
+.helpfulNote {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-space-1);
+  color: var(--sp-accent-ink);
+  font-size: var(--sp-text-sm);
+}
+
+/* -- Resting strategies ----------------------------------------------------------------- */
+
+.resting {
+  padding: 0 var(--sp-space-1);
+}
+
+.restingBody {
+  display: grid;
+  gap: var(--sp-space-3);
+  max-width: 70ch;
+}
+
+.restingList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-space-2);
+}
+
+.restingItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-space-1) var(--sp-space-3);
+}
+
+.restingName {
+  color: var(--sp-ink);
+  font-weight: var(--sp-weight-strong);
+}
+
+.restingUntil {
+  color: var(--sp-ink-soft);
+  font-size: var(--sp-text-sm);
+}
+
+.allResting {
+  margin: 0;
+  padding: var(--sp-space-4);
+  border: 1px solid var(--sp-line);
+  border-radius: var(--sp-radius-lg);
+  background: var(--sp-surface);
+  color: var(--sp-ink-soft);
 }
 
 .detailsBody {

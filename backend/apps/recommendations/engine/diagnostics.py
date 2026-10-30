@@ -8,7 +8,7 @@ named constants: they are judgement calls for v1, to be revisited with feedback 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from statistics import mean, median
 from typing import Callable
@@ -96,6 +96,12 @@ class CourseTraits:
 
 
 @dataclass(frozen=True)
+class RatingInfo:
+    value: str  # "helpful" or "not_helpful"
+    rated_on: date  # local day the value was set
+
+
+@dataclass(frozen=True)
 class CourseData:
     course: CourseTraits
     today: date
@@ -104,6 +110,7 @@ class CourseData:
     weeks: tuple[WeekRecord, ...]  # complete weeks since the first log, oldest first
     forecast: ForecastInfo
     plan: PlanInfo | None
+    ratings: dict[str, RatingInfo] = field(default_factory=dict)  # strategy_id -> the user's rating for this course
 
 
 @dataclass(frozen=True)

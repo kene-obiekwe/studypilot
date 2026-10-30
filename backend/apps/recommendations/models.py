@@ -51,6 +51,28 @@ class StrategyFeedback(models.Model):
         ]
 
 
+class StrategyRating(models.Model):
+    """The user's opinion of a strategy for a course. It persists across weeks, unlike ShownStrategy.
+
+    A not_helpful rating rests the strategy for REST_DAYS (see engine/selection.py). "Show again"
+    clears the rating instead of deleting the row, so `updated_at` still moves and a saved AI plan
+    written before it counts as outdated.
+    """
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="strategy_ratings")
+    course = models.ForeignKey("planner.Course", on_delete=models.CASCADE, related_name="strategy_ratings")
+    strategy_id = models.CharField(max_length=50)
+    value = models.CharField(max_length=20, choices=[(v.value, v.label) for v in RATING_VALUES])
+    rated_at = models.DateTimeField(default=timezone.now)  # when this value was set
+    cleared_at = models.DateTimeField(null=True, blank=True)  # set by "Show again"; the rating no longer counts
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "course", "strategy_id"], name="unique_strategy_rating_per_course"),
+        ]
+
+
 class GeneratedPlan(models.Model):
     """A validated AI-written weekly plan, cached per user, course, ISO week and engine output."""
 

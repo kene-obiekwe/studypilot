@@ -1,13 +1,14 @@
 "use client";
 
-import { Suspense, use, useMemo, useState } from "react";
+import { Suspense, use, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, Lightbulb, Settings2 } from "lucide-react";
 
 import { PageAction } from "@/components/app-shell";
-import { Button, EmptyState, Field, Notice, SegmentedControl, Select, Skeleton } from "@/components/ui";
-import { getCourseRecommendations, type CourseRecommendations } from "@/lib/api";
+import { Button, Disclosure, EmptyState, Field, Notice, SegmentedControl, Select, Skeleton } from "@/components/ui";
+import { getCourseRecommendations, showAgain, type CourseRecommendations } from "@/lib/api";
 import type { CourseColor } from "@/lib/course-colors";
+import { REST_EXPLANATION, restUntilLabel, restingLine, withoutResting } from "@/lib/strategy-feedback";
 import { useCourseColors } from "@/lib/use-course-colors";
 
 import { setCourseCollapsed, useCollapsedCourses } from "./collapsed-courses";
@@ -81,7 +82,8 @@ function Strategies({ promise, onRetry }: { promise: Promise<Loaded>; onRetry: (
     );
   }
 
-  const withRecs = allCourses.filter((entry) => entry.recommendations.length > 0);
+  // A course with everything resting has no recommendations but still shows its resting line.
+  const withRecs = allCourses.filter((entry) => entry.recommendations.length > 0 || entry.resting.length > 0);
   if (withRecs.length === 0) {
     return <p className={styles.muted}>No strategies for your courses yet. Log a few sessions and check back.</p>;
   }
@@ -135,13 +137,44 @@ function CourseSection({
   /** With AI plans off the weekly plan only restates the checklist, so the button is hidden. */
   aiPlanAvailable: boolean;
 }) {
-  const { course, evidence, recommendations } = entry;
+  // "Show again" refetches this course alone; until then the data is what the page loaded with.
+  const [refreshed, setRefreshed] = useState<CourseRecommendations | null>(null);
+  const [pending, setPending] = useState<string[]>([]);
+  const [restingError, setRestingError] = useState("");
+  const restingRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const current = refreshed ?? entry;
+  const { course, evidence, recommendations } = current;
+  const resting = current.resting.filter((item) => !pending.includes(item.strategy_id));
   const plan = useWeeklyPlan(course.id, entry.saved_plan ?? null);
   const collapsed = useCollapsedCourses().has(course.id);
   const headingId = `course-${course.id}-heading`;
   const panelId = `course-${course.id}-strategies`;
   const count = `${recommendations.length} ${recommendations.length === 1 ? "strategy" : "strategies"}`;
   const outdated = aiPlanAvailable ? outdatedNote(plan.saved) : "";
+
+  const showStrategyAgain = async (strategyId: string) => {
+    setRestingError("");
+    // The button goes with its row, so move focus first: to the resting line while other
+    // strategies are still resting, otherwise to the course panel, where the strategy is about to appear.
+    const others = withoutResting(resting, strategyId);
+    const target = others.length > 0 ? restingRef.current?.querySelector<HTMLElement>("summary") : panelRef.current;
+    target?.focus();
+    setPending((ids) => [...ids, strategyId]);
+    try {
+      await showAgain(course.id, strategyId);
+    } catch (failure) {
+      setPending((ids) => ids.filter((id) => id !== strategyId));
+      setRestingError(`Couldn't show that again: ${(failure as Error).message}`);
+      return;
+    }
+    try {
+      const fresh = (await getCourseRecommendations(course.id)).courses[0];
+      if (fresh) setRefreshed(fresh);
+    } catch (failure) {
+      setRestingError(`Shown again, but couldn't refresh this course: ${(failure as Error).message}. Reload the page to see it.`);
+    }
+  };
 
   // Asking for the weekly plan opens a collapsed course, so the plan appears where it's expected.
   const expand = () => setCourseCollapsed(course.id, false);
@@ -168,7 +201,7 @@ function CourseSection({
           </p>
           {outdated && <p className={styles.outdatedNote}>{outdated}</p>}
         </div>
-        {aiPlanAvailable && (
+        {aiPlanAvailable && (recommendations.length > 0 || entry.saved_plan !== null) && (
           <WeeklyPlanButton
             state={plan.state}
             saved={plan.saved}
@@ -193,13 +226,47 @@ function CourseSection({
           />
         )}
       </div>
-      <div id={panelId} className={styles.coursePanel} hidden={collapsed}>
+      <div id={panelId} ref={panelRef} tabIndex={-1} className={styles.coursePanel} hidden={collapsed}>
         <WeeklyPlanPanel state={plan.state} saved={plan.saved} courseName={course.name} />
-        <ul className={styles.list} aria-label={`Strategies for ${course.name}`}>
-          {recommendations.map((rec) => (
-            <StrategyItem key={rec.shown_id} rec={rec} />
-          ))}
-        </ul>
+        {recommendations.length === 0 ? (
+          <p className={styles.allResting}>
+            Every strategy that fits this course is resting for now. Show one again below, or check back when they return.
+          </p>
+        ) : (
+          <ul className={styles.list} aria-label={`Strategies for ${course.name}`}>
+            {recommendations.map((rec) => (
+              <StrategyItem key={rec.shown_id} rec={rec} />
+            ))}
+          </ul>
+        )}
+        {resting.length > 0 && (
+          <div ref={restingRef} className={styles.resting}>
+            <Disclosure summary={restingLine(resting.length)}>
+              <div className={styles.restingBody}>
+                <ul className={styles.restingList} aria-label={`Resting strategies for ${course.name}`}>
+                  {resting.map((item) => (
+                    <li key={item.strategy_id} className={styles.restingItem}>
+                      <span>
+                        <span className={styles.restingName}>{item.title}</span>{" "}
+                        <span className={styles.restingUntil}>until {restUntilLabel(item.until)}</span>
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        aria-label={`Show ${item.title} again`}
+                        onClick={() => void showStrategyAgain(item.strategy_id)}
+                      >
+                        Show again
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+                <p className={styles.muted}>{REST_EXPLANATION}</p>
+              </div>
+            </Disclosure>
+          </div>
+        )}
+        {restingError && <Notice tone="danger">{restingError}</Notice>}
       </div>
     </section>
   );

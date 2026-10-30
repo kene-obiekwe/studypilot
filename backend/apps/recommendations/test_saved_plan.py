@@ -290,7 +290,9 @@ class CourseListTests(SavedPlanTestCase):
         log(self.user, "Calculus", 0)
         status = self.list_status()
         self.assertIsNone(status["Algebra"])
-        self.assertEqual(set(status["Calculus"]), {"written_at", "outdated", "new_sessions", "course_changed"})
+        self.assertEqual(
+            set(status["Calculus"]), {"written_at", "outdated", "new_sessions", "course_changed", "strategies_changed"}
+        )
         self.assertEqual((status["Calculus"]["outdated"], status["Calculus"]["new_sessions"]), (True, 1))
         self.assertEqual(status["Calculus"]["written_at"], GeneratedPlan.objects.get().created_at.isoformat())
 
@@ -298,13 +300,13 @@ class CourseListTests(SavedPlanTestCase):
     def test_null_with_ai_off(self):
         self.assertEqual(self.list_status(), {"Calculus": None})
 
-    def test_statuses_take_two_queries_however_many_courses(self):
+    def test_statuses_take_two_queries_after_the_plans_however_many_courses(self):
         courses = [self.course, self.make_course("Algebra"), self.make_course("History")]
         self.write_first_plan()
         week = GeneratedPlan.objects.get().week_start
         with self.assertNumQueries(1):
             plans = latest_plans(self.user, courses, week)
-        with self.assertNumQueries(1):
+        with self.assertNumQueries(2):  # ratings and sessions
             saved_plan_statuses(self.user, courses, plans)
 
 

@@ -68,7 +68,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const STATUS = { written_at: "2026-10-20T09:30:00+00:00", outdated: false, new_sessions: 0, course_changed: false };
+const STATUS = { written_at: "2026-10-20T09:30:00+00:00", outdated: false, new_sessions: 0, course_changed: false, strategies_changed: false };
 const SAVED: CoursePlanResponse = { saved: AI_PLAN, ...STATUS, week_start: AI_PLAN.week_start };
 const NOTHING: CoursePlanResponse = {
   saved: null,
@@ -76,6 +76,7 @@ const NOTHING: CoursePlanResponse = {
   outdated: false,
   new_sessions: 0,
   course_changed: false,
+  strategies_changed: false,
   week_start: AI_PLAN.week_start,
 };
 

@@ -20,7 +20,7 @@ from django.utils import timezone
 from apps.common.ai import AIError, ai_enabled, allow_ai_call, call_structured, log_fallback
 from apps.tracking.models import StudySessionLog
 
-from .models import GeneratedPlan
+from .models import GeneratedPlan, StrategyRating
 
 PROMPT_VERSION = "plan-v2"
 PLAN_MAX_TOKENS = 4000
@@ -228,12 +228,18 @@ def saved_plan_statuses(user, courses, plans: dict[int, GeneratedPlan]) -> dict[
     """Per course: when its saved plan was written and whether sessions or settings changed since.
 
     A plan is outdated by study sessions logged for the course (matched by name, ignoring case, as
-    the engine does) or by editing the course, after the plan was written. The exam countdown and
-    pacing moving on with the calendar do not count. Two queries however many courses there are.
+    the engine does), by editing the course, or by changing or clearing a strategy rating for it
+    ("Show again" counts), after the plan was written. The exam countdown and pacing moving on
+    with the calendar do not. Three queries however many courses there are.
     """
     logged: dict[str, list[datetime]] = {}
+    rated: dict[int, list[datetime]] = {}
     if plans:
         since = min(row.created_at for row in plans.values())
+        for course_id, updated_at in StrategyRating.objects.filter(
+            user=user, course__in=courses, updated_at__gt=since
+        ).values_list("course_id", "updated_at"):
+            rated.setdefault(course_id, []).append(updated_at)
         for name, created_at in StudySessionLog.objects.filter(user=user, created_at__gt=since).values_list(
             "course_name", "created_at"
         ):
@@ -247,16 +253,24 @@ def saved_plan_statuses(user, courses, plans: dict[int, GeneratedPlan]) -> dict[
             continue
         new_sessions = sum(1 for created_at in logged.get(course.name.casefold(), ()) if created_at > row.created_at)
         course_changed = course.updated_at > row.created_at
+        strategies_changed = any(updated_at > row.created_at for updated_at in rated.get(course.id, ()))
         statuses[course.id] = {
             "written_at": row.created_at.isoformat(),
-            "outdated": new_sessions > 0 or course_changed,
+            "outdated": new_sessions > 0 or course_changed or strategies_changed,
             "new_sessions": new_sessions,
             "course_changed": course_changed,
+            "strategies_changed": strategies_changed,
         }
     return statuses
 
 
-NO_PLAN_STATUS = {"written_at": None, "outdated": False, "new_sessions": 0, "course_changed": False}
+NO_PLAN_STATUS = {
+    "written_at": None,
+    "outdated": False,
+    "new_sessions": 0,
+    "course_changed": False,
+    "strategies_changed": False,
+}
 
 
 def plan_envelope(saved: dict | None, status: dict | None, monday: date) -> dict:
@@ -275,7 +289,8 @@ def build_plan(request, course, output: dict, monday: date) -> dict:
     now, so it becomes the newest plan and what happened since no longer counts against it.
     """
     rules = rules_plan(output)
-    if not ai_enabled():
+    # Nothing to rewrite when every fitting strategy is resting.
+    if not ai_enabled() or not output["recommendations"]:
         return _response(SOURCE_RULES, monday, rules)
 
     payload = plan_input(output)
