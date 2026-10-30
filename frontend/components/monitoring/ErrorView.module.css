@@ -1,0 +1,74 @@
+/* position and z-index lift the page above the legacy decorative body::before overlay. */
+.page {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-space-6) var(--sp-space-4);
+}
+
+.inline {
+  display: grid;
+  place-items: center;
+  padding: var(--sp-space-8) 0;
+}
+
+.panel {
+  display: grid;
+  justify-items: center;
+  gap: var(--sp-space-3);
+  max-width: 28rem;
+  padding: var(--sp-space-8) var(--sp-space-5);
+  text-align: center;
+  background: var(--sp-surface);
+  border: 1px solid var(--sp-line);
+  border-radius: var(--sp-radius-lg);
+}
+
+.icon {
+  color: var(--sp-ink-soft);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--sp-text-xl);
+}
+
+.text {
+  margin: 0;
+  color: var(--sp-ink-soft);
+}
+
+.reference {
+  margin: 0;
+  font-size: var(--sp-text-sm);
+  color: var(--sp-muted);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-space-2);
+  margin-top: var(--sp-space-2);
+}
+
+/* Looks like the secondary Button; it is a link because it goes to another page. */
+.link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 var(--sp-space-4);
+  font-weight: var(--sp-weight-strong);
+  color: var(--sp-ink);
+  text-decoration: none;
+  background: var(--sp-surface);
+  border: 1px solid var(--sp-line-strong);
+  border-radius: var(--sp-radius-md);
+}
+
+.link:hover {
+  background: var(--sp-sunken);
+}

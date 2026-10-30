@@ -3,6 +3,7 @@ import "../styles/tokens.css";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 
+import { MonitoringInit } from "@/components/monitoring/MonitoringInit";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 
 // One sans family for everything. The legacy --font-body / --font-display variables map to it
@@ -27,7 +28,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
-      <body>{children}</body>
+      <body>
+        <MonitoringInit />
+        {children}
+      </body>
     </html>
   );
 }

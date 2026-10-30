@@ -257,3 +257,18 @@ LOGGING = {
     # 4xx responses are client errors, not operator warnings; 5xx still log at ERROR.
     "loggers": {"django.request": {"level": "ERROR"}},
 }
+
+# Error tracking (Sentry). Off unless SENTRY_DSN is set, and never started by the test runner. Errors only:
+# see apps/common/monitoring.py for what is and is not sent.
+SENTRY_DSN = os.getenv("SENTRY_DSN", "").strip()
+SENTRY_ENVIRONMENT = os.getenv("SENTRY_ENVIRONMENT", "").strip() or ("development" if DEBUG else "production")
+SENTRY_TRACES_SAMPLE_RATE = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "").strip() or 0)
+if SENTRY_DSN and "test" not in sys.argv:
+    from apps.common.monitoring import init_sentry
+
+    init_sentry(
+        SENTRY_DSN,
+        environment=SENTRY_ENVIRONMENT,
+        release=os.getenv("RENDER_GIT_COMMIT", "").strip() or None,
+        traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
+    )

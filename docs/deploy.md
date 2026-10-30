@@ -258,3 +258,63 @@ Git Bash.
 4. If (a) fails, the value is too high: set `NUM_PROXIES` back to blank or remove it. If (b) fails,
    set it to `2`, wait for the deploy, and repeat (a) and (b). If neither value passes both,
    remove the variable and tell the Overseer.
+
+## 7. Error tracking (Sentry)
+
+Sentry's free plan shows errors from the live site: the error, where in the code it happened and how
+often. It is optional. With no DSN set, nothing is sent and nothing changes.
+
+**1. Create the account and two projects.** Sign up at sentry.io (free Developer plan) and create one
+project for each half, so each gets its own DSN and its own list of issues:
+
+| Project | Platform to pick | Its DSN goes to |
+|---|---|---|
+| `studypilot-api` | Django | Render, as `SENTRY_DSN` |
+| `studypilot-web` | Browser JavaScript | Vercel, as `NEXT_PUBLIC_SENTRY_DSN` |
+
+(One shared project also works, but backend and browser errors then mix in one list.) The DSN is on
+each project's **Settings → Client Keys (DSN)** page. A DSN is not a password: it only lets someone
+send events to your project, and the browser one is visible in the site's code anyway. Still, keep
+both out of git; paste them only into the places below. In each project's **Settings → Security &
+Privacy**, turn on **Prevent Storing of IP Addresses**.
+
+**2. Render (backend).** In the service's **Environment** page use **Add variable**: `SENTRY_DSN` =
+the `studypilot-api` DSN. Render does not create a blank secret variable from `render.yaml`
+(see step 2), so it will not exist until you add it. `SENTRY_ENVIRONMENT` is already `production` in
+`render.yaml`, and Render supplies the commit hash that Sentry shows as the release. Save; Render
+redeploys.
+
+**3. Vercel (frontend).** Under **Settings → Environment Variables** add `NEXT_PUBLIC_SENTRY_DSN` = the
+`studypilot-web` DSN, for **Production** and **Preview**. Because Preview builds are production builds,
+they would also be labelled `production`; to tell them apart, add `NEXT_PUBLIC_SENTRY_ENVIRONMENT` =
+`preview` for Preview only. Then **redeploy**: the value is baked in at build time.
+
+**4. Check that it works.** Both checks send a test event; look for it under **Issues** in the
+matching project.
+
+- *Backend.* From `backend/` on your own computer, in PowerShell with the virtualenv active (Render has
+  no shell). The command prints whether the DSN was set, never the DSN itself, and labels the event
+  with the environment `local-check`:
+
+  ```powershell
+  $env:SENTRY_DSN = "paste-the-studypilot-api-DSN-here"
+  python manage.py sentry_check
+  ```
+
+  Close the window afterwards so the value does not stay in your shell.
+- *Frontend.* Put `NEXT_PUBLIC_SENTRY_DSN=` followed by the `studypilot-web` DSN in
+  `frontend/.env.local` (never commit that file), run `npm run dev`, open
+  `http://localhost:3000/styleguide` and press **Send a test error**. The error page appears and the
+  event arrives with environment `development`. **Try again** brings the page back.
+
+**What is reported.** The backend reports unhandled server errors (500s) and anything logged at
+`ERROR`; warnings, such as an AI plan falling back to the rules-based one, stay in Render's logs. The
+browser reports uncaught errors and the ones that reach an error page. Some visitors' ad blockers stop
+the browser's reports, so the browser list may undercount. Browser stack traces show the built
+(minified) code, because no source maps are uploaded.
+
+**What is never sent.** Only the error and its stack are sent. Never sent: request bodies (so no
+passwords or email codes), cookies, `Authorization` headers, user email, username or ID, IP addresses
+(Sentry is also told not to store them), query strings and fragments in addresses (so no codes or
+tokens from links), local variables, performance traces, profiles and session replays. The code
+removes the sensitive fields again just before sending, as a second layer.

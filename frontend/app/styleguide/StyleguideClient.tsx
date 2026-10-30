@@ -53,6 +53,22 @@ const COLOUR_GROUPS: Array<{ title: string; names: string[] }> = [
 const TYPE_SCALE = ["xs", "sm", "md", "lg", "xl", "2xl", "3xl", "stat"];
 const SPACE_SCALE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
+/**
+ * Throws while rendering, into the nearest error boundary (app/error.tsx), so the error page and the error
+ * tracking DSN can be checked locally. "Try again" in the error page puts this button back.
+ */
+function TestErrorButton() {
+  const [thrown, setThrown] = useState(false);
+  if (thrown) {
+    throw new Error("Test error from the styleguide");
+  }
+  return (
+    <Button variant="secondary" onClick={() => setThrown(true)}>
+      Send a test error
+    </Button>
+  );
+}
+
 export function StyleguideClient({ tokens, contrast }: Props) {
   return (
     <UiRoot className={styles.page}>
@@ -62,6 +78,7 @@ export function StyleguideClient({ tokens, contrast }: Props) {
           <p>Development only. Tokens, contrast and every component state, light and dark side by side.</p>
         </div>
         <div className={styles.row}>
+          <TestErrorButton />
           <span>Page theme</span>
           <ThemeToggle />
         </div>
