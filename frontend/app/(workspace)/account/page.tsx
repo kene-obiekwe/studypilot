@@ -10,6 +10,7 @@ import styles from "./account.module.css";
 import { DeleteAccountSection } from "./DeleteAccountSection";
 import { PasswordSection } from "./PasswordSection";
 import { ProfileSection } from "./ProfileSection";
+import { TimeZoneSection } from "./TimeZoneSection";
 
 export default function AccountPage() {
   return (
@@ -48,6 +49,7 @@ function AccountSections() {
   return (
     <>
       <ProfileSection key={me.id} me={me} onChanged={refresh} />
+      <TimeZoneSection me={me} />
       <PasswordSection />
       <DeleteAccountSection me={me} />
     </>
