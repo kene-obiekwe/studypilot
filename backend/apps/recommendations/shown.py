@@ -5,7 +5,7 @@ Ratings (helpful / not helpful) also live in StrategyRating, per user and course
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 from django.db import IntegrityError, transaction
 from django.db.models import F
@@ -15,7 +15,7 @@ from apps.planner.models import Course
 
 from .engine.diagnostics import RatingInfo
 from .engine.gather import local_today
-from .engine.selection import RATING_HELPFUL, REST_DAYS, is_resting
+from .engine.selection import RATING_HELPFUL, is_resting
 from .models import RATING_VALUES, ShownStrategy, StrategyFeedback, StrategyFeedbackValue, StrategyRating
 
 
@@ -70,7 +70,10 @@ def _set_rating(shown: ShownStrategy, value: str, now: datetime) -> None:
     if created:
         return
     # A not_helpful whose rest is over counts as no rating, so choosing it again starts a new rest.
-    rest_over = value == StrategyFeedbackValue.NOT_HELPFUL and rating.rated_at + timedelta(days=REST_DAYS) <= now
+    # Same day-based rule as the engine's is_resting, so both agree on the day the rest ends.
+    rest_over = value == StrategyFeedbackValue.NOT_HELPFUL and not is_resting(
+        RatingInfo(rating.value, local_today(rating.rated_at)), local_today(now)
+    )
     if rating.value != value or rating.cleared_at is not None or rest_over:
         rating.value, rating.rated_at, rating.cleared_at = value, now, None
         rating.save()

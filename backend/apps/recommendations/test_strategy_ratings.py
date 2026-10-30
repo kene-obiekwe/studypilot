@@ -221,6 +221,18 @@ class RecordFeedbackTests(RecommendationFeedbackBase):
         self.assertEqual(StrategyRating.objects.get().rated_at, start + timedelta(days=4))
         self.assertEqual(StrategyRating.objects.count(), 1)
 
+    def test_day_28_before_the_original_time_of_day_already_counts_as_rest_over(self):
+        strategy_id = self.first_technique()
+        shown = ShownStrategy.objects.get(strategy_id=strategy_id)
+        start = timezone.make_aware(datetime(2026, 10, 1, 18, 0))
+        later = timezone.make_aware(datetime(2026, 10, 29, 9, 0))  # day 28, earlier in the day
+        record_feedback(shown, "not_helpful", start)
+        self.assertEqual(record_feedback(shown, "tried", later)["rating"], None)
+        self.assertEqual(record_feedback(shown, "not_helpful", later)["rating"], "not_helpful")
+        self.assertEqual(StrategyRating.objects.get().rated_at, later)
+        data = gather_course_data(self.user, self.course, later)
+        self.assertNotIn(strategy_id, [r["strategy_id"] for r in recommend(data)["recommendations"]])
+
     def test_rating_again_after_the_rest_is_over_starts_a_new_rest(self):
         strategy_id = self.first_technique()
         shown = ShownStrategy.objects.get(strategy_id=strategy_id)
