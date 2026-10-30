@@ -203,9 +203,9 @@ STORAGES = {
 }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# How many reverse proxies sit in front of the app. Unset keeps DRF's default (the first X-Forwarded-For entry
-# is trusted), so a client can dodge the throttles by spoofing that header. Behind Render set 1 and check it
-# with the steps in docs/deploy.md: a value that is too high makes users share one throttle bucket.
+# How many reverse proxies sit in front of the app. Unset, DRF uses the whole X-Forwarded-For value as the
+# throttle ident, so a client can dodge the throttles by sending a made-up header. Behind Render set it
+# and check it with the steps in docs/deploy.md: a value that is too low makes users share one throttle bucket.
 _num_proxies = os.getenv("NUM_PROXIES", "").strip()
 NUM_PROXIES = int(_num_proxies) if _num_proxies else None
 
@@ -238,9 +238,12 @@ if not DEBUG:
     SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", True)
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "3600"))
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+    SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "31536000"))
+    # The API host has no subdomains, so including them changes nothing.
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = False
+    # A subdomain of onrender.com can't be put on the browsers' HSTS preload list, so that check never applies.
+    SILENCED_SYSTEM_CHECKS = ["security.W021"]
     SECURE_REFERRER_POLICY = "same-origin"
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()

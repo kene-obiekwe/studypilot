@@ -200,6 +200,13 @@ threads. If the cold start becomes a problem, change the plan in `render.yaml` f
 to 5 an hour (`AUTH_THROTTLE_RATE`, `EMAIL_THROTTLE_RATE`). Server logs are in the Render dashboard
 under *Logs*; `LOG_LEVEL` sets how much they say.
 
+**HTTPS-only header (HSTS).** The API tells browsers to use HTTPS only for it for a year
+(`SECURE_HSTS_SECONDS` = `31536000`, set in `render.yaml`), subdomains included (it has none). The
+preload flag stays off: a subdomain of `onrender.com` cannot go on the browsers' preload list, so
+that Django check is silenced in `settings.py`. A value you set by hand on Render's **Environment**
+page is not guaranteed to be replaced by `render.yaml`; after a deploy check that the page shows
+`31536000`, and change it there if it still shows the old `3600`.
+
 **Sessions and signing out.** Sign out revokes the refresh token on the server, and so do a password
 change and a password reset (every refresh token the account has). Another device then fails its
 next refresh and is sent to the sign-in page. Two limits: access tokens are not checked against the
@@ -229,20 +236,26 @@ For each pair it lists, sign in as the account you don't want and delete it from
 
 ## 6. Check the client address behind Render's proxy
 
-The sign-in and email limits count requests per client address. Behind Render's proxy the app only
-learns that address from the `X-Forwarded-For` header, so unless it is told how many proxies sit in
-front of it, a caller can send a made-up header and dodge the limits. `NUM_PROXIES` tells it. It is
-deliberately not set in `render.yaml`: too high a value lets the spoofing through, too low a value
-makes every user share the proxy's address and one bucket. Test before you keep it. Commands are for
-Git Bash.
+The sign-in and email limits count requests per client address. Behind Render the app only learns
+that address from the `X-Forwarded-For` header, so unless it is told how many proxies sit in front
+of it, a caller can send a made-up header and dodge the limits. `NUM_PROXIES` tells it. It is
+deliberately not set in `render.yaml`; add it on Render and test it, as below. Commands are for Git
+Bash.
 
-1. In Render, **Environment → Add variable**: `NUM_PROXIES` = `1`. Save and wait until the deploy is
+**Use 3.** On the live service a request passes three hops before the app sees it: the client, then
+Cloudflare (which fronts Render), then Render's own internal proxy. With 1 or 2 the app keys the
+limit on an address that belongs to one of those proxies and changes from request to request, so the
+limit does not hold for a caller. 3 reaches the caller's own address. Without the variable the whole
+`X-Forwarded-For` value is used as the key, which a caller can change at will.
+
+1. In Render, **Environment → Add variable**: `NUM_PROXIES` = `3`. Save and wait until the deploy is
    **Live**.
 2. **(a) Spoofing no longer helps.** From your PC, send 11 wrong-password sign-ins within a minute,
-   each with a different made-up `X-Forwarded-For`. Use your own API address:
+   each with a different made-up `X-Forwarded-For`. Replace the API address with your own (the
+   address of your Render service, without a trailing slash):
 
    ```bash
-   API=https://studypilot-api.onrender.com
+   API=https://studypilot-api-pnn8.onrender.com
    for i in $(seq 1 11); do
      curl -s -o /dev/null -w "$i: %{http_code}\n" -X POST "$API/api/auth/token/" \
        -H "Content-Type: application/json" -H "X-Forwarded-For: 203.0.113.$i" \
@@ -255,9 +268,9 @@ Git Bash.
 3. **(b) Other people are not blocked.** Straight after, open the live site on a phone using mobile
    data (not your Wi-Fi) and sign in with a real account. It must work. This shows the limit is
    keyed on each caller and not on a shared proxy address.
-4. If (a) fails, the value is too high: set `NUM_PROXIES` back to blank or remove it. If (b) fails,
-   set it to `2`, wait for the deploy, and repeat (a) and (b). If neither value passes both,
-   remove the variable and tell the Overseer.
+4. If (a) fails, remove the variable and tell the Overseer: the chain in front of the app has
+   changed. If (b) fails, the limit is keyed on a proxy: check that `NUM_PROXIES` is exactly `3`
+   and that the deploy finished.
 
 ## 7. Error tracking (Sentry)
 

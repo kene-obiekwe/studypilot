@@ -39,6 +39,7 @@ describe.each([
     expect(container.textContent).not.toContain("hunter2");
     expect(container.textContent).not.toContain("views.py");
     expect(container.textContent).not.toContain("Reference");
+    expect(container.querySelector("svg")?.getAttribute("class")).toContain("lucide-triangle-alert");
 
     const buttons = [...container.querySelectorAll("button")];
     expect(buttons.map((item) => item.textContent)).toEqual(["Try again"]);
@@ -72,6 +73,7 @@ describe("app/not-found.tsx", () => {
   it("shows the heading and a way home, without Try again or an error report", async () => {
     const { container } = await render(<NotFound />);
     expect(container.querySelector("h1")?.textContent).toBe("Page not found");
+    expect(container.querySelector("svg")?.getAttribute("class")).toContain("lucide-compass");
     expect(container.querySelector("button")).toBeNull();
     expect(container.querySelector("a")?.getAttribute("href")).toBe("/");
     expect(monitoring.reportError).not.toHaveBeenCalled();

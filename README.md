@@ -1,192 +1,251 @@
-# AI-Powered Personalised Study Planning and Learning Recommendation System
+# StudyPilot
 
-StudyPilot AI is a mobile-first web application that helps undergraduate learners
-plan study time, receive adaptive learning-strategy recommendations, and track
-adherence to their plan through a closed planning–tracking–learning loop. A
-trained adherence prediction model feeds back into the study planner so that
-each course's allocation adapts to the learner's recent behaviour.
+**A study plan that adapts to how you actually study.** Add your courses and StudyPilot splits your
+weekly hours by difficulty, suggests evidence-based techniques for each course, and adjusts the plan
+from the sessions you log.
 
-## Architecture
+**Live site: <https://studypilot-sp.vercel.app>**. Sign up with your own email; a 6-digit code
+confirms the address. The backend runs on a free plan that sleeps when idle, so the first request
+after a quiet spell can take about a minute while it wakes up.
 
-| Layer | Technology |
+![The StudyPilot landing page: a headline, a short description and a sign-up button next to an illustration of a student at a laptop.](docs/images/landing.png)
+
+## Screenshots
+
+| | |
 |---|---|
-| Frontend | Next.js 14 (React 18, TypeScript, mobile-first) |
-| Backend | Django 5 + Django REST Framework, JWT authentication |
-| Database | PostgreSQL 16 (provisioned via Docker Compose) |
-| ML | scikit-learn Random Forest regressor loaded by the backend inference layer |
-| Dev workflow | Docker Compose for the database, Python virtualenv for the backend, Node.js/npm for the frontend |
+| ![The This week page: three course cards with forecast badges, exam countdowns and hours left, a start-timer button on each, and a bar for each day of the week.](docs/images/home.png) | ![The Strategies page: study strategies for each course with Tried it, Helpful and Not helpful buttons, and one strategy expanded to show how to do it and its source.](docs/images/strategies.png) |
+| **This week**: hours left per course, the forecast, the top strategy and a timer | **Strategies**: chosen from your data, each with its reason and source |
+| ![The Planner page: this week's plan as 3.3 of 7.5 hours, with a progress bar for each of three courses.](docs/images/planner.png) | ![The Progress page: average adherence, time logged, a progress bar per course and the most recent sessions.](docs/images/progress.png) |
+| **Planner**: one plan per week, updated mid-week | **Progress**: adherence, forecast and recent sessions |
 
-Two AI components:
+On a phone the sidebar becomes a tab bar:
 
-1. **Next-week adherence forecast (Task A)** — a supervised Random Forest
-   regressor trained on a weekly panel built from the Open University Learning
-   Analytics Dataset. It forecasts a course's adherence for the coming week from
-   the preceding weeks only. The trained artifact is loaded by the Django
-   backend and consumed by the planner's adherence-weighted re-allocation
-   logic, which falls back to the observed 30-day mean when a course has fewer
-   than two complete weeks of logs.
-2. **Learning strategy recommendation (Task B)** — a transparent rule engine
-   with a heuristic confidence score. A supervised classifier is reserved as
-   future work once in-app strategy-outcome data accumulates.
+<img src="docs/images/home-mobile.png" alt="The This week page at phone width: hours done this week, course cards and a tab bar along the bottom." width="280">
 
-## Repository structure
+## Features
+
+- **My courses, with learning traits.** For each course: difficulty (1 to 5), how it is assessed
+  (timed problem exam, multiple choice, essay exam, coursework or continuous quizzes), what it
+  demands (problem solving, conceptual understanding, memorisation, writing, practical work), whether
+  it builds on earlier courses, and an exam date. All of it is optional, and the recommendations use
+  whatever you give them.
+- **One weekly plan, updated mid-week.** Your weekly hours are split across courses by difficulty,
+  nudged up or down by each course's forecast. "Update this week's plan" shares the hours that are
+  left with a catch-up split: courses you have already logged a lot on get less, so the week still
+  adds up. Earlier revisions of a week's plan are kept as history.
+- **Study timer and logging.** Start a timer on a course; when you stop it, you confirm your own focus
+  and completion ratings and the session is logged. The elapsed time is worked out from the start
+  time, so a refresh or a sleeping laptop does not make it drift. A session can also be logged by hand, and the
+  history can be browsed.
+- **A This week home page.** Course cards with the forecast, the exam countdown, the hours left and a
+  timer button, a bar for each day of the week, and the top strategies.
+- **Strategies chosen from your data.** Up to four per course, picked from a library of 16 study
+  techniques and habits using how the course is assessed, how close the exam is and how your sessions
+  are going. Each shows why it was chosen, the steps, and one cited source. You can mark each as
+  *Tried it*, *Helpful* or *Not helpful*. Helpful ones are favoured; a *Not helpful* strategy rests for
+  4 weeks and the next fitting one takes its place, and **Show again** brings a resting one back.
+- **An optional AI-written weekly plan.** When an Anthropic API key is set, the strategies already
+  chosen can be written up as a short plan for the week. The model can only describe the strategies it
+  is given: it never adds, drops or reorders them, and any answer that fails the checks is replaced by
+  the rules-based plan (see [How it works](#how-it-works)). Without a key, everything else works the
+  same.
+- **A next-week adherence forecast.** For each course, a model estimates how much of next week's plan
+  you are likely to complete. The planner uses it to adjust the hours, and Progress shows it.
+- **Email verification and password reset**, both with a 6-digit code that expires after 15 minutes.
+- **An account page** to change your username, email (with a code sent to the new address) or password,
+  and to delete your account.
+- **Light and dark themes, and a mobile layout.** The theme follows your system unless you choose one.
+  The component tests include automated accessibility checks (axe), and the colour tokens are checked
+  against the WCAG AA contrast ratios.
+
+## How it works
+
+### Architecture
 
 ```
-backend/           Django project (settings + apps for users, planner,
-                   recommendations, tracking) and the ML pipeline
-  apps/            Feature apps (users, planner, recommendations, tracking)
-  config/          Django settings and URL configuration
-  ml/              Canonical schema, training scripts, model artifacts
-frontend/          Next.js client (routes, components, styles)
-  app/             App Router pages including the workspace + progress
-                   sub-routes
-  components/      Shared React components
-  lib/             API client + session helpers
-docs/              AI methodology, chapter outline, evaluation report,
-                   evaluation kit (SUS questionnaire, participant script,
-                   analysis script)
-docs/evaluation/   SUS evaluation kit and collected response data
-Resources/         Dissertation working files and screenshots used in
-                   Chapter 4
-docker-compose.yml Docker Compose service for the PostgreSQL database
+Browser
+  │  Next.js 16 + React 19 (TypeScript), hosted on Vercel
+  │  JSON over HTTPS, JWT access and refresh tokens
+  ▼
+Django 5 + Django REST Framework + SimpleJWT, hosted on Render (gunicorn)
+  ├── PostgreSQL on Neon                  all app data, and the shared cache for rate limits
+  ├── scikit-learn model, loaded in-process (joblib file in this repo)
+  ├── Brevo (SMTP)                        verification and password-reset codes
+  ├── Sentry                              error tracking, errors only
+  └── Anthropic API (optional)            the AI-written weekly plan
 ```
 
-## Quick start
+Locally the database is SQLite by default (or the Postgres container in `docker-compose.yml`).
 
-Prerequisites: Python 3.12+, Node.js 20+, Docker Desktop, Git.
+### The recommendation engine
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/kene-obiekwe/studypilot.git
-   cd studypilot
-   ```
+For each course the engine runs in steps, and everything except the data gathering is plain, testable
+code:
 
-2. **Set up environment files**
-   ```bash
-   cp backend/.env.example backend/.env
-   cp frontend/.env.example frontend/.env.local
-   ```
+1. **Gather** the course's traits, its session logs and its forecast.
+2. **Diagnose**: checks such as an exam inside 7 or 21 days, low adherence, a declining trend, sparse
+   spacing between sessions, long sessions that finish poorly, and low focus.
+3. **Select** at most four strategies: at most one for the exam, at most two about habits or schedule,
+   and techniques for the rest. Your ratings apply here (helpful first, not helpful resting). Ties
+   fall back to library order, so the same data gives the same answer.
+4. **Explain**: each strategy comes with its steps, the numbers from your data that triggered it, and
+   its source.
 
-3. **Start the PostgreSQL container**
-   ```bash
-   docker-compose up -d db
-   ```
-   Exposes port `55432` on the host. If that port is not available on your
-   machine (for example on Windows where Hyper-V may reserve it), change the
-   host port on the `db` service in `docker-compose.yml` and update
-   `DB_PORT` in `backend/.env` to match.
+The optional AI step then rewrites those strategies as a weekly plan, and the answer is validated
+before anyone sees it: one item per strategy, in order, with the exact strategy ids; every number the
+strategy relies on must appear as given; no other numbers may appear; and length limits apply. If
+anything fails, if the key is not set, or if the per-user daily limit is reached (20 model calls a day
+by default), the rules-based text is shown instead. Answers that pass are cached by their input, and
+rejected answers are not.
 
-4. **Install backend dependencies, apply migrations, and start the API**
-   ```bash
-   cd backend
-   python -m venv .venv && .venv/Scripts/activate    # Windows
-   # source .venv/bin/activate                       # macOS / Linux
-   pip install -r requirements.txt
-   python manage.py migrate
-   python manage.py runserver 8000
-   ```
+### The adherence forecast
 
-5. **In a second terminal, install and start the frontend**
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
+A Random Forest regressor (scikit-learn) forecasts a course's adherence for the coming week from the
+weeks before it, using five features built only from earlier weeks. It was trained on a weekly panel
+built from the Open University Learning Analytics Dataset (OULAD), splitting by presentation so no
+student-week appears in both training and test data. Where a course has fewer than two complete weeks
+of logs, the planner falls back to the observed average of the last 30 days.
 
-6. **Open** `http://localhost:3000` in your browser.
+Results on the held-out test presentation (OULAD 2014J, 239,456 rows):
 
-### Seed demo data (optional)
+| | MAE | RMSE | R² |
+|---|---:|---:|---:|
+| Forecast model | 0.307 | 0.380 | 0.314 |
+| 3-week mean baseline | 0.268 | 0.403 | 0.229 |
+| Last-week baseline | 0.277 | 0.462 | −0.014 |
 
-Populate the workspace with five deterministic pilot users so the analytics
-dashboard and history views are non-empty during demonstration:
+These are modest numbers, and the limitations matter:
 
-```bash
+- The model has **lower RMSE and higher R² than every baseline, but a higher MAE** than the 3-week
+  mean and last-week baselines. It was judged on RMSE and R², and MAE is reported as it is.
+- An R² of 0.314 means most of the variation in next week's adherence is **not** explained.
+- About 96% of the model's feature importance sits on the 3-week mean, so the forecast stays close to
+  it, pulled toward the population average.
+- It was trained on how much a learner clicks relative to their cohort. In the app, adherence is the
+  minutes you log against your own plan. The model has never seen app data, so the two measures are
+  assumed to behave alike.
+- The test set is one presentation of a UK distance-learning population.
+
+The full evaluation, including the leakage problem found in an earlier version of the model and how it
+was fixed, is in [docs/evaluation-report.md](docs/evaluation-report.md). The training pipeline is in
+[backend/ml/README.md](backend/ml/README.md).
+
+## Run it locally
+
+You need Python 3.12, Node.js 24 and Git. Docker is only needed if you want PostgreSQL instead of
+SQLite. The commands below are for Windows PowerShell, with the macOS and Linux differences noted.
+
+### Backend
+
+From the repository root:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r backend\requirements.txt
+Copy-Item backend\.env.example backend\.env
 cd backend
+python manage.py migrate
 python manage.py seed_pilot_data
+python manage.py runserver 8000
 ```
 
-Sign in as `pilot_consistent` (password `Pilot12345!`) for the richest seeded
-data. That default password is for local development only; with `DEBUG` off the
-command refuses to run unless you pass `--allow-production` and set `PILOT_PASSWORD`
-to a strong password.
+On macOS and Linux, use `source .venv/bin/activate` and `cp backend/.env.example backend/.env`. If
+PowerShell refuses to run the activation script, run
+`Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` first.
+
+`backend/.env.example` uses SQLite and turns debug mode on, which is right for local work. With debug
+on, the verification and reset emails are printed in the server's console instead of being sent, so
+you can sign up without a mail server.
+
+`seed_pilot_data` creates five demo accounts with a plan and about four weeks of sessions each.
+**For local development only:** their password is `Pilot12345!`, and `pilot_consistent` has the
+richest data. With debug off the command refuses to run unless you pass `--allow-production` and set a
+strong `PILOT_PASSWORD`.
+
+To try the AI-written plans locally, add `ANTHROPIC_API_KEY=...` to `backend/.env`. Never commit a key.
+
+### Frontend
+
+In a second terminal, from the repository root:
+
+```powershell
+cd frontend
+npm ci
+Copy-Item .env.example .env.local
+npm run dev
+```
+
+(On macOS and Linux, `cp .env.example .env.local`.) Open <http://localhost:3000>. `.env.local` points
+the site at the API on `http://127.0.0.1:8000/api`.
+
+### PostgreSQL with Docker (optional)
+
+```powershell
+docker compose up -d db
+```
+
+Then set `DB_ENGINE=postgres` in `backend/.env` and run `python manage.py migrate` again. The
+container listens on port `55432` on your machine; if that port is taken, change it in
+`docker-compose.yml` and set `DB_PORT` to match. The container is named `studypilot_postgres`. The
+database name, user and volume keep their earlier names (`fyp_db`, `fyp_user`, `pgdata`), so data in an
+existing local volume still works. If you still have an older container named `fyp_postgres`, stop and
+remove it first, because it holds the same port.
+
+### Tests
+
+```powershell
+# backend, from backend\
+python manage.py test
+
+# frontend, from frontend\
+npm test
+npx tsc --noEmit
+npm run lint
+npm run build
+```
+
+`npm run build` needs `NEXT_PUBLIC_API_BASE_URL`, which `.env.local` provides.
+
+## Deploying
+
+The live site runs on free plans: Neon for the database, Render for the API and Vercel for the
+frontend. [docs/deploy.md](docs/deploy.md) is the step-by-step runbook, including email, error
+tracking and checking the rate limits behind Render's proxy.
+
+## Project structure
+
+```
+backend/             Django project
+  apps/              users, planner, recommendations, tracking, common
+  config/            settings and URL configuration
+  ml/                forecast pipeline, schema notes and the trained model
+frontend/            Next.js app
+  app/               pages (App Router): auth, onboarding and the workspace
+  components/        shared UI, app shell, timer, landing page
+  lib/               API client, session, timer and plan helpers
+docs/                deploy runbook, evaluation report, images
+docker-compose.yml   optional local PostgreSQL
+render.yaml          Render service definition
+```
+
+## Privacy
+
+- **Error tracking sends errors only.** Sentry never receives request bodies (so no passwords or email
+  codes), cookies, `Authorization` headers, usernames, email addresses, user IDs, IP addresses, query
+  strings or fragments in page addresses, local variables, performance traces or session replays. It
+  is off unless a Sentry address is configured.
+- **The AI plan sends course data, not personal data.** The model receives a course's name, difficulty
+  and traits, a summary of the evidence (such as session counts and adherence figures) and the chosen
+  strategies' text. It does not receive your username, email or account ID.
+- You can delete your account and its data from the Account page.
 
 ## Dataset (OULAD)
 
-The adherence model is trained on the **Open University Learning Analytics
-Dataset (OULAD)**. It is not committed to this repository because it exceeds
-GitHub's file size limits and can be freely obtained from the source.
-
-**To obtain the dataset:**
-
-1. Download the seven CSV files from the official OULAD page:
-   <https://analyse.kmi.open.ac.uk/open-dataset>
-   Licensed under Creative Commons Attribution 4.0 International.
-2. Extract the archive into a directory named `Dataset/` at the repository
-   root. After extraction the folder should contain:
-   ```
-   Dataset/
-     assessments.csv
-     courses.csv
-     studentAssessment.csv
-     studentInfo.csv
-     studentRegistration.csv
-     studentVle.csv
-     vle.csv
-   ```
-3. This is the default location expected by
-   `backend/ml/build_oulad_canonical.py`. If you place the CSVs elsewhere,
-   pass `--input-dir <path>` when running the build script.
-
-## Machine learning pipeline
-
-Reproducible training pipeline documented in
-[`backend/ml/README.md`](backend/ml/README.md).
-
-Summary:
-
-- `backend/ml/build_oulad_canonical.py` — builds the OULAD weekly adherence
-  panel from the raw CSVs.
-- `backend/ml/train_oulad_models.py` — trains the next-week forecast with a
-  split by presentation and a hyperparameter search, and evaluates it against
-  mean, persistence and 3-week-mean baselines.
-- `backend/ml/schema.md` — panel columns, feature definitions and the mapping
-  from app logs.
-
-The raw dataset (`Dataset/`), canonical build outputs (`backend/ml/data/`),
-model artifacts (`backend/ml/models/`), and training reports
-(`backend/ml/reports/`) are excluded from git because they are large and
-regenerable from the scripts above.
-
-Full evaluation report — including the target-leakage discovery and
-resolution — is in [`docs/evaluation-report.md`](docs/evaluation-report.md).
-
-## Evaluation
-
-Two-strand evaluation aligned to the third research objective (Chapter 4
-§4.3):
-
-- **Usability (SUS)** — mean **61.82** (Grade C) across eleven undergraduate
-  participants, with the onboarding flow identified as the principal area for
-  improvement. Kit at [`docs/evaluation/`](docs/evaluation) including the
-  questionnaire, in-person participant script, Python analysis script, and
-  the collected response data.
-- **Adherence forecast offline metrics** — on the held-out test presentation
-  (OULAD 2014J): MAE **0.307**, RMSE **0.380**, R-squared **0.314**. The 3-week
-  mean baseline scores 0.268 / 0.403 / 0.229 and last-week persistence scores
-  0.277 / 0.462 / −0.014. The forecast has lower RMSE and higher R-squared than
-  both, and higher MAE. Limitations are listed in
-  [`docs/evaluation-report.md`](docs/evaluation-report.md).
-
-## Environment configuration
-
-Sensitive configuration is loaded from `.env` files. Templates are provided:
-
-- `backend/.env.example` — Django settings + database connection.
-- `frontend/.env.example` — public API base URL for the client.
-
-The actual `.env` files are not tracked in git.
-
-## License and attribution
-
-Academic project submitted in partial fulfilment of the requirements for the
-BSc Computer Science at Pan-Atlantic University, July 2026.
+The forecast is trained on the **Open University Learning Analytics Dataset (OULAD)**, licensed under
+Creative Commons Attribution 4.0 International. It is not in this repository. To rebuild the panel or
+retrain the model, download the seven CSV files from <https://analyse.kmi.open.ac.uk/open-dataset> into
+`Dataset/` at the repository root, then follow [backend/ml/README.md](backend/ml/README.md). The raw
+data, the generated panel and the reports are git-ignored; only the trained model and its metadata file
+are committed, so running the app needs no dataset.

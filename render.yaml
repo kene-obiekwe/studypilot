@@ -44,7 +44,7 @@ services:
       - key: SECURE_SSL_REDIRECT
         value: "True"
       - key: SECURE_HSTS_SECONDS
-        value: "3600"
+        value: "31536000"
       - key: AUTH_THROTTLE_RATE
         value: 10/minute
       - key: EMAIL_THROTTLE_RATE
