@@ -7,6 +7,7 @@ import { Badge, Button, Checkbox, Disclosure, Notice } from "@/components/ui";
 import {
   sendStrategyFeedback,
   type CourseRecommendation,
+  type SavedPlanStatus,
   type StrategyFeedbackState,
   type StrategyFeedbackValue,
 } from "@/lib/api";
@@ -19,9 +20,18 @@ import styles from "./strategies.module.css";
  * The row stays compact: title, the "From your data" badge when the data chose it, and the
  * controls. What to do, why, the steps and the source sit behind one "Why and how" disclosure.
  * A helpful rating persists across weeks and is said in words. A Not helpful row stays until the
- * page is reloaded, so the rating can still be switched, with a note that the strategy will rest.
+ * course is refreshed (after the plan is written or updated), so the rating can still be switched,
+ * with a note that the strategy will rest. A saved rating reports the course's plan status upward,
+ * so "Update plan" can appear without a reload.
  */
-export function StrategyItem({ rec }: { rec: CourseRecommendation }) {
+export function StrategyItem({
+  rec,
+  onPlanStatus,
+}: {
+  rec: CourseRecommendation;
+  /** Called with the plan status the server returns after a successful rating (not for "Tried it"). */
+  onPlanStatus?: (status: SavedPlanStatus | null) => void;
+}) {
   const [feedback, setFeedback] = useState<StrategyFeedbackState>(rec.feedback);
   const [error, setError] = useState("");
   const titleId = `strategy-${rec.shown_id}-title`;
@@ -34,6 +44,7 @@ export function StrategyItem({ rec }: { rec: CourseRecommendation }) {
     try {
       const server = await sendStrategyFeedback(rec.shown_id, value);
       setFeedback((current) => settle(current, value, server));
+      if (value !== "tried") onPlanStatus?.(server.saved_plan);
     } catch (failure) {
       setFeedback((current) => rollback(current, value, before));
       setError(`Couldn't save that: ${(failure as Error).message}`);

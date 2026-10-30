@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, use, useMemo, useRef, useState } from "react";
+import { Suspense, use, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, Lightbulb, Settings2 } from "lucide-react";
 
@@ -137,12 +137,14 @@ function CourseSection({
   /** With AI plans off the weekly plan only restates the checklist, so the button is hidden. */
   aiPlanAvailable: boolean;
 }) {
-  // "Show again" refetches this course alone; until then the data is what the page loaded with.
+  // "Show again" and a written plan refetch this course alone; until then the data is what the page loaded with.
   const [refreshed, setRefreshed] = useState<CourseRecommendations | null>(null);
   const [pending, setPending] = useState<string[]>([]);
   const [restingError, setRestingError] = useState("");
   const restingRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  const refocusPlan = useRef(false);
   const current = refreshed ?? entry;
   const { course, evidence, recommendations } = current;
   const resting = current.resting.filter((item) => !pending.includes(item.strategy_id));
@@ -153,6 +155,16 @@ function CourseSection({
   const count = `${recommendations.length} ${recommendations.length === 1 ? "strategy" : "strategies"}`;
   const outdated = aiPlanAvailable ? outdatedNote(plan.saved) : "";
 
+  // The strategies on screen follow the server's: it is what the plan is compared with.
+  const refreshCourse = async (failedMessage: (reason: string) => string) => {
+    try {
+      const fresh = (await getCourseRecommendations(course.id)).courses[0];
+      if (fresh) setRefreshed(fresh);
+    } catch (failure) {
+      setRestingError(failedMessage((failure as Error).message));
+    }
+  };
+
   const showStrategyAgain = async (strategyId: string) => {
     setRestingError("");
     // The button goes with its row, so move focus first: to the resting line while other
@@ -162,25 +174,44 @@ function CourseSection({
     target?.focus();
     setPending((ids) => [...ids, strategyId]);
     try {
-      await showAgain(course.id, strategyId);
+      const response = await showAgain(course.id, strategyId);
+      plan.applyStatus(response.saved_plan);
     } catch (failure) {
       setPending((ids) => ids.filter((id) => id !== strategyId));
       setRestingError(`Couldn't show that again: ${(failure as Error).message}`);
       return;
     }
-    try {
-      const fresh = (await getCourseRecommendations(course.id)).courses[0];
-      if (fresh) setRefreshed(fresh);
-    } catch (failure) {
-      setRestingError(`Shown again, but couldn't refresh this course: ${(failure as Error).message}. Reload the page to see it.`);
-    }
+    await refreshCourse(
+      (reason) => `Shown again, but couldn't refresh this course: ${reason}. Reload the page to see it.`,
+    );
   };
+
+  // Once a plan is written or updated, the list is refetched so it matches the plan: a strategy
+  // rated Not helpful that is now resting moves into the resting list.
+  const writePlan = async () => {
+    setRestingError("");
+    refocusPlan.current = true;
+    if (!(await plan.write())) return;
+    await refreshCourse(
+      (reason) => `Plan written, but couldn't refresh this course's strategies: ${reason}. Reload the page to see them.`,
+    );
+  };
+
+  // The Update button goes away once the plan is current; keep keyboard focus on the plan's own button.
+  const planStatus = plan.state.status;
+  useEffect(() => {
+    if (!refocusPlan.current || planStatus === "loading") return;
+    refocusPlan.current = false;
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    sectionRef.current?.querySelector<HTMLElement>("[data-plan-toggle]")?.focus();
+  }, [planStatus, plan.saved]);
 
   // Asking for the weekly plan opens a collapsed course, so the plan appears where it's expected.
   const expand = () => setCourseCollapsed(course.id, false);
 
   return (
-    <section className={styles.course} aria-labelledby={headingId} style={color.style}>
+    <section ref={sectionRef} className={styles.course} aria-labelledby={headingId} style={color.style}>
       <div className={styles.courseHead}>
         <div className={styles.courseHeading}>
           <h2 id={headingId} className={styles.courseTitle}>
@@ -201,14 +232,14 @@ function CourseSection({
           </p>
           {outdated && <p className={styles.outdatedNote}>{outdated}</p>}
         </div>
-        {aiPlanAvailable && (recommendations.length > 0 || entry.saved_plan !== null) && (
+        {aiPlanAvailable && (recommendations.length > 0 || plan.saved !== null) && (
           <WeeklyPlanButton
             state={plan.state}
             saved={plan.saved}
             courseName={course.name}
             onWrite={() => {
               expand();
-              void plan.write();
+              void writePlan();
             }}
             onShow={() => {
               expand();
@@ -235,7 +266,7 @@ function CourseSection({
         ) : (
           <ul className={styles.list} aria-label={`Strategies for ${course.name}`}>
             {recommendations.map((rec) => (
-              <StrategyItem key={rec.shown_id} rec={rec} />
+              <StrategyItem key={rec.shown_id} rec={rec} onPlanStatus={plan.applyStatus} />
             ))}
           </ul>
         )}
