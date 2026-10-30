@@ -1,20 +1,25 @@
 """Diagnostics + course traits -> at most four structured recommendations for one course.
 
 Slots: at most 1 exam strategy, at most 2 behaviour strategies (schedule, habit, focus), and
-techniques fill the rest (always at least one). Duplicate strategies merge; ties fall back to
-library order so the output is deterministic.
+techniques fill the rest (at least one unless everything fitting is resting). Duplicate strategies
+merge; ties fall back to library order so the output is deterministic.
+
+The user's ratings act here: a strategy marked not helpful rests for REST_DAYS and the next fitting
+one takes its place, and within each group helpful ones go ahead of unrated ones.
 """
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field, replace
+from datetime import date, timedelta
 from statistics import mean
 
 from .diagnostics import (
     CourseData,
     EVIDENCE_WINDOW_DAYS,
     Diagnostic,
+    RatingInfo,
     evidence_weeks,
     exam_in_days,
     has_history,
@@ -65,6 +70,11 @@ PRIORITY = {
 }
 TECHNIQUE_PRIORITY_BASE = 60
 FALLBACK_PRIORITY = 70
+
+# Strategy ratings (values match StrategyRating.value).
+RATING_HELPFUL = "helpful"
+RATING_NOT_HELPFUL = "not_helpful"
+REST_DAYS = 28
 
 HISTORY = "history"
 SETTINGS = "settings"
@@ -205,28 +215,76 @@ def _fallback_schedule(data: CourseData) -> Candidate:
     )
 
 
+# -- ratings ---------------------------------------------------------------------------------------
+
+
+def rest_until(rating: RatingInfo) -> date:
+    return rating.rated_on + timedelta(days=REST_DAYS)
+
+
+def is_resting(rating: RatingInfo, today: date) -> bool:
+    return rating.value == RATING_NOT_HELPFUL and today < rest_until(rating)
+
+
+def current_ratings(data: CourseData) -> dict[str, str]:
+    """strategy_id -> rating that counts today; a not_helpful older than REST_DAYS counts as none."""
+    return {
+        strategy_id: rating.value
+        for strategy_id, rating in data.ratings.items()
+        if rating.value == RATING_HELPFUL or is_resting(rating, data.today)
+    }
+
+
+def resting_strategies(data: CourseData) -> dict[str, date]:
+    """strategy_id -> the day it may return, for strategies the user marked not helpful recently."""
+    return {
+        strategy_id: rest_until(rating)
+        for strategy_id, rating in data.ratings.items()
+        if is_resting(rating, data.today) and strategy_id in LIBRARY
+    }
+
+
 # -- selection ---------------------------------------------------------------------------------
 
 
 def select(data: CourseData, diagnostics: list[Diagnostic]) -> list[Candidate]:
-    candidates = sorted(diagnostic_candidates(data, diagnostics), key=Candidate.sort_key)
-    exam = [c for c in candidates if c.kind == EXAM][:MAX_EXAM]
-    behaviour = [c for c in candidates if c.kind in BEHAVIOUR_KINDS][:MAX_BEHAVIOUR]
-    if not behaviour and not has_history(data):
+    resting = resting_strategies(data).keys()
+    helpful = {strategy_id for strategy_id, value in current_ratings(data).items() if value == RATING_HELPFUL}
+
+    def helpful_first(items: list, strategy_id=lambda item: item.strategy_id) -> list:
+        # Stable, so each group otherwise keeps today's order.
+        return sorted(items, key=lambda item: strategy_id(item) not in helpful)
+
+    candidates = sorted(
+        (c for c in diagnostic_candidates(data, diagnostics) if c.strategy_id not in resting), key=Candidate.sort_key
+    )
+    exam = helpful_first([c for c in candidates if c.kind == EXAM])[:MAX_EXAM]
+    behaviour = helpful_first([c for c in candidates if c.kind in BEHAVIOUR_KINDS])[:MAX_BEHAVIOUR]
+    if not behaviour and not has_history(data) and "spaced_schedule" not in resting:
         behaviour = [_fallback_schedule(data)]
 
     taken = {c.strategy_id for c in exam + behaviour}
-    techniques: list[Candidate] = []
     slots = MAX_RECOMMENDATIONS - len(exam) - len(behaviour)
-    for rank, (strategy_id, demand) in enumerate(technique_order(data)):
-        if len(techniques) >= slots:
-            break
-        if strategy_id not in taken and LIBRARY[strategy_id].kind == TECHNIQUE:
-            techniques.append(_technique_candidate(data, strategy_id, demand, rank))
+    # Ranks come from the full technique order, so a strategy's priority number doesn't move
+    # when another one rests or is rated helpful.
+    eligible = [
+        (rank, strategy_id, demand)
+        for rank, (strategy_id, demand) in enumerate(technique_order(data))
+        if strategy_id not in taken and strategy_id not in resting and LIBRARY[strategy_id].kind == TECHNIQUE
+    ]
+    techniques = [
+        _technique_candidate(data, strategy_id, demand, rank)
+        for rank, strategy_id, demand in helpful_first(eligible, strategy_id=lambda item: item[1])[:slots]
+    ]
 
     # The warm-up is never silently dropped: without its own slot it becomes the first step
-    # of the top technique.
-    if data.course.builds_on_earlier and techniques and "prerequisite_warmup" not in {t.strategy_id for t in techniques}:
+    # of the top technique, unless the user has rested it.
+    if (
+        data.course.builds_on_earlier
+        and techniques
+        and "prerequisite_warmup" not in resting
+        and "prerequisite_warmup" not in {t.strategy_id for t in techniques}
+    ):
         top = techniques[0]
         techniques[0] = replace(
             top,
@@ -339,4 +397,10 @@ def recommend(data: CourseData) -> dict:
         },
         "evidence": _evidence(data, diagnostics, recommendations),
         "recommendations": recommendations,
+        "resting": [
+            {"strategy_id": strategy_id, "title": LIBRARY[strategy_id].title, "until": until.isoformat()}
+            for strategy_id, until in sorted(
+                resting_strategies(data).items(), key=lambda item: (item[1], LIBRARY_ORDER[item[0]])
+            )
+        ],
     }

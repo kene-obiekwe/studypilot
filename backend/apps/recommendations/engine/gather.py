@@ -10,12 +10,15 @@ from apps.planner.models import Course, StudyPlan
 from apps.tracking.inference import forecast_from_points, session_points, weekly_summaries
 from apps.tracking.models import StudySessionLog
 
+from ..models import StrategyRating
+
 from .diagnostics import (
     EVIDENCE_WINDOW_DAYS,
     CourseData,
     CourseTraits,
     ForecastInfo,
     PlanInfo,
+    RatingInfo,
     SessionRecord,
     WeekRecord,
 )
@@ -73,6 +76,11 @@ def _logged_hours(logs: list[StudySessionLog], since: date) -> float:
     return sum(log.actual_minutes for log in logs if local_today(log.created_at) >= since) / 60
 
 
+def _ratings(user, course: Course) -> dict[str, RatingInfo]:
+    rows = StrategyRating.objects.filter(user=user, course=course, cleared_at__isnull=True)
+    return {row.strategy_id: RatingInfo(row.value, local_today(row.rated_at)) for row in rows}
+
+
 def gather_course_data(user, course: Course, now: datetime | None = None) -> CourseData:
     now = now or timezone.now()
     today = local_today(now)
@@ -105,4 +113,5 @@ def gather_course_data(user, course: Course, now: datetime | None = None) -> Cou
         weeks=weeks,
         forecast=ForecastInfo(forecast.status, forecast.predicted_adherence, forecast.weeks_history),
         plan=_plan_info(user, course.name, today, logs),
+        ratings=_ratings(user, course),
     )
