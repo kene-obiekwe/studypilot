@@ -8,6 +8,7 @@ import { ThemeToggle, UiRoot } from "@/components/ui";
 import { AccountDeletedNotice } from "./AccountDeletedNotice";
 import { AuthActions } from "./AuthActions";
 import { HeroVideo } from "./HeroVideo";
+import { WakeBackend } from "./WakeBackend";
 import styles from "./landing.module.css";
 
 export const REPO_URL = "https://github.com/kene-obiekwe/studypilot";
@@ -71,6 +72,7 @@ function Wordmark() {
 export function LandingPage() {
   return (
     <UiRoot className={styles.page}>
+      <WakeBackend />
       <a href="#main" className={styles.skipLink}>
         Skip to content
       </a>

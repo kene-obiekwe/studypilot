@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Lockup } from "@/components/brand";
+import { WakeBackend } from "@/components/landing/WakeBackend";
 import { Card, UiRoot } from "@/components/ui";
 
 import styles from "./_components/auth.module.css";
@@ -9,6 +10,7 @@ import styles from "./_components/auth.module.css";
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <UiRoot className={styles.page}>
+      <WakeBackend />
       <header className={styles.header}>
         <Link href="/" className={styles.wordmark}>
           <Lockup fontSize={17} />
