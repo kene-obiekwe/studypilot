@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { NotebookPen, RefreshCw } from "lucide-react";
 
+import { useTimeZone } from "@/components/app-shell/useTimeZone";
 import { Button, Card, Notice, Skeleton } from "@/components/ui";
 import {
   getCoursePlan,
@@ -37,9 +38,11 @@ function statusOf(response: CoursePlanResponse): SavedPlanStatus | null {
 }
 
 /** "5 Mar 2026": UK order whatever the browser's locale, like the rest of the app. */
-function writtenOn(value: string): string {
+function writtenOn(value: string, zone?: string): string {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: zone });
 }
 
 /**
@@ -161,6 +164,7 @@ export function WeeklyPlanPanel({
   saved: SavedPlanStatus | null;
   courseName: string;
 }) {
+  const zone = useTimeZone();
   if (state.status === "loading") {
     return (
       <Card
@@ -186,7 +190,7 @@ export function WeeklyPlanPanel({
   if (state.status !== "ready" || !state.open) return null;
 
   const { plan } = state;
-  const written = plan.source === "ai" && saved ? writtenOn(saved.written_at) : "";
+  const written = plan.source === "ai" && saved ? writtenOn(saved.written_at, zone) : "";
   return (
     <Card as="section" aria-label={`Weekly plan for ${courseName}`}>
       <div className={styles.plan}>

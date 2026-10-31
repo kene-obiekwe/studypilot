@@ -389,3 +389,91 @@ describe("days left in the week", () => {
     expect(daysLeft(at(2026, 10, day, 23, 59))).toEqual({ count, label });
   });
 });
+
+// Explicit zones and ISO instants with offsets: these mean the same on any machine.
+describe("in an explicit zone", () => {
+  const LAGOS = "Africa/Lagos";
+  const LA = "America/Los_Angeles";
+  const LONDON = "Europe/London";
+  const iso = (value: string) => new Date(value);
+  const log = (when: string, minutes: number, course = "C0"): SessionHistoryItem => ({ ...session(iso(when), minutes), course_name: course });
+
+  // Lagos is UTC+1: 23:45Z on Sunday 1 Nov is 00:45 on Monday 2 Nov.
+  const LAGOS_MONDAY = iso("2026-11-01T23:45:00Z");
+
+  it("names the week by the zone's Monday", () => {
+    expect(weekStartKey(LAGOS_MONDAY, 0, LAGOS)).toBe("2026-11-02");
+    expect(weekStartKey(LAGOS_MONDAY, 1, LAGOS)).toBe("2026-11-09");
+    expect(weekStartKey(LAGOS_MONDAY, -1, LAGOS)).toBe("2026-10-26");
+    expect(weekStartKey(LAGOS_MONDAY, 0, "UTC")).toBe("2026-10-26");
+    expect(weekStartKey(LAGOS_MONDAY, 0, LA)).toBe("2026-10-26");
+  });
+
+  it("gives Monday 00:00 in the zone as an instant, and a date key in the zone", () => {
+    expect(startOfLocalWeek(LAGOS_MONDAY, LAGOS).toISOString()).toBe("2026-11-01T23:00:00.000Z");
+    expect(startOfLocalWeek(iso("2026-10-26T02:00:00Z"), LA).toISOString()).toBe("2026-10-19T07:00:00.000Z");
+    expect(startOfLocalWeek(iso("2026-10-25T23:30:00Z"), LONDON).toISOString()).toBe("2026-10-18T23:00:00.000Z");
+    expect(localDateKey(LAGOS_MONDAY, LAGOS)).toBe("2026-11-02");
+    expect(localDateKey(LAGOS_MONDAY, "UTC")).toBe("2026-11-01");
+  });
+
+  it("sums the meter with logs straddling Lagos midnight", () => {
+    const sessions = [
+      log("2026-11-01T22:59:00Z", 60), // Sunday 23:59 Lagos: last week
+      log("2026-11-01T23:00:00Z", 30), // Monday 00:00 Lagos: this week
+      log("2026-11-01T23:30:00Z", 45), // Monday 00:30 Lagos: this week
+      log("2026-11-01T23:50:00Z", 20), // after "now"
+    ];
+    const plans = [plan(1, "2026-11-02", iso("2026-11-01T23:40:00Z"), [10])];
+    expect(summariseWeek(plans, sessions, LAGOS_MONDAY, LAGOS)).toEqual({ weekStart: "2026-11-02", plannedHours: 10, loggedHours: 1.25 });
+    // The same clock in UTC is still the week of 26 Oct: no plan there, and the Sunday log counts.
+    expect(summariseWeek(plans, sessions, LAGOS_MONDAY, "UTC")).toEqual({ weekStart: "2026-10-26", plannedHours: 0, loggedHours: 2.25 });
+  });
+
+  it("counts a log from Monday 00:30 BST in the 169 hour London week, up to Sunday night", () => {
+    const sessions = [
+      log("2026-10-18T22:30:00Z", 60), // Sunday 23:30 BST: last week
+      log("2026-10-18T23:30:00Z", 120), // Monday 00:30 BST: this week
+    ];
+    expect(loggedHoursThisWeek(sessions, iso("2026-10-25T23:30:00Z"), [], LONDON)).toBe(2); // Sunday 23:30 GMT
+  });
+
+  it("counts a 167 hour week up to Sunday night too", () => {
+    const sessions = [log("2026-03-22T23:30:00Z", 60), log("2026-03-23T00:30:00Z", 30)]; // Sun 22 Mar 23:30 / Mon 23 Mar 00:30
+    expect(loggedHoursThisWeek(sessions, iso("2026-03-29T22:30:00Z"), [], LONDON)).toBe(0.5); // Sunday 23:30 BST
+  });
+
+  it("looks up this and next week's plan by the zone's Monday", () => {
+    const plans = [plan(1, "2026-11-02", iso("2026-11-01T23:40:00Z"), [4])];
+    expect(hasPlanThisWeek(plans, LAGOS_MONDAY, LAGOS)).toBe(true);
+    expect(hasPlanThisWeek(plans, LAGOS_MONDAY, LA)).toBe(false);
+    expect(hasPlanNextWeek(plans, LAGOS_MONDAY, LA)).toBe(true); // it is still Sunday in Los Angeles
+    expect(hasPlanNextWeek(plans, LAGOS_MONDAY, LAGOS)).toBe(false);
+    expect(plannedHoursThisWeek(plans, LAGOS_MONDAY, LAGOS)).toBe(4);
+  });
+
+  it("splits one course's hours by the zone's week", () => {
+    const plans = [plan(1, "2026-11-02", iso("2026-11-01T23:40:00Z"), [3])];
+    const sessions = [log("2026-11-01T22:00:00Z", 120), log("2026-11-01T23:30:00Z", 60)];
+    expect(courseHoursThisWeek("C0", plans, sessions, LAGOS_MONDAY, LAGOS)).toEqual({ logged: 1, planned: 3, remaining: 2, status: "in_plan" });
+  });
+
+  it("marks today in the strip at Sunday 23:30 Lagos, and moves on at midnight", () => {
+    const courses = [{ id: 1, name: "C0" }];
+    const sundayNight = weekStrip([log("2026-11-01T22:10:00Z", 40)], courses, iso("2026-11-01T22:30:00Z"), LAGOS);
+    expect(sundayNight[0].date).toBe("2026-10-26");
+    expect(sundayNight.filter((day) => day.isToday).map((day) => day.label)).toEqual(["Sun"]);
+    expect(sundayNight[6].minutes).toBe(40);
+
+    const mondayMorning = weekStrip([log("2026-11-01T22:10:00Z", 40)], courses, iso("2026-11-01T23:30:00Z"), LAGOS);
+    expect(mondayMorning[0].date).toBe("2026-11-02");
+    expect(mondayMorning.filter((day) => day.isToday).map((day) => day.label)).toEqual(["Mon"]);
+    expect(mondayMorning.reduce((sum, day) => sum + day.minutes, 0)).toBe(0); // the Sunday log is last week's
+  });
+
+  it("counts the days left by the zone's weekday (Sunday evening in Los Angeles)", () => {
+    const now = iso("2026-10-26T02:00:00Z"); // Monday in UTC, Sunday 25 Oct 19:00 in Los Angeles
+    expect(daysLeft(now, LA)).toEqual({ count: 1, label: "Sun" });
+    expect(daysLeft(now, "UTC")).toEqual({ count: 7, label: "Mon–Sun" });
+  });
+});

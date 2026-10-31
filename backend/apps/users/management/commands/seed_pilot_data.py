@@ -44,6 +44,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
+from apps.common import clock
 from apps.planner.models import Course, StudyPlan
 from apps.planner.services import ADJUSTMENT_SOURCE_NONE, catch_up_split
 from apps.planner.weekly import BREAK_MINUTES, FOCUS_BLOCK_MINUTES, MODE_FIRST, compose_plan_json
@@ -222,9 +223,11 @@ class Command(BaseCommand):
         for profile in PILOTS:
             user = self._upsert_user(profile, password)
             self._clear_existing_data(user)
-            courses = self._upsert_courses(user, profile)
-            plan = self._seed_plan(user, profile, courses, now)
-            self._seed_sessions(user, profile, courses, seed_start, now, rng)
+            # Days and weeks in the pilot's zone: UTC unless the account has set one (the seeder sets none).
+            zone = clock.zone_for(user)
+            courses = self._upsert_courses(user, profile, zone, now)
+            plan = self._seed_plan(user, profile, courses, now, zone)
+            self._seed_sessions(user, profile, courses, seed_start, now, rng, zone)
             self.stdout.write(self.style.SUCCESS(f"Seeded pilot: {user.username} ({profile.full_label})"))
 
         self.stdout.write(self.style.SUCCESS(""))
@@ -253,9 +256,9 @@ class Command(BaseCommand):
         StudyPlan.objects.filter(user=user).delete()
         # Courses are kept (re-upserted) to preserve external referential pointers
 
-    def _upsert_courses(self, user: User, profile: PilotProfile) -> list[Course]:
+    def _upsert_courses(self, user: User, profile: PilotProfile, zone, now) -> list[Course]:
         indices = PILOT_COURSE_INDICES[profile.username]
-        today = timezone.localdate()
+        today = clock.today(zone, now)
         result: list[Course] = []
         for idx in indices:
             name, difficulty, weekly = COURSE_CATALOG[idx]
@@ -275,11 +278,11 @@ class Command(BaseCommand):
             result.append(course)
         return result
 
-    def _seed_plan(self, user: User, profile: PilotProfile, courses: list[Course], now) -> StudyPlan:
+    def _seed_plan(self, user: User, profile: PilotProfile, courses: list[Course], now, zone) -> StudyPlan:
         # Sized to the hours the profile actually plans, so "under-studied vs this week's plan"
         # reflects the profile (low adherers fall behind) rather than an oversized plan.
         total_hours = profile.sessions_per_week * SEEDED_SESSION_HOURS
-        week_start = (now - timedelta(days=now.weekday())).date()
+        week_start = clock.monday_of(clock.today(zone, now))
         # The plan a pilot made on Monday, before logging anything: one current revision.
         split = catch_up_split(
             total_hours, [{"name": c.name, "difficulty": c.difficulty, "factor": 1.0, "logged": 0.0} for c in courses]
@@ -324,6 +327,7 @@ class Command(BaseCommand):
         seed_start,
         now,
         rng: random.Random,
+        zone,
     ) -> None:
         total_sessions = max(1, int(profile.sessions_per_week * SEED_DAYS_WINDOW / 7))
         session_gap_seconds = int((now - seed_start).total_seconds() / total_sessions)
@@ -351,7 +355,7 @@ class Command(BaseCommand):
 
             # Same forecast SessionLogView stores at log time: this course's
             # current week, from the complete weeks already seeded before it.
-            forecast = forecast_course(user, course.name, now=target_ts)
+            forecast = forecast_course(user, course.name, now=target_ts, zone=zone)
             if forecast.status == STATUS_OK:
                 predicted_adherence, model_version = forecast.predicted_adherence, forecast.model_version
             else:

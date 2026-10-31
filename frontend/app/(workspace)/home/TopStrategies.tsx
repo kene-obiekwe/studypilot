@@ -16,12 +16,15 @@ export function TopStrategies({
   courses,
   colorFor,
   now,
+  zone,
 }: {
   courses: CourseRecommendations[];
   colorFor: (courseId: number) => CourseColor;
   now: Date;
+  /** The zone that decides today for the exam order; the browser's when omitted. */
+  zone?: string;
 }) {
-  const top = pickTopStrategies(courses, now);
+  const top = pickTopStrategies(courses, now, zone);
   return (
     <section aria-labelledby="top-heading" className={styles.section}>
       <div className={styles.stripHead}>

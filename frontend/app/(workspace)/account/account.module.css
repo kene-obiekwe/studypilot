@@ -71,3 +71,13 @@
   color: var(--sp-ink-soft);
   font-size: var(--sp-text-sm);
 }
+
+.zoneLine {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.stack {
+  display: grid;
+  gap: var(--sp-space-2);
+}

@@ -43,3 +43,34 @@ describe("examLabel", () => {
     expect(examLabel(null, NOON)).toBeNull();
   });
 });
+
+describe("in an explicit zone", () => {
+  const KIRITIMATI = "Pacific/Kiritimati";
+  const LAGOS = "Africa/Lagos";
+  const LA = "America/Los_Angeles";
+
+  it("is 0 on the exam day in Kiritimati while UTC is still the day before", () => {
+    const now = new Date("2026-11-01T10:30:00Z"); // Monday 2 Nov 00:30 in Kiritimati
+    expect(daysUntilExam("2026-11-02", now, KIRITIMATI)).toBe(0);
+    expect(daysUntilExam("2026-11-02", now, "UTC")).toBe(1);
+    expect(examLabel("2026-11-02", now, KIRITIMATI)).toBe("Exam today");
+    expect(examLabel("2026-11-02", now, "UTC")).toBe("Exam in 1 day");
+  });
+
+  it("treats yesterday's exam as passed in the zone where the day is over", () => {
+    const now = new Date("2026-11-01T10:30:00Z");
+    expect(daysUntilExam("2026-11-01", now, KIRITIMATI)).toBeNull();
+    expect(daysUntilExam("2026-11-01", now, "UTC")).toBe(0);
+  });
+
+  it("counts from Lagos's Monday just after Sunday 23:00Z, not Los Angeles's Sunday", () => {
+    const now = new Date("2026-11-01T23:30:00Z");
+    expect(daysUntilExam("2026-11-02", now, LAGOS)).toBe(0);
+    expect(daysUntilExam("2026-11-02", now, LA)).toBe(1);
+  });
+
+  it("is not thrown off by a clock change in the zone", () => {
+    expect(daysUntilExam("2026-11-02", new Date("2026-10-25T12:00:00Z"), "Europe/London")).toBe(8);
+    expect(daysUntilExam("2027-03-29", new Date("2027-03-20T23:30:00Z"), "Europe/London")).toBe(9);
+  });
+});

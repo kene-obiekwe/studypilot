@@ -126,6 +126,11 @@ describe("shortDate", () => {
     expect(shortDate("2026-10-27T12:00:00Z")).toBe("27 Oct 2026");
   });
 
+  it("shows the day in the given zone", () => {
+    expect(shortDate("2026-10-27T23:30:00Z", "Africa/Lagos")).toBe("28 Oct 2026");
+    expect(shortDate("2026-10-27T23:30:00Z", "America/Los_Angeles")).toBe("27 Oct 2026");
+  });
+
   it("is empty for an invalid date", () => {
     expect(shortDate("not a date")).toBe("");
   });

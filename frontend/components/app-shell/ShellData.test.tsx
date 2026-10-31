@@ -2,17 +2,20 @@
 import { act, Suspense } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getMe, getSessionHistory, listPlans, type SessionHistoryItem } from "@/lib/api";
+import { getMe, getSessionHistory, listPlans, setTimeZone, type SessionHistoryItem } from "@/lib/api";
 import { notifySessionsChanged } from "@/lib/timer-refresh";
 import { render } from "@/test/dom";
 
 import { ShellDataProvider, useShellData } from "./ShellData";
+import { useTimeZone } from "./useTimeZone";
+import { resetZoneSync } from "./zone-sync";
 
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   getMe: vi.fn(),
   listPlans: vi.fn(),
   getSessionHistory: vi.fn(),
+  setTimeZone: vi.fn(),
 }));
 
 function session(minutes: number): SessionHistoryItem {
@@ -40,12 +43,15 @@ function Logged() {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.clearAllMocks();
+  resetZoneSync();
+  window.localStorage.clear();
 });
 
 describe("shell data refresh", () => {
   it("fetches once, then again when a session is logged, keeping the old numbers meanwhile", async () => {
-    vi.mocked(getMe).mockResolvedValue({ id: 1, username: "u", email: "u@example.com" });
+    vi.mocked(getMe).mockResolvedValue({ id: 1, username: "u", email: "u@example.com", time_zone: null, time_zone_auto: false });
     vi.mocked(listPlans).mockResolvedValue([]);
     vi.mocked(getSessionHistory).mockResolvedValueOnce({ items: [session(60)] });
 
@@ -68,6 +74,51 @@ describe("shell data refresh", () => {
     await act(async () => resolve({ items: [session(60), session(30)] }));
     expect(container.textContent).toBe("1.5 h from 2 sessions");
     expect(getSessionHistory).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+});
+
+function Zone() {
+  return <p>{useTimeZone()}</p>;
+}
+
+describe("the account's time zone", () => {
+  const deviceIs = (name: string) =>
+    vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({ timeZone: name } as unknown as Intl.ResolvedDateTimeFormatOptions);
+
+  it("is published to the pages and remembered", async () => {
+    deviceIs("Asia/Tokyo");
+    vi.mocked(getMe).mockResolvedValue({ id: 1, username: "u", email: "u@example.com", time_zone: "Africa/Lagos", time_zone_auto: false });
+    vi.mocked(listPlans).mockResolvedValue([]);
+    vi.mocked(getSessionHistory).mockResolvedValue({ items: [] });
+    const { container, unmount } = await render(
+      <ShellDataProvider>
+        <Zone />
+      </ShellDataProvider>,
+    );
+    expect(container.textContent).toBe("Africa/Lagos");
+    expect(window.localStorage.getItem("studypilot_last_zone")).toBe("Africa/Lagos");
+    expect(setTimeZone).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it("follows the device: one PUT when the shell loads, then the shell fetches the account again", async () => {
+    deviceIs("Asia/Tokyo");
+    const lagos = { id: 1, username: "u", email: "u@example.com", time_zone: "Africa/Lagos", time_zone_auto: true };
+    vi.mocked(getMe).mockResolvedValueOnce(lagos).mockResolvedValue({ ...lagos, time_zone: "Asia/Tokyo" });
+    vi.mocked(listPlans).mockResolvedValue([]);
+    vi.mocked(getSessionHistory).mockResolvedValue({ items: [] });
+    vi.mocked(setTimeZone).mockResolvedValue({ ...lagos, time_zone: "Asia/Tokyo" });
+    const { container, unmount } = await render(
+      <ShellDataProvider>
+        <Zone />
+      </ShellDataProvider>,
+    );
+    await act(async () => undefined);
+    expect(setTimeZone).toHaveBeenCalledTimes(1);
+    expect(setTimeZone).toHaveBeenCalledWith("Asia/Tokyo", true);
+    expect(getMe).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toBe("Asia/Tokyo");
     unmount();
   });
 });

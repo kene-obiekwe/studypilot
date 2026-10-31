@@ -7,6 +7,8 @@ from rest_framework import serializers
 from rest_framework.exceptions import APIException, AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from apps.common.clock import is_valid_zone
+
 from .models import EmailVerification
 from .verification import (
     CODE_LENGTH,
@@ -27,6 +29,7 @@ EMAIL_IN_USE_MESSAGE = "That email is already in use."
 EMAIL_REGISTERED_MESSAGE = "Email is already registered."
 DELETE_CONFIRM_WORD = "DELETE"
 DELETE_CONFIRM_MESSAGE = "Type DELETE to confirm."
+TIME_ZONE_INVALID_MESSAGE = "Enter a valid IANA time zone name, such as Africa/Lagos."
 
 
 def taken_field(exc: IntegrityError) -> str:
@@ -123,6 +126,16 @@ class UsernameChangeSerializer(AccountSerializer):
     def validate_username(self, value):
         if User.objects.filter(username__iexact=value).exclude(pk=self.user.pk).exists():
             raise serializers.ValidationError(USERNAME_TAKEN_MESSAGE)
+        return value
+
+
+class TimeZoneSerializer(serializers.Serializer):
+    time_zone = serializers.CharField(allow_blank=True, trim_whitespace=False)
+    auto = serializers.BooleanField()
+
+    def validate_time_zone(self, value):
+        if not is_valid_zone(value):
+            raise serializers.ValidationError(TIME_ZONE_INVALID_MESSAGE)
         return value
 
 

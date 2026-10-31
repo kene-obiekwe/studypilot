@@ -309,10 +309,10 @@ class PlanRulesTests(WeeklyPlanApiTestCase):
 
     def test_week_start_is_validated(self):
         courses = [{"name": "A", "difficulty": 3}]
-        for week in ("2026-10-27", "2026-11-09", "2026-10-12", "26-10-2026"):
+        for week in ("2026-10-27", "2026-11-09", "2026-10-19", "2026-10-12", "26-10-2026"):
             with self.subTest(week=week):
                 self.assertEqual(self.put(week, courses, total_hours=5).status_code, 400)
-        for week in ("2026-10-19", "2026-11-02"):  # a week either side of the server's
+        for week in ("2026-10-26", "2026-11-02"):  # this week and next week only
             with self.subTest(week=week):
                 self.assertEqual(self.put(week, courses, total_hours=5).status_code, 200)
         self.assertEqual(self.preview("2026-11-09", courses, total_hours=5).status_code, 400)

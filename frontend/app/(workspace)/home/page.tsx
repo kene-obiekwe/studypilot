@@ -5,6 +5,7 @@ import Link from "next/link";
 import { BookOpen, CalendarPlus, Square, Timer } from "lucide-react";
 
 import { PageAction, useShellData, WeekMeterSkeleton } from "@/components/app-shell";
+import { useTimeZone } from "@/components/app-shell/useTimeZone";
 import { useActiveTimer, useTimerActions } from "@/components/timer";
 import { Button, EmptyState, Notice, ProgressBar, Skeleton, Stat } from "@/components/ui";
 import {
@@ -127,6 +128,7 @@ function WeekSummary() {
 function Home({ promise, onRetry }: { promise: Promise<HomeData>; onRetry: () => void }) {
   const data = use(promise);
   const { plans, sessions } = useShellData();
+  const zone = useTimeZone();
   const timer = useActiveTimer();
   const { openStart, openStop } = useTimerActions();
   const courses = "courses" in data ? data.courses : NO_COURSES;
@@ -161,8 +163,8 @@ function Home({ promise, onRetry }: { promise: Promise<HomeData>; onRetry: () =>
   const now = new Date();
   const recsByCourse = new Map((data.recommendations ?? []).map((entry) => [entry.course.id, entry]));
   const planKnown = plans !== null;
-  const hasPlan = planKnown && hasPlanThisWeek(plans, now);
-  const completed = plans !== null && sessions !== null ? completedWeekHours(plans, sessions, now) : null;
+  const hasPlan = planKnown && hasPlanThisWeek(plans, now, zone);
+  const completed = plans !== null && sessions !== null ? completedWeekHours(plans, sessions, now, zone) : null;
 
   return (
     <>
@@ -198,11 +200,12 @@ function Home({ promise, onRetry }: { promise: Promise<HomeData>; onRetry: () =>
                 key={course.id}
                 course={course}
                 color={colorFor(course.id)}
-                hours={sessions !== null ? courseHoursThisWeek(course.name, plans ?? [], sessions, now) : null}
+                hours={sessions !== null ? courseHoursThisWeek(course.name, plans ?? [], sessions, now, zone) : null}
                 forecast={entry?.evidence.forecast ?? null}
                 topRecommendation={entry?.recommendations[0] ?? null}
                 timer={timer}
                 now={now}
+                zone={zone}
                 onStart={() => openStart({ id: course.id, name: course.name, weeklyTargetHours: course.weekly_target_hours })}
                 onStop={openStop}
               />
@@ -211,10 +214,10 @@ function Home({ promise, onRetry }: { promise: Promise<HomeData>; onRetry: () =>
         </ul>
       </section>
 
-      {sessions !== null && <WeekStrip days={weekStrip(sessions, courses, now)} colorFor={colorFor} />}
+      {sessions !== null && <WeekStrip days={weekStrip(sessions, courses, now, zone)} colorFor={colorFor} />}
 
       {data.recommendations ? (
-        <TopStrategies courses={data.recommendations} colorFor={colorFor} now={now} />
+        <TopStrategies courses={data.recommendations} colorFor={colorFor} now={now} zone={zone} />
       ) : (
         <Notice tone="warning" title="Strategies are unavailable right now">
           {data.recommendationsError}

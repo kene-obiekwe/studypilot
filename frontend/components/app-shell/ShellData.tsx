@@ -5,6 +5,10 @@ import { createContext, startTransition, use, useCallback, useContext, useEffect
 import { getMe, getSessionHistory, listPlans, type Me, type SessionHistoryItem, type WeeklyPlan } from "@/lib/api";
 import { onSessionsChanged } from "@/lib/timer-refresh";
 import { loggedHoursThisWeek, summariseWeek, type PlanLike, type WeekSummary } from "@/lib/week";
+import { effectiveZone, rememberZone } from "@/lib/zone";
+
+import { TimeZoneContext } from "./useTimeZone";
+import { onZoneSynced, syncTimeZone } from "./zone-sync";
 
 export type ShellData = {
   /** null when the request failed; the shell falls back to generic labels. */
@@ -19,9 +23,14 @@ export type ShellData = {
 };
 
 /** Logged this week but left out of the meter: the courses taken out of, or never in, this week's plan. */
-export function excludedHoursThisWeek(plans: readonly PlanLike[], sessions: readonly SessionHistoryItem[], now: Date): number {
-  const everything = loggedHoursThisWeek(sessions, now);
-  const counted = loggedHoursThisWeek(sessions, now, plans);
+export function excludedHoursThisWeek(
+  plans: readonly PlanLike[],
+  sessions: readonly SessionHistoryItem[],
+  now: Date,
+  zone?: string,
+): number {
+  const everything = loggedHoursThisWeek(sessions, now, undefined, zone);
+  const counted = loggedHoursThisWeek(sessions, now, plans, zone);
   return Math.max(0, everything - counted);
 }
 
@@ -29,13 +38,15 @@ export function excludedHoursThisWeek(plans: readonly PlanLike[], sessions: read
 export function loadShellData(now: () => Date = () => new Date()): Promise<ShellData> {
   return Promise.allSettled([getMe(), listPlans(), getSessionHistory()]).then(([me, plans, sessions]) => {
     const at = now();
+    // The week is decided in the account's zone, which the account itself tells us.
+    const zone = effectiveZone(me.status === "fulfilled" ? me.value : undefined);
     const both = plans.status === "fulfilled" && sessions.status === "fulfilled";
     return {
       me: me.status === "fulfilled" ? me.value : null,
       plans: plans.status === "fulfilled" ? plans.value : null,
       sessions: sessions.status === "fulfilled" ? sessions.value.items : null,
-      week: both ? summariseWeek(plans.value, sessions.value.items, at) : null,
-      excludedHours: both ? excludedHoursThisWeek(plans.value, sessions.value.items, at) : 0,
+      week: both ? summariseWeek(plans.value, sessions.value.items, at, zone) : null,
+      excludedHours: both ? excludedHoursThisWeek(plans.value, sessions.value.items, at, zone) : 0,
     };
   });
 }
@@ -49,14 +60,35 @@ const ShellRefreshContext = createContext<() => void>(() => undefined);
  * When a session is logged (lib/timer-refresh.ts) it fetches again inside a transition, so the
  * meter keeps showing the old numbers until the new ones arrive instead of a skeleton. The account
  * page does the same after a username or email change (useRefreshShellData).
+ * It also publishes the account's zone (useTimeZone) and, when the account follows the device,
+ * sends the browser's zone if it differs (zone-sync.ts); a sync the server accepts refreshes the data.
  */
 export function ShellDataProvider({ children }: { children: ReactNode }) {
   const [promise, setPromise] = useState(loadShellData);
   const refresh = useCallback(() => startTransition(() => setPromise(loadShellData())), []);
   useEffect(() => onSessionsChanged(refresh), [refresh]);
+  useEffect(() => onZoneSynced(refresh), [refresh]);
+
+  const [zone, setZone] = useState<string | null>(null);
+  useEffect(() => {
+    let current = true;
+    void promise.then(({ me }) => {
+      if (!current) return;
+      const resolved = effectiveZone(me);
+      if (me) rememberZone(resolved);
+      setZone(resolved);
+      void syncTimeZone(me);
+    });
+    return () => {
+      current = false;
+    };
+  }, [promise]);
+
   return (
     <ShellRefreshContext.Provider value={refresh}>
-      <ShellDataContext.Provider value={promise}>{children}</ShellDataContext.Provider>
+      <TimeZoneContext.Provider value={zone}>
+        <ShellDataContext.Provider value={promise}>{children}</ShellDataContext.Provider>
+      </TimeZoneContext.Provider>
     </ShellRefreshContext.Provider>
   );
 }

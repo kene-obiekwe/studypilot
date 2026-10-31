@@ -1,3 +1,5 @@
+import { forgetZone } from "./zone";
+
 // The access key predates refresh tokens, so a session saved before they were stored
 // still loads, as an access-only session (it can't be refreshed once the access expires).
 const ACCESS_KEY = "fyp_access_token";
@@ -35,6 +37,7 @@ export function setAccessToken(access: string): void {
   storage()?.setItem(ACCESS_KEY, access);
 }
 
+/** Every way out of a session ends here (sign-out, expiry, account delete), so the zone keys go too: they are not per user. */
 export function clearSession(): void {
   const store = storage();
   if (!store) {
@@ -42,4 +45,5 @@ export function clearSession(): void {
   }
   store.removeItem(ACCESS_KEY);
   store.removeItem(REFRESH_KEY);
+  forgetZone();
 }

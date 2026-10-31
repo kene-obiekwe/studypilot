@@ -15,6 +15,7 @@ import type {
 } from "@/lib/api";
 import { courseKey } from "@/lib/courses";
 import { courseHoursThisWeek, formatHours, loggedHoursThisWeek, planEntries, weekStartKey, type PlanLike } from "@/lib/week";
+import { dateKeyIn, resolveZone, todayKey, weekdayOf } from "@/lib/zone";
 
 export const MIN_HOURS = 1;
 export const MAX_HOURS = 168;
@@ -28,33 +29,38 @@ export const DEFAULT_TOTAL_HOURS = 12;
 /** "this": the week containing today. "next": the one after, planned ahead on a Saturday or Sunday. */
 export type WeekTarget = "this" | "next";
 
-/** Monday = 0 … Sunday = 6, local time. */
-export function weekdayIndex(now: Date): number {
-  return (now.getDay() + 6) % 7;
+/** Monday = 0 … Sunday = 6, in `zone` (the browser's when omitted). */
+export function weekdayIndex(now: Date, zone?: string): number {
+  return weekdayOf(todayKey(resolveZone(zone), now));
 }
 
-export const isSaturday = (now: Date) => weekdayIndex(now) === 5;
-export const isSunday = (now: Date) => weekdayIndex(now) === 6;
+export const isSaturday = (now: Date, zone?: string) => weekdayIndex(now, zone) === 5;
+export const isSunday = (now: Date, zone?: string) => weekdayIndex(now, zone) === 6;
 
 /** Next week can be planned ahead on Saturday and Sunday only. */
-export const canPlanAhead = (now: Date) => weekdayIndex(now) >= 5;
+export const canPlanAhead = (now: Date, zone?: string) => weekdayIndex(now, zone) >= 5;
 
 /** On Sunday the planner offers next week first (this week ends today); otherwise this week. */
-export function defaultTarget(now: Date): WeekTarget {
-  return isSunday(now) ? "next" : "this";
+export function defaultTarget(now: Date, zone?: string): WeekTarget {
+  return isSunday(now, zone) ? "next" : "this";
 }
 
 /** The Monday (YYYY-MM-DD) of the week being planned. */
-export function targetWeekStart(now: Date, target: WeekTarget): string {
-  return weekStartKey(now, target === "next" ? 1 : 0);
+export function targetWeekStart(now: Date, target: WeekTarget, zone?: string): string {
+  return weekStartKey(now, target === "next" ? 1 : 0, zone);
 }
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** "Wed 28 Oct" for a YYYY-MM-DD date (read as a local date, not UTC). */
-export function dayLabel(key: string): string {
-  const [year, month, day] = key.slice(0, 10).split("-").map(Number);
+/**
+ * "Wed 28 Oct" for a YYYY-MM-DD date (a calendar date, shown as it is). A timestamp such as
+ * `created_at` is a moment, so it is turned into its date in `zone` (the browser's when omitted) first.
+ */
+export function dayLabel(key: string, zone?: string): string {
+  const moment = key.length > 10 ? new Date(key) : null;
+  const dateKey = moment && !Number.isNaN(moment.getTime()) ? dateKeyIn(moment, resolveZone(zone)) : key.slice(0, 10);
+  const [year, month, day] = dateKey.split("-").map(Number);
   const date = new Date(year, month - 1, day);
   if (Number.isNaN(date.getTime())) return key;
   return `${DAY_NAMES[date.getDay()]} ${date.getDate()} ${MONTH_NAMES[date.getMonth()]}`;
@@ -99,10 +105,10 @@ export function chosenTotal(plan: WeeklyPlan | WeeklyPlanDetail): number {
   return planTotal(chosen);
 }
 
-/** Hours logged this local week on the courses named in the rows (each course once). */
-export function loggedOnRows(rows: ReadonlyArray<PlannerRow>, sessions: readonly SessionHistoryItem[], now: Date): number {
+/** Hours logged this week on the courses named in the rows (each course once). */
+export function loggedOnRows(rows: ReadonlyArray<PlannerRow>, sessions: readonly SessionHistoryItem[], now: Date, zone?: string): number {
   const names = new Map(rows.filter((row) => row.name.trim()).map((row) => [courseKey(row.name), row.name]));
-  return [...names.values()].reduce((sum, name) => sum + courseHoursThisWeek(name, [], sessions, now).logged, 0);
+  return [...names.values()].reduce((sum, name) => sum + courseHoursThisWeek(name, [], sessions, now, zone).logged, 0);
 }
 
 /** "How many more hours?" starts at the chosen total less what is already done, never below 0. */
@@ -274,10 +280,10 @@ export type WeekCard = {
 };
 
 /** This week's numbers, live: logged and remaining come from the sessions, planned from the plan. */
-export function weekCard(plan: WeeklyPlan, sessions: readonly SessionHistoryItem[], now: Date): WeekCard {
+export function weekCard(plan: WeeklyPlan, sessions: readonly SessionHistoryItem[], now: Date, zone?: string): WeekCard {
   const plans = [plan];
   const rows = planEntries(plan).map((entry): CardRow => {
-    const hours = courseHoursThisWeek(entry.name, plans, sessions, now);
+    const hours = courseHoursThisWeek(entry.name, plans, sessions, now, zone);
     const remaining = hours.remaining ?? 0;
     const status: CardRowStatus =
       hours.status === "in_plan" ? "in_plan" : entry.plannedHours === 0 && hours.logged === 0 ? "none_planned" : "done";
@@ -286,16 +292,16 @@ export function weekCard(plan: WeeklyPlan, sessions: readonly SessionHistoryItem
   const inPlan = new Set(rows.map((row) => courseKey(row.name)));
   const removed = (plan.plan_json.removed ?? [])
     .filter((item) => item.name && !inPlan.has(courseKey(item.name)))
-    .map((item) => ({ name: item.name, logged: courseHoursThisWeek(item.name, plans, sessions, now).logged }));
+    .map((item) => ({ name: item.name, logged: courseHoursThisWeek(item.name, plans, sessions, now, zone).logged }));
   const total = planTotal(plan);
   return {
     total,
-    logged: loggedHoursThisWeek(sessions, now, plans),
+    logged: loggedHoursThisWeek(sessions, now, plans, zone),
     rows,
     removed,
     complete: total > 0 && rows.length > 0 && rows.every((row) => row.status !== "in_plan"),
     updates: Math.max(0, plan.revision_count - 1),
-    lastUpdated: dayLabel(plan.plan_json.made_on ?? plan.created_at),
+    lastUpdated: dayLabel(plan.plan_json.made_on ?? plan.created_at, zone),
   };
 }
 

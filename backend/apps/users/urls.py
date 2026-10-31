@@ -10,6 +10,7 @@ from .views import (
     PasswordResetRequestView,
     RegisterView,
     ResendCodeView,
+    TimeZoneView,
     VerifyEmailView,
 )
 
@@ -18,6 +19,7 @@ urlpatterns = [
     path("me/password/", PasswordChangeView.as_view(), name="me-password"),
     path("me/email/", EmailChangeRequestView.as_view(), name="me-email"),
     path("me/email/confirm/", EmailChangeConfirmView.as_view(), name="me-email-confirm"),
+    path("me/time-zone/", TimeZoneView.as_view(), name="me-time-zone"),
     path("me/delete/", AccountDeleteView.as_view(), name="me-delete"),
     path("register/", RegisterView.as_view(), name="register"),
     path("verify-email/", VerifyEmailView.as_view(), name="verify-email"),

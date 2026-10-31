@@ -4,6 +4,7 @@ from datetime import timedelta
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.common.clock import zone_for
 from apps.planner.models import Course
 
 from .inference import ForecastResult, STATUS_OK, forecast_course
@@ -33,7 +34,7 @@ class SessionLogView(APIView):
         adherence = round(min(max(payload["actual_minutes"] / payload["planned_minutes"], 0.0), 1.0), 2)
 
         # Forecast for this course's current week, from complete prior weeks only.
-        forecast = forecast_course(request.user, payload["course_name"])
+        forecast = forecast_course(request.user, payload["course_name"], zone=zone_for(request.user))
         if forecast.status == STATUS_OK:
             predicted_adherence, model_version = forecast.predicted_adherence, forecast.model_version
         else:
@@ -84,7 +85,8 @@ class AdherencePredictionView(APIView):
                 latest_name[name.casefold()] = name
             course_names = sorted(latest_name.values(), key=str.casefold)
 
-        return Response([forecast_payload(name, forecast_course(request.user, name)) for name in course_names])
+        zone = zone_for(request.user)
+        return Response([forecast_payload(name, forecast_course(request.user, name, zone=zone)) for name in course_names])
 
 
 class SessionHistoryView(APIView):

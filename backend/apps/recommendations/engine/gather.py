@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from django.utils import timezone
 
+from apps.common import clock
+from apps.common.clock import zone_for
 from apps.planner.models import Course, StudyPlan
 from apps.tracking.inference import forecast_from_points, session_points, weekly_summaries
 from apps.tracking.models import StudySessionLog
@@ -24,13 +27,16 @@ from .diagnostics import (
 )
 
 
-def local_today(now: datetime | None = None) -> date:
-    """Today in settings.TIME_ZONE, which defines every day and week boundary here."""
-    return timezone.localtime(now or timezone.now(), timezone.get_default_timezone()).date()
+def local_today(now: datetime | None = None, zone: ZoneInfo | None = None) -> date:
+    """The day of `now` (default: now) in `zone`, which defines every day and week boundary here.
+
+    Without a zone it is settings.TIME_ZONE.
+    """
+    return clock.today(zone or clock.default_zone(), now)
 
 
 def week_start(today: date) -> date:
-    return today - timedelta(days=today.weekday())
+    return clock.monday_of(today)
 
 
 def course_traits(course: Course) -> CourseTraits:
@@ -45,7 +51,9 @@ def course_traits(course: Course) -> CourseTraits:
     )
 
 
-def _plan_info(user, course_name: str, today: date, logs: list[StudySessionLog]) -> PlanInfo | None:
+def _plan_info(
+    user, course_name: str, today: date, logs: list[StudySessionLog], zone: ZoneInfo
+) -> PlanInfo | None:
     monday = week_start(today)
     key = course_name.casefold()
     plan = StudyPlan.objects.filter(user=user, week_start=monday, is_current=True).first()
@@ -58,10 +66,10 @@ def _plan_info(user, course_name: str, today: date, logs: list[StudySessionLog])
         if str(entry.get("name", "")).casefold() == key:
             allocated = float(entry.get("planned_hours") or 0.0)
             entered_on = min(max(_entry_date(entry.get("entered_on"), monday), monday), today)
-            return PlanInfo(allocated, _logged_hours(logs, monday), entered_on)
+            return PlanInfo(allocated, _logged_hours(logs, monday, zone), entered_on)
     for allocation in plan_json.get("allocations", []):
         if str(allocation.get("course", "")).casefold() == key:
-            return PlanInfo(float(allocation.get("allocated_hours") or 0.0), _logged_hours(logs, monday), monday)
+            return PlanInfo(float(allocation.get("allocated_hours") or 0.0), _logged_hours(logs, monday, zone), monday)
     return None
 
 
@@ -72,18 +80,20 @@ def _entry_date(value, fallback: date) -> date:
         return fallback
 
 
-def _logged_hours(logs: list[StudySessionLog], since: date) -> float:
-    return sum(log.actual_minutes for log in logs if local_today(log.created_at) >= since) / 60
+def _logged_hours(logs: list[StudySessionLog], since: date, zone: ZoneInfo) -> float:
+    return sum(log.actual_minutes for log in logs if clock.local_date(log.created_at, zone) >= since) / 60
 
 
-def _ratings(user, course: Course) -> dict[str, RatingInfo]:
+def _ratings(user, course: Course, zone: ZoneInfo) -> dict[str, RatingInfo]:
     rows = StrategyRating.objects.filter(user=user, course=course, cleared_at__isnull=True)
-    return {row.strategy_id: RatingInfo(row.value, local_today(row.rated_at)) for row in rows}
+    return {row.strategy_id: RatingInfo(row.value, clock.local_date(row.rated_at, zone)) for row in rows}
 
 
-def gather_course_data(user, course: Course, now: datetime | None = None) -> CourseData:
+def gather_course_data(user, course: Course, now: datetime | None = None, zone: ZoneInfo | None = None) -> CourseData:
+    """One course's data as of `now`, with days in `zone` (else the user's)."""
     now = now or timezone.now()
-    today = local_today(now)
+    zone = zone or zone_for(user)
+    today = clock.today(zone, now)
     logs = list(
         StudySessionLog.objects.filter(user=user, course_name__iexact=course.name, created_at__lte=now).order_by(
             "created_at", "id"
@@ -100,9 +110,9 @@ def gather_course_data(user, course: Course, now: datetime | None = None) -> Cou
             adherence=min(max(float(log.adherence_score), 0.0), 1.0),
         )
         for log in logs
-        if (day := local_today(log.created_at)) >= window_start
+        if (day := clock.local_date(log.created_at, zone)) >= window_start
     )
-    points = session_points(logs)
+    points = session_points(logs, zone)
     weeks = tuple(WeekRecord(w.adherence, w.active_days) for w in weekly_summaries(points, today))
     forecast = forecast_from_points(points, today)
     return CourseData(
@@ -112,6 +122,6 @@ def gather_course_data(user, course: Course, now: datetime | None = None) -> Cou
         total_sessions=len(logs),
         weeks=weeks,
         forecast=ForecastInfo(forecast.status, forecast.predicted_adherence, forecast.weeks_history),
-        plan=_plan_info(user, course.name, today, logs),
-        ratings=_ratings(user, course),
+        plan=_plan_info(user, course.name, today, logs, zone),
+        ratings=_ratings(user, course, zone),
     )

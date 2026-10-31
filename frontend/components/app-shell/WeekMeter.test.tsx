@@ -86,7 +86,7 @@ function session(course: string, minutes: number): SessionHistoryItem {
 }
 
 async function meter(plans: WeeklyPlan[], sessions: SessionHistoryItem[]) {
-  vi.mocked(getMe).mockResolvedValue({ id: 1, username: "u", email: "u@example.com" });
+  vi.mocked(getMe).mockResolvedValue({ id: 1, username: "u", email: "u@example.com", time_zone: null, time_zone_auto: false });
   vi.mocked(listPlans).mockResolvedValue(plans);
   vi.mocked(getSessionHistory).mockResolvedValue({ items: sessions });
   const { container } = await render(

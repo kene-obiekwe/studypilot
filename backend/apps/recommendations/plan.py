@@ -13,6 +13,7 @@ import hashlib
 import json
 import re
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.utils import timezone
@@ -272,14 +273,14 @@ def saved_plan_statuses(
     return statuses
 
 
-def course_saved_status(user, course, now: datetime) -> dict | None:
-    """The status of this week's saved plan for one course; None with AI plans off or none saved."""
+def course_saved_status(user, course, now: datetime, zone: ZoneInfo) -> dict | None:
+    """The status of this week's (in `zone`) saved plan for one course; None with AI plans off or none saved."""
     if not ai_enabled():
         return None
-    plans = latest_plans(user, [course], week_start(local_today(now)))
+    plans = latest_plans(user, [course], week_start(local_today(now, zone)))
     if course.id not in plans:
         return None
-    output = recommend(gather_course_data(user, course, now))
+    output = recommend(gather_course_data(user, course, now, zone))
     return saved_plan_statuses(user, [course], plans, {course.id: strategy_ids(output)})[course.id]
 
 

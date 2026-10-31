@@ -4,6 +4,7 @@ import { useId, useState, type FormEvent } from "react";
 import { Play } from "lucide-react";
 
 import { useShellData } from "@/components/app-shell/ShellData";
+import { useTimeZone } from "@/components/app-shell/useTimeZone";
 import { Button, Dialog, Field, Input } from "@/components/ui";
 import { clampPlanned, defaultPlannedMinutes, PLANNED_MAX, PLANNED_MIN, type TimerState } from "@/lib/timer";
 import { startTimer } from "@/lib/timer-store";
@@ -12,6 +13,7 @@ export type StartCourse = { id: number; name: string; weeklyTargetHours?: number
 
 export function StartTimerDialog({ course, onClose }: { course: StartCourse; onClose: () => void }) {
   const { me, plans, sessions } = useShellData();
+  const zone = useTimeZone();
   const formId = useId();
   const [suggested] = useState(() =>
     defaultPlannedMinutes({
@@ -20,6 +22,7 @@ export function StartTimerDialog({ course, onClose }: { course: StartCourse; onC
       plans: plans ?? [],
       sessions: sessions ?? [],
       now: new Date(),
+      zone,
     }),
   );
   const [planned, setPlanned] = useState(String(suggested));

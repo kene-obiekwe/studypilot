@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useRef, useState, type FormEvent } from "react";
 
+import { syncTimeZoneAfterSignIn } from "@/components/app-shell/zone-sync";
 import { Button, Field, Input, Notice } from "@/components/ui";
 import { ApiError, resendCode, verifyEmail } from "@/lib/api";
 import { authLink, CODE_LENGTH, safeNextPath } from "@/lib/auth-flow";
@@ -75,6 +76,7 @@ function VerifyEmailForm() {
     try {
       const tokens = await verifyEmail(email.trim(), digits);
       setSession(tokens);
+      void syncTimeZoneAfterSignIn();
       // A freshly verified account starts onboarding unless it was heading somewhere specific.
       router.replace(postVerifyDestination(params.get("next")));
     } catch (error) {

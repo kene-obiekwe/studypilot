@@ -21,6 +21,8 @@ import {
   findCourseByName,
   hoursText,
   isAdjusted,
+  isSaturday,
+  isSunday,
   joinNames,
   loggedOnRows,
   newRow,
@@ -35,6 +37,7 @@ import {
   updatesText,
   validatePlanInput,
   weekCard,
+  weekdayIndex,
   type PlannerRow,
 } from "./plan-model";
 
@@ -159,6 +162,10 @@ describe("weeks", () => {
   it("words dates and days left", () => {
     expect(dayLabel("2026-11-02")).toBe("Mon 2 Nov");
     expect(dayLabel("2026-10-28T09:00:00Z")).toBe("Wed 28 Oct");
+    // A timestamp is a moment: its date is the one in the zone. A date key is shown as it is.
+    expect(dayLabel("2026-10-28T23:30:00Z", "Africa/Lagos")).toBe("Thu 29 Oct");
+    expect(dayLabel("2026-10-28T23:30:00Z", "America/Los_Angeles")).toBe("Wed 28 Oct");
+    expect(dayLabel("2026-11-02", "Pacific/Kiritimati")).toBe("Mon 2 Nov");
     expect(daysLeftText({ count: 5, label: "Wed–Sun" })).toBe("5 days left this week, Wed–Sun");
     expect(daysLeftText({ count: 1, label: "Sun" })).toBe("1 day left this week, Sun");
   });
@@ -556,5 +563,41 @@ describe("wording", () => {
     expect(joinNames(["A", "B", "C"])).toBe("A, B and C");
     expect(hoursText(6)).toBe("6 h");
     expect(hoursText(6.94)).toBe("6.9 h");
+  });
+});
+
+describe("weeks in an explicit zone", () => {
+  const LA = "America/Los_Angeles";
+  const LAGOS = "Africa/Lagos";
+  // Saturday 31 Oct 18:00 in Los Angeles (PDT) is already Sunday 1 Nov 01:00 in UTC.
+  const LA_SATURDAY = new Date("2026-11-01T01:00:00Z");
+  // Sunday 1 Nov 23:30 UTC is Monday 2 Nov 00:30 in Lagos.
+  const LAGOS_MONDAY = new Date("2026-11-01T23:30:00Z");
+
+  it("is still Saturday in Los Angeles: this week, with next week open to plan", () => {
+    expect(isSaturday(LA_SATURDAY, LA)).toBe(true);
+    expect(isSunday(LA_SATURDAY, LA)).toBe(false);
+    expect(canPlanAhead(LA_SATURDAY, LA)).toBe(true);
+    expect(defaultTarget(LA_SATURDAY, LA)).toBe("this");
+    expect(targetWeekStart(LA_SATURDAY, "this", LA)).toBe("2026-10-26");
+    expect(targetWeekStart(LA_SATURDAY, "next", LA)).toBe("2026-11-02");
+  });
+
+  it("is Sunday for the same instant in UTC", () => {
+    expect(weekdayIndex(LA_SATURDAY, "UTC")).toBe(6);
+    expect(defaultTarget(LA_SATURDAY, "UTC")).toBe("next");
+  });
+
+  it("has moved on to Monday in Lagos", () => {
+    expect(weekdayIndex(LAGOS_MONDAY, LAGOS)).toBe(0);
+    expect(canPlanAhead(LAGOS_MONDAY, LAGOS)).toBe(false);
+    expect(defaultTarget(LAGOS_MONDAY, LAGOS)).toBe("this");
+    expect(targetWeekStart(LAGOS_MONDAY, "this", LAGOS)).toBe("2026-11-02");
+  });
+
+  it("counts logged hours in the zone's week", () => {
+    const logs = [session("A", 1, "2026-10-31T12:00:00Z"), session("A", 2, "2026-11-01T23:10:00Z")]; // Sat noon UTC, Monday 00:10 Lagos
+    expect(loggedOnRows([row("A", 5)], logs, LAGOS_MONDAY, LAGOS)).toBe(2);
+    expect(loggedOnRows([row("A", 5)], logs, LAGOS_MONDAY, "UTC")).toBe(3);
   });
 });

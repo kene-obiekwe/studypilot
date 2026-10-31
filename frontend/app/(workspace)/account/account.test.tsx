@@ -14,13 +14,15 @@ import {
   listCourses,
   listPlans,
   requestEmailChange,
+  setTimeZone,
   updateUsername,
   type Course,
   type Me,
 } from "@/lib/api";
 import { clearSession } from "@/lib/session";
 import { getTimerSnapshot, startTimer } from "@/lib/timer-store";
-import { byLabel, cleanup, click, flush, render, submit, typeInto } from "@/test/dom";
+import { lastKnownZone, lastSyncedZone } from "@/lib/zone";
+import { byLabel, cleanup, click, flush, render, selectOption, submit, typeInto } from "@/test/dom";
 
 import { COLLAPSED_STORAGE_KEY, resetCollapsedCache } from "../strategies/collapsed-courses";
 import { MISMATCH_MESSAGE } from "./PasswordSection";
@@ -51,13 +53,14 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   requestEmailChange: vi.fn(),
   confirmEmailChange: vi.fn(),
   deleteAccount: vi.fn(),
+  setTimeZone: vi.fn(),
 }));
 vi.mock("@/lib/session", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/session")>()),
   clearSession: vi.fn(),
 }));
 
-const ME: Me = { id: 7, username: "kene", email: "kene@example.com" };
+const ME: Me = { id: 7, username: "kene", email: "kene@example.com", time_zone: "Africa/Lagos", time_zone_auto: false };
 
 // jsdom has no modal dialogs: open and close them by attribute.
 beforeEach(() => {
@@ -352,7 +355,135 @@ describe("delete account", () => {
   });
 });
 
+describe("time zone", () => {
+  const deviceIs = (name: string | undefined) =>
+    vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({ timeZone: name } as unknown as Intl.ResolvedDateTimeFormatOptions);
+  const follow = (container: HTMLElement) => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("shows the zone in use and whether it follows the device", async () => {
+    deviceIs("Africa/Lagos");
+    let container = await renderPage();
+    expect(text(container)).toContain("Africa/Lagos · Set by you");
+    expect(follow(container).checked).toBe(false);
+    expect(text(container)).toContain("Following your device updates your week when you travel.");
+    cleanup();
+
+    vi.mocked(getMe).mockResolvedValue({ ...ME, time_zone: "Asia/Tokyo", time_zone_auto: true });
+    deviceIs("Asia/Tokyo");
+    container = await renderPage();
+    expect(text(container)).toContain("Asia/Tokyo · Follows this device");
+    expect(follow(container).checked).toBe(true);
+  });
+
+  it("picking a zone stores it by hand, remembers it and refreshes the shell", async () => {
+    deviceIs("Africa/Lagos");
+    const container = await renderPage();
+    vi.mocked(setTimeZone).mockResolvedValue({ ...ME, time_zone: "Asia/Tokyo" });
+    vi.mocked(getMe).mockResolvedValue({ ...ME, time_zone: "Asia/Tokyo" });
+    await selectOption(input(container, "Time zone") as unknown as HTMLSelectElement, "Asia/Tokyo");
+    await flush();
+    expect(setTimeZone).toHaveBeenCalledTimes(1);
+    expect(setTimeZone).toHaveBeenCalledWith("Asia/Tokyo", false);
+    expect(lastKnownZone()).toBe("Asia/Tokyo");
+    expect(lastSyncedZone()).toBe("Asia/Tokyo");
+    expect(getMe).toHaveBeenCalledTimes(2);
+  });
+
+  it("searches the list of zones", async () => {
+    deviceIs("Africa/Lagos");
+    const container = await renderPage();
+    const zoneSelect = input(container, "Time zone") as unknown as HTMLSelectElement;
+    const before = zoneSelect.options.length;
+    await typeInto(input(container, "Search time zones"), "tokyo");
+    expect([...zoneSelect.options].map((option) => option.value).filter(Boolean)).toEqual(["Asia/Tokyo"]);
+    expect(before).toBeGreaterThan(50);
+  });
+
+  it("the switch follows the device, and switching it off keeps the zone", async () => {
+    deviceIs("Asia/Tokyo");
+    const container = await renderPage();
+    vi.mocked(setTimeZone).mockResolvedValue({ ...ME, time_zone: "Asia/Tokyo", time_zone_auto: true });
+    await click(follow(container));
+    await flush();
+    expect(setTimeZone).toHaveBeenCalledWith("Asia/Tokyo", true);
+    expect(lastSyncedZone()).toBe("Asia/Tokyo");
+
+    cleanup();
+    vi.mocked(setTimeZone).mockClear();
+    vi.mocked(getMe).mockResolvedValue({ ...ME, time_zone: "Africa/Lagos", time_zone_auto: true });
+    const again = await renderPage();
+    vi.mocked(setTimeZone).mockResolvedValue({ ...ME, time_zone_auto: false });
+    await click(follow(again));
+    await flush();
+    expect(setTimeZone).toHaveBeenCalledWith("Africa/Lagos", false);
+  });
+
+  it("in manual mode with the device elsewhere, offers to switch to the device", async () => {
+    deviceIs("America/New_York");
+    const container = await renderPage();
+    expect(text(container)).toContain("This device is on America/New_York; StudyPilot uses Africa/Lagos.");
+    vi.mocked(setTimeZone).mockResolvedValue({ ...ME, time_zone: "America/New_York", time_zone_auto: true });
+    vi.mocked(getMe).mockResolvedValue({ ...ME, time_zone: "America/New_York", time_zone_auto: true });
+    await click(button(container, "Switch to America/New_York"));
+    await flush();
+    expect(setTimeZone).toHaveBeenCalledWith("America/New_York", true);
+    expect(lastKnownZone()).toBe("America/New_York");
+  });
+
+  it("shows no notice when the device matches or the account follows it", async () => {
+    deviceIs("Africa/Lagos");
+    expect(text(await renderPage())).not.toContain("This device is on");
+    cleanup();
+    vi.mocked(getMe).mockResolvedValue({ ...ME, time_zone_auto: true });
+    deviceIs("America/New_York");
+    expect(text(await renderPage())).not.toContain("This device is on");
+  });
+
+  it("puts the server's message on the field and remembers nothing", async () => {
+    deviceIs("Africa/Lagos");
+    const container = await renderPage();
+    vi.mocked(setTimeZone).mockRejectedValue(new ApiError(400, "x", { time_zone: ["Enter a valid time zone."] }));
+    await selectOption(input(container, "Time zone") as unknown as HTMLSelectElement, "Asia/Tokyo");
+    await flush();
+    expect(text(container)).toContain("Enter a valid time zone.");
+    expect(input(container, "Time zone").getAttribute("aria-invalid")).toBe("true");
+    expect(lastSyncedZone()).toBeNull();
+    expect(getMe).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to a text field when the browser cannot list zones", async () => {
+    deviceIs("Africa/Lagos");
+    vi.spyOn(Intl as unknown as { supportedValuesOf: () => string[] }, "supportedValuesOf").mockImplementation(() => {
+      throw new RangeError("unsupported");
+    });
+    const container = await renderPage();
+    expect(container.querySelector("select")).toBeNull();
+    vi.mocked(setTimeZone).mockResolvedValue({ ...ME, time_zone: "Asia/Tokyo" });
+    const field = input(container, "Time zone");
+    await typeInto(field, " Asia/Tokyo ");
+    await submit(formOf(field));
+    await flush();
+    expect(setTimeZone).toHaveBeenCalledWith("Asia/Tokyo", false);
+  });
+});
+
 describe("account page passes axe", () => {
+  // axe walks every option of the real ~400-zone list and times out; the structure is the same with a few.
+  beforeEach(() => {
+    vi.spyOn(Intl as unknown as { supportedValuesOf: () => string[] }, "supportedValuesOf").mockReturnValue([
+      "Africa/Lagos",
+      "America/New_York",
+      "Asia/Tokyo",
+    ]);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("by default", async () => {
     const container = await renderPage();
     expect(await violations(container)).toEqual([]);
@@ -367,6 +498,13 @@ describe("account page passes axe", () => {
     await typeInto(input(container, "Password"), "Quartz-Meadow-4471");
     await submit(formOf(input(container, "New email")));
     await flush();
+    expect(await violations(container)).toEqual([]);
+  });
+
+  it("with the time zone notice showing", async () => {
+    vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({ timeZone: "America/New_York" } as unknown as Intl.ResolvedDateTimeFormatOptions);
+    const container = await renderPage();
+    expect(text(container)).toContain("This device is on America/New_York");
     expect(await violations(container)).toEqual([]);
   });
 

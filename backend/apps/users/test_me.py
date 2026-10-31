@@ -16,7 +16,10 @@ class MeEndpointTests(APITestCase):
         self.client.force_authenticate(self.user)
         response = self.client.get(URL)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data, {"id": self.user.id, "username": "pilot_person", "email": "pilot@example.com"})
+        self.assertEqual(
+            response.data,
+            {"id": self.user.id, "username": "pilot_person", "email": "pilot@example.com", "time_zone": None, "time_zone_auto": True},
+        )
 
     def test_only_get_and_patch_are_allowed(self):
         self.client.force_authenticate(self.user)

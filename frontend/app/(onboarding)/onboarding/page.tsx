@@ -17,6 +17,7 @@ import {
 import { markOnboardingDone, resolveStep, type OnboardingStep } from "@/lib/onboarding";
 import { useCourseColors } from "@/lib/use-course-colors";
 import { hasPlanNextWeek, hasPlanThisWeek } from "@/lib/week";
+import { effectiveZone } from "@/lib/zone";
 
 import styles from "../onboarding.module.css";
 import { CoursesStep } from "./CoursesStep";
@@ -98,11 +99,13 @@ function Onboarding({ promise, onRetry }: { promise: Promise<LoadResult>; onRetr
 function Flow({ data }: { data: Loaded }) {
   const [courses, setCourses] = useState(data.courses);
   const [plans, setPlans] = useState(data.plans);
+  // Onboarding sits outside the workspace shell, so it reads the zone from the account it just loaded.
+  const [zone] = useState(() => effectiveZone(data.me));
   const [step, setStep] = useState<OnboardingStep>(() =>
     resolveStep({
       courseCount: data.courses.length,
-      hasPlanThisWeek: hasPlanThisWeek(data.plans, new Date()),
-      hasPlanNextWeek: hasPlanNextWeek(data.plans, new Date()),
+      hasPlanThisWeek: hasPlanThisWeek(data.plans, new Date(), zone),
+      hasPlanNextWeek: hasPlanNextWeek(data.plans, new Date(), zone),
     }),
   );
   const { colorFor } = useCourseColors(courses);
@@ -148,9 +151,9 @@ function Flow({ data }: { data: Loaded }) {
           onContinue={() => setStep(2)}
         />
       )}
-      {step === 2 && <PlanStep courses={courses} colorFor={colorFor} onSaved={refreshPlans} onContinue={() => setStep(3)} />}
+      {step === 2 && <PlanStep courses={courses} colorFor={colorFor} zone={zone} onSaved={refreshPlans} onContinue={() => setStep(3)} />}
       {step === 3 && courses.length > 0 && (
-        <SessionStep me={data.me} courses={courses} plans={plans} sessions={data.sessions} />
+        <SessionStep me={data.me} courses={courses} plans={plans} sessions={data.sessions} zone={zone} />
       )}
     </>
   );

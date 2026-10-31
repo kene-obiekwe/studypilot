@@ -32,3 +32,17 @@ class OneTimeCode(models.Model):
     attempts = models.PositiveSmallIntegerField(default=0)
     used_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class UserPreferences(models.Model):
+    """Per-user settings. A user with no row, or a blank time zone, uses settings.TIME_ZONE.
+
+    Rows are created on the first write, so adding the table changes nothing for existing users.
+    """
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="preferences")
+    # An IANA name such as "Africa/Lagos". Blank means not set yet.
+    time_zone = models.CharField(max_length=64, blank=True, default="")
+    # True while the zone follows the device; picking a zone by hand turns it off.
+    time_zone_auto = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)

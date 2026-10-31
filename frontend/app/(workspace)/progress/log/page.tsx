@@ -5,6 +5,7 @@ import Link from "next/link";
 import { BookOpen, Play, Square } from "lucide-react";
 
 import { useShellData } from "@/components/app-shell";
+import { useTimeZone } from "@/components/app-shell/useTimeZone";
 import {
   CompletionScale,
   DEFAULT_COMPLETION,
@@ -73,6 +74,7 @@ function LogSession({ promise, onRetry }: { promise: Promise<Loaded>; onRetry: (
 
 function LogForm({ courses }: { courses: Course[] }) {
   const { plans, sessions } = useShellData();
+  const zone = useTimeZone();
   const { refresh } = useProgress();
   const { openStart, openStop } = useTimerActions();
   const timer = useActiveTimer();
@@ -86,6 +88,7 @@ function LogForm({ courses }: { courses: Course[] }) {
         plans: plans ?? [],
         sessions: sessions ?? [],
         now: new Date(),
+        zone,
       }),
     );
 
