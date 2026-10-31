@@ -35,6 +35,38 @@ export class ApiError extends Error {
   }
 }
 
+const WAKE_KEY = "studypilot_backend_wake_at";
+const WAKE_INTERVAL_MS = 5 * 60 * 1000;
+let lastWakeAt = 0;
+
+/**
+ * Pings the health endpoint so a sleeping backend starts waking while the visitor is still
+ * on the landing or auth pages. Fire-and-forget: never throws, never logs, at most once per
+ * five minutes per tab.
+ */
+export function wakeBackend(): void {
+  try {
+    const now = Date.now();
+    let last = lastWakeAt;
+    try {
+      const stored = Number(window.sessionStorage.getItem(WAKE_KEY));
+      if (Number.isFinite(stored) && stored > last) last = stored;
+    } catch {
+      // Storage unavailable: the module-level timestamp still limits repeats.
+    }
+    if (last && now - last >= 0 && now - last < WAKE_INTERVAL_MS) return;
+    lastWakeAt = now;
+    try {
+      window.sessionStorage.setItem(WAKE_KEY, String(now));
+    } catch {
+      // Ignored, see above.
+    }
+    fetch(`${API_BASE}/health/`, { mode: "no-cors", cache: "no-store" }).catch(() => {});
+  } catch {
+    // A wake-up ping must never break the page.
+  }
+}
+
 /** True for the sign-in error that means "enter the code we emailed you" (status 400, code email_not_verified). */
 export function isEmailNotVerified(error: unknown): boolean {
   return error instanceof ApiError && error.code === EMAIL_NOT_VERIFIED_CODE;
