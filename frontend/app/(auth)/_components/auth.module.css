@@ -153,3 +153,37 @@
   gap: var(--sp-space-3);
   flex-wrap: wrap;
 }
+
+/* The server wake-up notice sits between the header and the card, as wide as the card. */
+.wakeNotice {
+  width: 100%;
+  max-width: 420px;
+  padding-bottom: var(--sp-space-4);
+}
+
+.wakePulse {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: middle;
+  animation: wakePulse 1.4s ease-in-out infinite;
+}
+
+@keyframes wakePulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wakePulse {
+    animation: none;
+  }
+}
