@@ -39,10 +39,85 @@ const WAKE_KEY = "studypilot_backend_wake_at";
 const WAKE_INTERVAL_MS = 5 * 60 * 1000;
 let lastWakeAt = 0;
 
+const AWAKE_KEY = "studypilot_backend_awake_at";
+/** Render free sleeps after 15 idle minutes; trust a confirmation for 10. */
+const AWAKE_TTL_MS = 10 * 60 * 1000;
+const CHECK_RETRY_MS = 3000;
+const CHECK_WINDOW_MS = 90 * 1000;
+const CHECK_ATTEMPT_TIMEOUT_MS = 15 * 1000;
+
+export type BackendStatus = "awake" | "unreachable";
+
+let checkInFlight: Promise<BackendStatus> | null = null;
+
+/** True when this tab confirmed the backend awake within the last 10 minutes. Never throws. */
+export function wasBackendRecentlyAwake(): boolean {
+  try {
+    const at = Number(window.sessionStorage.getItem(AWAKE_KEY));
+    const age = Date.now() - at;
+    return Number.isFinite(at) && at > 0 && age >= 0 && age < AWAKE_TTL_MS;
+  } catch {
+    return false;
+  }
+}
+
+async function healthAnswersOk(timeoutMs: number): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${API_BASE}/health/`, { cache: "no-store", signal: controller.signal });
+    if (!response.ok) return false;
+    const body: unknown = await response.json();
+    return typeof body === "object" && body !== null && (body as { status?: unknown }).status === "ok";
+  } catch {
+    // Network error, CORS error, timeout, or a non-JSON boot page: not awake yet.
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function runBackendCheck(): Promise<BackendStatus> {
+  return (async (): Promise<BackendStatus> => {
+    const started = Date.now();
+    for (;;) {
+      const remaining = CHECK_WINDOW_MS - (Date.now() - started);
+      if (remaining <= 0) return "unreachable";
+      if (await healthAnswersOk(Math.min(CHECK_ATTEMPT_TIMEOUT_MS, remaining))) {
+        try {
+          window.sessionStorage.setItem(AWAKE_KEY, String(Date.now()));
+        } catch {
+          // Storage unavailable: the notice just checks again next time.
+        }
+        return "awake";
+      }
+      const left = CHECK_WINDOW_MS - (Date.now() - started);
+      if (left <= 0) return "unreachable";
+      await new Promise((resolve) => setTimeout(resolve, Math.min(CHECK_RETRY_MS, left)));
+    }
+  })();
+}
+
 /**
- * Pings the health endpoint so a sleeping backend starts waking while the visitor is still
- * on the landing or auth pages. Fire-and-forget: never throws, never logs, at most once per
- * five minutes per tab.
+ * Asks the health endpoint (a normal CORS request) until it answers {"status":"ok"}, retrying
+ * every 3 s for up to 90 s. One check runs per tab at a time; concurrent callers share it.
+ * Never throws.
+ */
+export function checkBackend(): Promise<BackendStatus> {
+  if (checkInFlight) return checkInFlight;
+  const check = runBackendCheck()
+    .catch((): BackendStatus => "unreachable")
+    .finally(() => {
+      if (checkInFlight === check) checkInFlight = null;
+    });
+  checkInFlight = check;
+  return check;
+}
+
+/**
+ * Starts a health check so a sleeping backend begins waking while the visitor is still on the
+ * landing or auth pages. Fire-and-forget: never throws, never logs, at most once per five
+ * minutes per tab.
  */
 export function wakeBackend(): void {
   try {
@@ -61,7 +136,7 @@ export function wakeBackend(): void {
     } catch {
       // Ignored, see above.
     }
-    fetch(`${API_BASE}/health/`, { mode: "no-cors", cache: "no-store" }).catch(() => {});
+    void checkBackend();
   } catch {
     // A wake-up ping must never break the page.
   }
