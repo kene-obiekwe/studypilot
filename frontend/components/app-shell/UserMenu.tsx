@@ -18,14 +18,16 @@ type Placement = "sidebar" | "topbar";
 
 /**
  * Account button + menu on the native Popover API: it opens in the top layer and closes on Esc
- * or a click outside without any React state. The menu holds the theme choice on phones.
+ * or a click outside without any React state. The menu holds the theme choice wherever the button
+ * is avatar-only: on phones, and in the collapsed sidebar (which hides the theme toggle).
  */
-export function UserMenu({ placement }: { placement: Placement }) {
+export function UserMenu({ placement, compact = false }: { placement: Placement; compact?: boolean }) {
   const menuId = useId();
+  const iconOnly = placement === "topbar" || compact;
   return (
     <>
-      <Suspense fallback={<UserButton placement={placement} menuId={menuId} name={null} />}>
-        <LoadedUserButton placement={placement} menuId={menuId} />
+      <Suspense fallback={<UserButton iconOnly={iconOnly} menuId={menuId} name={null} />}>
+        <LoadedUserButton iconOnly={iconOnly} menuId={menuId} />
       </Suspense>
       <div
         id={menuId}
@@ -35,7 +37,7 @@ export function UserMenu({ placement }: { placement: Placement }) {
         <Suspense fallback={null}>
           <MenuHeader />
         </Suspense>
-        {placement === "topbar" && <CompactThemeChoice />}
+        {iconOnly && <CompactThemeChoice />}
         <AccountLink menuId={menuId} />
         <SignOutButton />
       </div>
@@ -43,24 +45,25 @@ export function UserMenu({ placement }: { placement: Placement }) {
   );
 }
 
-function LoadedUserButton({ placement, menuId }: { placement: Placement; menuId: string }) {
+function LoadedUserButton({ iconOnly, menuId }: { iconOnly: boolean; menuId: string }) {
   const { me } = useShellData();
-  return <UserButton placement={placement} menuId={menuId} name={me?.username ?? null} />;
+  return <UserButton iconOnly={iconOnly} menuId={menuId} name={me?.username ?? null} />;
 }
 
-function UserButton({ placement, menuId, name }: { placement: Placement; menuId: string; name: string | null }) {
+function UserButton({ iconOnly, menuId, name }: { iconOnly: boolean; menuId: string; name: string | null }) {
   const label = name ?? "Account";
   return (
     <button
       type="button"
       popoverTarget={menuId}
-      aria-label={placement === "topbar" ? `Account menu for ${label}` : undefined}
-      className={`${styles.userButton} ${placement === "topbar" ? styles.userButtonCompact : ""}`}
+      aria-label={iconOnly ? `Account menu for ${label}` : undefined}
+      title={iconOnly ? label : undefined}
+      className={`${styles.userButton} ${iconOnly ? styles.userButtonCompact : ""}`}
     >
       <span className={styles.avatar} aria-hidden="true">
         {label.charAt(0)}
       </span>
-      {placement === "sidebar" && <span className={styles.userName}>{label}</span>}
+      {!iconOnly && <span className={styles.userName}>{label}</span>}
     </button>
   );
 }

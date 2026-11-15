@@ -37,15 +37,24 @@
 
 /* -- Sidebar (desktop) ------------------------------------------------------------- */
 
-.sidebar {
+.sidebarFrame {
   display: none;
+}
+
+.sidebarHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-space-2);
+  padding-bottom: var(--sp-space-6);
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: var(--sp-space-2);
-  padding: var(--sp-space-2) var(--sp-space-4) var(--sp-space-6);
+  min-width: 0;
+  padding: var(--sp-space-2) var(--sp-space-4);
   font-size: var(--sp-text-lg);
   font-weight: var(--sp-weight-strong);
   color: var(--sp-ink);
@@ -63,12 +72,104 @@
 
 .sidebarFooter {
   display: grid;
-  /* A minmax(0, 1fr) track: children can't widen the sidebar past its 248px. */
+  /* A minmax(0, 1fr) track: children can't widen the sidebar past its set width. */
   grid-template-columns: minmax(0, 1fr);
   gap: var(--sp-space-4);
   margin-top: auto;
   padding-top: var(--sp-space-5);
   border-top: 1px solid var(--sp-line);
+}
+
+.collapseButton {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--sp-radius-md);
+  background: transparent;
+  color: var(--sp-ink-soft);
+  cursor: pointer;
+  box-shadow: none;
+  transform: none;
+}
+
+.collapseButton:hover {
+  color: var(--sp-ink);
+  background: var(--sp-sunken);
+}
+
+.collapseButton:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 2px;
+}
+
+/* Drag handle on the sidebar's right edge; a thin accent line shows on hover, focus and drag. */
+.resizeHandle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -4px;
+  z-index: 1;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.resizeHandle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  transition: background-color var(--sp-duration-fast) var(--sp-ease-standard);
+}
+
+.resizeHandle:hover::after,
+.resizeHandle:focus-visible::after,
+.shell[data-resizing] .resizeHandle::after {
+  background: var(--sp-accent);
+}
+
+.resizeHandle:focus-visible {
+  outline: none;
+}
+
+.shell[data-resizing] {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* Collapsed: an icon rail. Labels stay for screen readers and show as tooltips. */
+.sidebar[data-collapsed] .sidebarHead {
+  flex-direction: column;
+}
+
+.sidebar[data-collapsed] .brand {
+  padding: var(--sp-space-2);
+}
+
+.sidebar[data-collapsed] .navList a {
+  justify-content: center;
+  padding: 0;
+}
+
+.sidebar[data-collapsed] .navList a > span:last-child {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.sidebar[data-collapsed] .sidebarFooter {
+  justify-items: center;
 }
 
 /* The theme toggle fills the sidebar width with even, compact segments. */
@@ -346,20 +447,37 @@
 
 @media (min-width: 768px) {
   .shell {
-    grid-template-columns: 248px minmax(0, 1fr);
+    /* Set by AppShell from the saved layout; 248px is the default width. */
+    grid-template-columns: var(--sp-sidebar-width, 248px) minmax(0, 1fr);
+    transition: grid-template-columns var(--sp-duration-fast) var(--sp-ease-standard);
+  }
+
+  .shell[data-resizing] {
+    transition: none;
+  }
+
+  .sidebarFrame {
+    position: sticky;
+    top: 0;
+    z-index: calc(var(--sp-z-sticky) + 1);
+    display: block;
+    height: 100vh;
+    height: 100dvh;
   }
 
   .sidebar {
-    position: sticky;
-    top: 0;
     display: flex;
     flex-direction: column;
-    height: 100vh;
-    height: 100dvh;
+    height: 100%;
+    overflow-x: hidden;
     overflow-y: auto;
     padding: var(--sp-space-5) var(--sp-space-3) var(--sp-space-4);
     background: var(--sp-surface);
     border-right: 1px solid var(--sp-line);
+  }
+
+  .sidebar[data-collapsed] {
+    padding: var(--sp-space-5) var(--sp-space-2) var(--sp-space-4);
   }
 
   .topBar {
@@ -378,5 +496,11 @@
 
   .main {
     padding: var(--sp-space-6) var(--sp-space-7) var(--sp-space-9);
+  }
+}
+
+@media (min-width: 768px) and (prefers-reduced-motion: reduce) {
+  .shell {
+    transition: none;
   }
 }
